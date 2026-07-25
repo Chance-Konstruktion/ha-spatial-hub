@@ -14,10 +14,10 @@ einzige Zeile geändert wird.
 
 ## Status
 
-**Phase 1–5 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
+**Phase 1–6 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
 Event-System, Storage, Config-Flow, die komplette Websocket-API, ein
 Renderer in der Seitenleiste, ein Grundriss, der dem Haus von selbst folgt,
-und ein Edit-Modus für alles, was die Automatik falsch geraten hat.
+ein Edit-Modus für alles, was die Automatik falsch geraten hat, und Themes.
 
 [ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) ist als
 erster Provider angebunden. Der vollständige Plan steht in
@@ -36,6 +36,9 @@ Dashboard anlegen, keine Karte konfigurieren, kein YAML:
 - **Popup** mit allen Metadaten, Verlauf und Actions (Actions nur für Admins)
 - **Diagnose** direkt im Panel: was jeder Provider geliefert hat, und was daran
   beanstandet wurde
+- **Themes**: fünf Presets, freie Farben, Formen, Beschriftungsmodus,
+  gerade oder gebogene Verbindungen — voreingestellt ist `auto`, das dem
+  Theme folgt, das der Nutzer in Home Assistant ohnehin schon hat
 - **Bearbeiten** (nur Admins): Nodes und Bereiche ziehen, Bereiche in der
   Größe ändern, Nodes skalieren und drehen, ausblenden und zurückholen,
   Grundriss-Bild pro Etage, Ebenen sortieren und abdunkeln — alles mit
@@ -72,6 +75,7 @@ weiter, wenn der Hub gar nicht installiert ist.
 | **Home Assistant** | *wo* es grob ist: Floor- und Area-Registry |
 | **Hub** | *wie* es angeordnet ist: Auto-Platzierung + Nutzerkorrekturen |
 | **Renderer** | *wie* es aussieht |
+| **Theme** | *in welchen Farben* — für Zustände und Qualität, nie pro Integration |
 
 Der mitgelieferte Renderer benutzt ausschließlich die dokumentierte
 Websocket-API — dieselbe, die auch eine 3D-Ansicht oder ein Druck-Export
@@ -151,6 +155,10 @@ wurde und warum, inklusive vermuteter Tippfehler in der Registrierung.
 | `floorplan_hub/history` | Zeitreihe zu Node oder Edge |
 | `floorplan_hub/action` | Provider-Action ausführen (Admin) |
 | `floorplan_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
+
+Unter `theme` steht das aufgelöste Theme — Preset plus Nutzerkorrekturen,
+fertig ausgerechnet. Ein zweiter Renderer bekommt damit dieselben Farben,
+ohne ein einziges Preset nachzubauen.
 
 Im Modell steht unter `hidden` außerdem, was der Nutzer ausgeblendet hat —
 Ausblenden ist keine Einbahnstraße, ein Editor braucht die Liste, um es

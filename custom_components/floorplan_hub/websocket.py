@@ -15,6 +15,24 @@ from homeassistant.core import HomeAssistant, callback
 from .const import API_VERSION, DATA_HUB, DOMAIN, MAX_BACKGROUND_BYTES
 from .hub import FloorplanHub
 
+_COLOUR = vol.All(str, vol.Length(max=64))
+
+# A theme colours the shared vocabulary -- node states and edge qualities --
+# never an integration. See theme.py for why that distinction matters.
+_THEME_SCHEMA = {
+    vol.Optional("preset"): vol.All(str, vol.Length(max=32)),
+    vol.Optional("accent"): _COLOUR,
+    vol.Optional("surface"): _COLOUR,
+    vol.Optional("ink"): _COLOUR,
+    vol.Optional("state_colors"): {str: _COLOUR},
+    vol.Optional("quality_colors"): {str: _COLOUR},
+    vol.Optional("node_shape"): vol.In(["circle", "rounded", "square"]),
+    vol.Optional("node_size"): vol.All(vol.Coerce(float), vol.Range(min=0.4, max=3)),
+    vol.Optional("labels"): vol.In(["always", "hover", "never"]),
+    vol.Optional("edge_style"): vol.In(["straight", "curved"]),
+    vol.Optional("room_style"): vol.In(["outline", "filled", "none"]),
+}
+
 _SIZE_SCHEMA = {
     vol.Required("width"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=2)),
     vol.Required("height"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=2)),
@@ -75,9 +93,12 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/layout/set",
-        vol.Required("section"): vol.In(["nodes", "layers", "floors", "areas"]),
+        vol.Required("section"): vol.In(
+            ["nodes", "layers", "floors", "areas", "settings"]
+        ),
         vol.Required("key"): str,
         vol.Required("values"): {
+            vol.Optional("theme"): vol.Any(None, _THEME_SCHEMA),
             vol.Optional("position"): vol.Any(None, _POSITION_SCHEMA),
             vol.Optional("size"): vol.Any(None, _SIZE_SCHEMA),
             vol.Optional("label_offset"): vol.Any(None, dict),
@@ -129,7 +150,9 @@ def websocket_layout_set(hass: HomeAssistant, connection, msg: dict) -> None:
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/layout/reset",
-        vol.Required("section"): vol.In(["nodes", "layers", "floors", "areas"]),
+        vol.Required("section"): vol.In(
+            ["nodes", "layers", "floors", "areas", "settings"]
+        ),
         vol.Required("key"): str,
     }
 )

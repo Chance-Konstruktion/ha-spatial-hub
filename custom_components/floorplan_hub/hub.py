@@ -24,6 +24,7 @@ from .const import (
 )
 from .models import Edge, Node, Position
 from .registry import Provider, async_load_providers
+from .theme import resolve as resolve_theme
 from .storage import LayoutStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -188,6 +189,9 @@ class FloorplanHub:
                 if edge.source in known_ids and edge.target in known_ids
             ],
             "providers": [provider.as_dict() for provider in providers.values()],
+            # Resolved here, not in the renderer: a second renderer gets
+            # the same colours without reimplementing a single preset.
+            "theme": resolve_theme(self.store.get("settings", "view")),
             "icon_sets": icon_sets,
         }
 

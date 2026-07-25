@@ -225,6 +225,11 @@ zurück.
 | `floorplan_hub/action` | Provider-Action ausführen (Admin) |
 | `floorplan_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
 
+Das Modell enthält unter `theme` die fertig aufgelösten Farben für die
+Zustands- und Qualitätswörter, unter `hidden` die vom Nutzer ausgeblendeten
+Objekte. Beides ist für Renderer gedacht; als Provider musst du dich um
+nichts davon kümmern.
+
 `history` und `action` adressieren über `item_id` (die genamespacte ID) —
 nicht über `id`, das im HA-Websocket-Protokoll der Message gehört.
 
