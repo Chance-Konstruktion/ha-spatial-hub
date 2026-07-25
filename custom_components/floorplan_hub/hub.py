@@ -42,6 +42,9 @@ class FloorplanHub:
         # command -- a developer should never have to guess why their layer
         # came out empty.
         self._status: dict[str, dict[str, Any]] = {}
+        # Entities currently on the plan. The watcher tracks exactly these,
+        # so a node goes live regardless of how slowly its provider polls.
+        self.entity_ids: set[str] = set()
         self._listeners: list[Callable[[str], None]] = []
         self._unsubscribes: list[Callable[[], None]] = []
 
@@ -157,6 +160,9 @@ class FloorplanHub:
         node_dicts = [self._apply_node_layout(node) for node in nodes]
         node_dicts = [node for node in node_dicts if not node.pop("_hidden", False)]
         known_ids = {node["id"] for node in node_dicts}
+        self.entity_ids = {
+            node["entity_id"] for node in node_dicts if node.get("entity_id")
+        }
 
         return {
             "api_version": API_VERSION,

@@ -1,8 +1,9 @@
 """Config flow -- one click, no questions.
 
 The hub has nothing to configure: it discovers floors and areas from Home
-Assistant and providers announce themselves. The single option exists for
-users who want to arrange every area by hand.
+Assistant and providers announce themselves. The options exist for users
+who want to arrange every area by hand, or who bring their own renderer
+and have no use for the built-in one.
 """
 
 from __future__ import annotations
@@ -18,7 +19,13 @@ try:
 except ImportError:  # HA < 2024.4
     from homeassistant.data_entry_flow import FlowResult as ConfigFlowResult
 
-from .const import CONF_AUTO_AREAS, DEFAULT_AUTO_AREAS, DOMAIN
+from .const import (
+    CONF_AUTO_AREAS,
+    CONF_PANEL,
+    DEFAULT_AUTO_AREAS,
+    DEFAULT_PANEL,
+    DOMAIN,
+)
 
 
 class FloorplanHubConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -51,12 +58,19 @@ class FloorplanHubOptionsFlow(OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current = bool(
-            self.config_entry.options.get(CONF_AUTO_AREAS, DEFAULT_AUTO_AREAS)
-        )
+        options = self.config_entry.options
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
-                {vol.Required(CONF_AUTO_AREAS, default=current): bool}
+                {
+                    vol.Required(
+                        CONF_AUTO_AREAS,
+                        default=bool(options.get(CONF_AUTO_AREAS, DEFAULT_AUTO_AREAS)),
+                    ): bool,
+                    vol.Required(
+                        CONF_PANEL,
+                        default=bool(options.get(CONF_PANEL, DEFAULT_PANEL)),
+                    ): bool,
+                }
             ),
         )

@@ -218,12 +218,118 @@ if not hasattr(websocket_api, "websocket_command"):
     components.websocket_api = websocket_api
 
 
+# -- homeassistant.components.frontend / http ---------------------------------
+frontend = _module("homeassistant.components.frontend")
+http = _module("homeassistant.components.http")
+if not hasattr(frontend, "async_register_built_in_panel"):
+
+    def async_register_built_in_panel(hass, component_name, **kwargs):
+        panels = hass.data.setdefault("_panels", {})
+        url_path = kwargs.get("frontend_url_path")
+        if url_path in panels:
+            raise ValueError(f"Overwriting panel {url_path}")
+        panels[url_path] = {"component_name": component_name, **kwargs}
+
+    def async_remove_panel(hass, url_path):
+        if url_path not in hass.data.get("_panels", {}):
+            raise ValueError(f"Unknown panel {url_path}")
+        del hass.data["_panels"][url_path]
+
+    frontend.async_register_built_in_panel = async_register_built_in_panel
+    frontend.async_remove_panel = async_remove_panel
+    components.frontend = frontend
+
+    class StaticPathConfig:
+        def __init__(self, url_path, path, cache_headers=True) -> None:
+            self.url_path, self.path, self.cache_headers = url_path, path, cache_headers
+
+    http.StaticPathConfig = StaticPathConfig
+    components.http = http
+
+
+# -- homeassistant.helpers.event ----------------------------------------------
+event_helper = _module("homeassistant.helpers.event")
+if not hasattr(event_helper, "async_call_later"):
+
+    def async_call_later(hass, delay, action):
+        """Record the timer instead of running it; tests fire it by hand."""
+        hass.timers.append((delay, action))
+
+        def cancel():
+            hass.timers[:] = [t for t in hass.timers if t[1] is not action]
+
+        return cancel
+
+    def async_track_state_change_event(hass, entity_ids, action):
+        hass.tracked.append((list(entity_ids), action))
+
+        def cancel():
+            hass.tracked[:] = [t for t in hass.tracked if t[1] is not action]
+
+        return cancel
+
+    event_helper.async_call_later = async_call_later
+    event_helper.async_track_state_change_event = async_track_state_change_event
+    helpers.event = event_helper
+
+
+class FakeBus:
+    """Records event listeners so tests can fire Home Assistant's events."""
+
+    def __init__(self) -> None:
+        self.listeners: dict = {}
+
+    def async_listen(self, event_type, listener):
+        self.listeners.setdefault(event_type, []).append(listener)
+
+        def remove():
+            self.listeners[event_type].remove(listener)
+
+        return remove
+
+    def fire(self, event_type, data=None):
+        for listener in list(self.listeners.get(event_type, [])):
+            listener(data or {})
+
+
+class FakeHttp:
+    """Stand-in for hass.http, recording what would be served."""
+
+    def __init__(self) -> None:
+        self.static_paths: list = []
+
+    async def async_register_static_paths(self, configs):
+        self.static_paths.extend(configs)
+
+
 @pytest.fixture
 def hass():
     """A bare Home Assistant stand-in with the registries wired up."""
     instance = core.HomeAssistant()
     instance.states = FakeStates()
+    instance.http = FakeHttp()
+    instance.bus = FakeBus()
+    instance.timers = []
+    instance.tracked = []
     return instance
+
+
+class FakeConfigEntry:
+    """Just enough ConfigEntry for setup and unload."""
+
+    def __init__(self, options=None) -> None:
+        self.options = options or {}
+        self.data: dict = {}
+        self.entry_id = "hub"
+        self.domain = "floorplan_hub"
+        self._unloads: list = []
+
+    def async_on_unload(self, callback_):
+        self._unloads.append(callback_)
+
+    def add_update_listener(self, listener):
+        self.update_listener = listener
+        return lambda: None
 
 
 @pytest.fixture

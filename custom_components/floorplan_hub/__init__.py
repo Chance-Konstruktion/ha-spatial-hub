@@ -17,15 +17,27 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_AUTO_AREAS, DATA_HUB, DATA_STORE, DEFAULT_AUTO_AREAS, DOMAIN
+from .const import (
+    CONF_AUTO_AREAS,
+    CONF_PANEL,
+    DATA_HUB,
+    DATA_STORE,
+    DATA_WATCHER,
+    DEFAULT_AUTO_AREAS,
+    DEFAULT_PANEL,
+    DOMAIN,
+)
+from .frontend import async_register_panel, async_remove_panel
 from .hub import FloorplanHub
 from .registry import async_get_registrations
 from .storage import LayoutStore
+from .watch import ModelWatcher
 from .websocket import async_register as async_register_websocket
 
 _LOGGER = logging.getLogger(__name__)
 
 _DATA_WS_REGISTERED = f"{DOMAIN}_ws_registered"
+_DATA_PANEL = f"{DOMAIN}_panel_registered"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -43,9 +55,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hub.async_start()
     hass.data[DATA_HUB] = hub
 
+    # Follow the house: registry edits and the states of entities that are
+    # actually on the plan both refresh it, without anyone pressing reload.
+    watcher = ModelWatcher(hass, hub)
+    watcher.async_start()
+    hass.data[DATA_WATCHER] = watcher
+
     if not hass.data.get(_DATA_WS_REGISTERED):
         hass.data[_DATA_WS_REGISTERED] = True
         async_register_websocket(hass)
+
+    hass.data[_DATA_PANEL] = False
+    if entry.options.get(CONF_PANEL, DEFAULT_PANEL):
+        # A renderer that fails to register must not take the data layer
+        # with it -- the websocket API is the actual product here.
+        try:
+            await async_register_panel(hass)
+            hass.data[_DATA_PANEL] = True
+        except Exception:  # noqa: BLE001 - a missing sidebar is survivable
+            _LOGGER.exception("Floorplan-Hub could not register its panel")
 
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
@@ -62,6 +90,15 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
     if hub is None:
         return
     hub.auto_areas = bool(entry.options.get(CONF_AUTO_AREAS, DEFAULT_AUTO_AREAS))
+
+    wanted = bool(entry.options.get(CONF_PANEL, DEFAULT_PANEL))
+    if wanted != bool(hass.data.get(_DATA_PANEL)):
+        if wanted:
+            await async_register_panel(hass)
+        else:
+            async_remove_panel(hass)
+        hass.data[_DATA_PANEL] = wanted
+
     hub.async_notify("options")
 
 
@@ -71,8 +108,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     Providers keep their entry in hass.data: they are not ours to remove,
     and they must survive a hub reload without re-registering.
     """
+    watcher: ModelWatcher | None = hass.data.pop(DATA_WATCHER, None)
+    if watcher is not None:
+        watcher.async_stop()
     hub: FloorplanHub | None = hass.data.pop(DATA_HUB, None)
     if hub is not None:
         hub.async_stop()
     hass.data.pop(DATA_STORE, None)
+    if hass.data.pop(_DATA_PANEL, False):
+        async_remove_panel(hass)
     return True

@@ -144,6 +144,17 @@ sieht, und prüft die Dinge, die Grundrisse im Feld wirklich kaputt machen:
 
 Jeder Fehlschlag sagt nicht nur *was* falsch ist, sondern *warum es weh tut*.
 
+## Was du dafür bekommst
+
+Ohne eine weitere Zeile erscheint deine Integration im Panel des Hubs:
+eigene Ebene mit Ein/Aus-Schalter, Nodes auf der richtigen Etage im
+richtigen Bereich, Edges in Qualitätsfarbe, ein Popup mit all deinen
+Metadaten, deine Actions als Buttons, dein Verlauf als Kurve.
+
+Der Renderer kennt deinen Namen nicht und will ihn nicht kennen. Er färbt
+nach `state` und `quality`, zeichnet nach `icon` — deshalb bist du keine
+Sonderbehandlung wert und musst auch nie um eine bitten.
+
 ## Optional: History
 
 ```python

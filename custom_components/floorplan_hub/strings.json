@@ -15,10 +15,12 @@
       "init": {
         "title": "Floorplan-Hub options",
         "data": {
-          "auto_areas": "Arrange areas automatically"
+          "auto_areas": "Arrange areas automatically",
+          "panel": "Show the floor plan in the sidebar"
         },
         "data_description": {
-          "auto_areas": "Off: only areas you placed yourself are shown."
+          "auto_areas": "Off: areas you have not placed yourself wait in a tray instead of being arranged on a grid.",
+          "panel": "Off: the hub keeps serving its data, but brings no panel of its own."
         }
       }
     }

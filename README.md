@@ -14,13 +14,36 @@ einzige Zeile geändert wird.
 
 ## Status
 
-**Phase 1 + 2 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
-Event-System, Storage, Config-Flow und die komplette Websocket-API.
+**Phase 1–4 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
+Event-System, Storage, Config-Flow, die komplette Websocket-API, ein
+Renderer in der Seitenleiste — und ein Grundriss, der dem Haus von selbst
+folgt.
 
-Ein Renderer (Phase 3) ist noch nicht enthalten — das Modell lässt sich
-aber bereits vollständig über die Websocket-API abfragen, und
 [ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) ist als
-erster Provider angebunden.
+erster Provider angebunden. Der vollständige Plan steht in
+**[ROADMAP.md](ROADMAP.md)**.
+
+## Der Renderer
+
+Nach der Einrichtung steht **Floorplan** in der Seitenleiste. Kein
+Dashboard anlegen, keine Karte konfigurieren, kein YAML:
+
+- **Etagen** als Reiter, direkt aus der Floor-Registry
+- **Bereiche** als Räume, automatisch angeordnet
+- **Ebenen** einzeln ein-/ausschaltbar — die Auswahl wird gespeichert
+- **Nodes** mit Zustandsfarbe, Provider-Icon oder eigenem Inline-SVG
+- **Edges** mit Qualitätsfarbe, gestrichelt für Schätzungen, animiert für Fluss
+- **Popup** mit allen Metadaten, Verlauf und Actions (Actions nur für Admins)
+- **Diagnose** direkt im Panel: was jeder Provider geliefert hat, und was daran
+  beanstandet wurde
+
+Der Renderer ist ein reines ES-Modul: kein Build, kein npm, kein Bundle.
+Was im Repository liegt, führt der Browser aus. Er kennt **keine einzige
+Integration beim Namen** — Farben kommen aus `state` und `quality`, Formen
+aus `icon`, alles vom Provider geliefert. Ein Test hält das fest.
+
+Wer einen eigenen Renderer mitbringt, schaltet unseren in den Optionen ab.
+Der Hub liefert dann weiter seine Daten und nichts anderes.
 
 ## Architektur in einem Bild
 
@@ -46,6 +69,10 @@ weiter, wenn der Hub gar nicht installiert ist.
 | **Hub** | *wie* es angeordnet ist: Auto-Platzierung + Nutzerkorrekturen |
 | **Renderer** | *wie* es aussieht |
 
+Der mitgelieferte Renderer benutzt ausschließlich die dokumentierte
+Websocket-API — dieselbe, die auch eine 3D-Ansicht oder ein Druck-Export
+benutzen würde. Er hat keinen Sonderzugang.
+
 Ein Provider erfährt nie, dass der Nutzer seinen Node verschoben hat. Das
 gehört dem Hub und wird bei jedem Refresh neu angewendet.
 
@@ -59,6 +86,12 @@ will:
 2. Bereiche werden pro Stockwerk automatisch auf ein Raster gelegt
 3. Jeder Node landet in der Mitte seines Bereichs, mehrere werden gefächert
 4. Der Nutzer korrigiert nur das, was falsch liegt — einmalig, persistent
+
+Und es bleibt richtig. Wird ein Bereich umbenannt, eine Etage angelegt oder
+ein Gerät in einen anderen Raum verschoben, zieht der Grundriss nach; die
+Entities darauf sind live, unabhängig davon, wie langsam der Provider
+pollt, der sie benannt hat. Beobachtet wird dabei nur, was gerade zu sehen
+ist — schaut niemand hin, ist nichts zu aktualisieren.
 
 ## Eine Integration anbinden
 
@@ -128,7 +161,9 @@ python3 -m pytest
 ```
 
 Läuft ohne Home-Assistant-Installation — `tests/conftest.py` stubbt die
-benötigten Teile, wie in ha-powerline.
+benötigten Teile, wie in ha-powerline. Die Renderer-Logik wird von
+`tests/test_panel_logic.mjs` mitgeprüft (`node --test`); pytest ruft sie
+mit auf und überspringt sie, wenn kein Node installiert ist.
 
 ## Lizenz
 

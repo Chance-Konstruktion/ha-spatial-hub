@@ -33,6 +33,7 @@ API_VERSION: Final = 1
 # ── Internal hass.data keys ───────────────────────────────────────────
 DATA_HUB: Final = f"{DOMAIN}_hub"
 DATA_STORE: Final = f"{DOMAIN}_store"
+DATA_WATCHER: Final = f"{DOMAIN}_watcher"
 
 STORAGE_KEY: Final = f"{DOMAIN}.layout"
 STORAGE_VERSION: Final = 1
@@ -40,6 +41,18 @@ STORAGE_VERSION: Final = 1
 # ── Options ───────────────────────────────────────────────────────────
 CONF_AUTO_AREAS: Final = "auto_areas"
 DEFAULT_AUTO_AREAS: Final = True
+
+CONF_PANEL: Final = "panel"
+DEFAULT_PANEL: Final = True
+
+# ── Built-in renderer ─────────────────────────────────────────────────
+PANEL_URL_PATH: Final = "floorplan"
+PANEL_TITLE: Final = "Floorplan"
+PANEL_ICON: Final = "mdi:floor-plan"
+
+# Display ratio of the stage when a floor carries no `aspect` override.
+# Houses are wider than they are deep.
+DEFAULT_ASPECT: Final = 1.6
 
 # ── Spatial model defaults ────────────────────────────────────────────
 DEFAULT_Z_INDEX: Final = 10
