@@ -41,6 +41,18 @@ STORAGE_VERSION: Final = 1
 CONF_AUTO_AREAS: Final = "auto_areas"
 DEFAULT_AUTO_AREAS: Final = True
 
+CONF_PANEL: Final = "panel"
+DEFAULT_PANEL: Final = True
+
+# ── Built-in renderer ─────────────────────────────────────────────────
+PANEL_URL_PATH: Final = "floorplan"
+PANEL_TITLE: Final = "Floorplan"
+PANEL_ICON: Final = "mdi:floor-plan"
+
+# Display ratio of the stage when a floor carries no `aspect` override.
+# Houses are wider than they are deep.
+DEFAULT_ASPECT: Final = 1.6
+
 # ── Spatial model defaults ────────────────────────────────────────────
 DEFAULT_Z_INDEX: Final = 10
 DEFAULT_LAYER_OPACITY: Final = 1.0

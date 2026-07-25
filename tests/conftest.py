@@ -218,12 +218,70 @@ if not hasattr(websocket_api, "websocket_command"):
     components.websocket_api = websocket_api
 
 
+# -- homeassistant.components.frontend / http ---------------------------------
+frontend = _module("homeassistant.components.frontend")
+http = _module("homeassistant.components.http")
+if not hasattr(frontend, "async_register_built_in_panel"):
+
+    def async_register_built_in_panel(hass, component_name, **kwargs):
+        panels = hass.data.setdefault("_panels", {})
+        url_path = kwargs.get("frontend_url_path")
+        if url_path in panels:
+            raise ValueError(f"Overwriting panel {url_path}")
+        panels[url_path] = {"component_name": component_name, **kwargs}
+
+    def async_remove_panel(hass, url_path):
+        if url_path not in hass.data.get("_panels", {}):
+            raise ValueError(f"Unknown panel {url_path}")
+        del hass.data["_panels"][url_path]
+
+    frontend.async_register_built_in_panel = async_register_built_in_panel
+    frontend.async_remove_panel = async_remove_panel
+    components.frontend = frontend
+
+    class StaticPathConfig:
+        def __init__(self, url_path, path, cache_headers=True) -> None:
+            self.url_path, self.path, self.cache_headers = url_path, path, cache_headers
+
+    http.StaticPathConfig = StaticPathConfig
+    components.http = http
+
+
+class FakeHttp:
+    """Stand-in for hass.http, recording what would be served."""
+
+    def __init__(self) -> None:
+        self.static_paths: list = []
+
+    async def async_register_static_paths(self, configs):
+        self.static_paths.extend(configs)
+
+
 @pytest.fixture
 def hass():
     """A bare Home Assistant stand-in with the registries wired up."""
     instance = core.HomeAssistant()
     instance.states = FakeStates()
+    instance.http = FakeHttp()
     return instance
+
+
+class FakeConfigEntry:
+    """Just enough ConfigEntry for setup and unload."""
+
+    def __init__(self, options=None) -> None:
+        self.options = options or {}
+        self.data: dict = {}
+        self.entry_id = "hub"
+        self.domain = "floorplan_hub"
+        self._unloads: list = []
+
+    def async_on_unload(self, callback_):
+        self._unloads.append(callback_)
+
+    def add_update_listener(self, listener):
+        self.update_listener = listener
+        return lambda: None
 
 
 @pytest.fixture

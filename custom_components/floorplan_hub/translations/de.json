@@ -15,10 +15,12 @@
       "init": {
         "title": "Floorplan-Hub Optionen",
         "data": {
-          "auto_areas": "Bereiche automatisch anordnen"
+          "auto_areas": "Bereiche automatisch anordnen",
+          "panel": "Grundriss in der Seitenleiste zeigen"
         },
         "data_description": {
-          "auto_areas": "Aus: Es werden nur selbst platzierte Bereiche angezeigt."
+          "auto_areas": "Aus: Selbst nicht platzierte Bereiche warten in einer Ablage, statt im Raster angeordnet zu werden.",
+          "panel": "Aus: Der Hub liefert weiter seine Daten, bringt aber kein eigenes Panel mit."
         }
       }
     }
