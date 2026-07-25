@@ -114,6 +114,36 @@ Begründung, Exceptions, Timeouts — und vermutete Tippfehler in deiner
 Registrierung (`capabilties` statt `capabilities` wird gemeldet, nicht
 stillschweigend ignoriert).
 
+## Prüfen, ob es stimmt
+
+[`floorplan_hub_conformance.py`](./floorplan_hub_conformance.py) in deine
+Tests kopieren, eine Klasse schreiben, fertig:
+
+```python
+from .floorplan_hub_conformance import FakeHass, FloorplanHubConformance
+
+class TestFloorplanHub(FloorplanHubConformance):
+    def build_registration(self):
+        hass = FakeHass()
+        async_setup_my_provider(hass, entry, coordinator)
+        return hass.registrations["my_integration"]
+```
+
+**Braucht nur pytest** — kein Home Assistant, kein installierter Hub, kein
+Async-Plugin. Es läuft gegen dasselbe Registrierungs-Dict, das auch der Hub
+sieht, und prüft die Dinge, die Grundrisse im Feld wirklich kaputt machen:
+
+- **IDs, die sich zwischen zwei Polls ändern** — jede gespeicherte
+  Nutzerposition hängt an deinen Node-IDs. Ein Zähler oder Zeitstempel darin
+  wirft die Anordnung des Nutzers bei jedem Poll weg, still und leise.
+- **Metadaten, die kein JSON sind** — ein `datetime` reißt das Modell für
+  *alle* Provider mit runter, nicht nur für deinen.
+- Edges auf nicht existierende Nodes, doppelte IDs, Pixel- statt
+  normalisierte Koordinaten, privates `quality`-Vokabular, Actions ohne
+  Callable, Capabilities ohne Umsetzung, Tippfehler in Schlüsseln.
+
+Jeder Fehlschlag sagt nicht nur *was* falsch ist, sondern *warum es weh tut*.
+
 ## Optional: History
 
 ```python

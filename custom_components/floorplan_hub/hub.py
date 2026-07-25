@@ -249,11 +249,16 @@ class FloorplanHub:
             override = self.store.get("areas", area["id"])
             if override.get("hidden"):
                 continue
-            if not self.auto_areas and "position" not in override:
-                continue
             area = {**area, **{k: v for k, v in override.items() if k != "hidden"}}
             if "position" in override:
                 area["auto"] = False
+            elif not self.auto_areas:
+                # Hand-arrangement mode: no grid guess, but the area is
+                # still reported -- a user who has placed nothing must not
+                # be shown an empty house with no way back. Renderers put
+                # these in an "unplaced" tray to drag from.
+                area["position"] = None
+                area["unplaced"] = True
             merged.append(area)
         return merged
 

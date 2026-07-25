@@ -210,10 +210,26 @@ def test_provider_signals_reach_listeners(hass, hub):
 
 
 @pytest.mark.asyncio
-async def test_auto_areas_off_hides_unplaced_areas(hass, hub):
+async def test_auto_areas_off_marks_unplaced_areas_instead_of_hiding_them(hass, hub):
+    """A user who has placed nothing must not face an empty house."""
     _register(hass)
     hub.auto_areas = False
     hub.store.update("areas", "kueche", {"position": {"x": 0.2, "y": 0.2}})
 
-    model = await hub.async_model()
-    assert [area["id"] for area in model["areas"]] == ["kueche"]
+    areas = {area["id"]: area for area in (await hub.async_model())["areas"]}
+
+    assert set(areas) == {"wohnzimmer", "kueche", "schlafzimmer"}
+    assert areas["kueche"]["position"] == {"x": 0.2, "y": 0.2}
+    assert not areas["kueche"].get("unplaced")
+    assert areas["wohnzimmer"]["unplaced"] is True
+    assert areas["wohnzimmer"]["position"] is None, "no grid guess when off"
+
+
+@pytest.mark.asyncio
+async def test_nodes_still_get_placed_when_areas_are_unplaced(hass, hub):
+    """Node placement must not fall over on an area without a position."""
+    _register(hass)
+    hub.auto_areas = False
+
+    node = (await hub.async_model())["nodes"][0]
+    assert node["position"] is not None

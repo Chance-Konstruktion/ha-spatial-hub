@@ -87,6 +87,15 @@ Zustand stehen längst in Home Assistant; der Hub holt sie sich dort. Wer
 mehr zu sagen hat, nimmt die Builder `node()` / `edge()` / `action()` —
 alles Zusätzliche landet automatisch in den Metadaten und damit im Popup.
 
+**Und ein Conformance-Kit**, das Entwickler in ihre eigene Testsuite
+kopieren ([docs/floorplan_hub_conformance.py](docs/floorplan_hub_conformance.py)):
+eine Klasse, nur pytest als Abhängigkeit, kein Home Assistant und kein
+installierter Hub nötig. Es fängt die Fehler, die Grundrisse im Feld
+zerlegen — allen voran Node-IDs, die sich zwischen zwei Polls ändern und
+damit die gesamte Anordnung des Nutzers stillschweigend wegwerfen, und
+Metadaten, die sich nicht als JSON verschicken lassen und das Modell für
+*alle* Provider mitreißen.
+
 Provider-Code gilt dem Hub als nicht vertrauenswürdig: Wer eine Exception
 wirft, ins Timeout läuft oder Unsinn liefert, verliert seinen eigenen Layer
 für genau einen Refresh — und sonst passiert nichts. Damit das kein
