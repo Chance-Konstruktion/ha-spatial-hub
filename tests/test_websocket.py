@@ -129,3 +129,37 @@ def test_subscribe_pushes_a_reason_not_the_model(hass, hub, connection):
     connection.subscriptions[7]()
     hub.async_notify("layout")
     assert len(connection.messages) == 1
+
+
+async def test_diagnostics_tells_a_developer_what_went_wrong(hass, hub, connection):
+    hass.data["floorplan_hub_providers"]["broken"] = {
+        "provider_id": "broken",
+        "name": "Broken",
+        "capabilties": {"nodes": True},  # deliberate typo
+        "data": lambda: {"nodes": [{"no_id": True}]},
+    }
+
+    await ws.websocket_diagnostics(hass, connection, {"id": 1})
+    providers = connection.results[1]["providers"]
+
+    assert providers["demo"]["ok"] is True
+    assert providers["broken"]["nodes"] == 0
+    assert any("dropped node" in w for w in providers["broken"]["warnings"])
+    assert any(
+        "capabilties" in w for w in providers["broken"]["registration_warnings"]
+    ), "a typo must be reported, not silently ignored"
+
+
+async def test_diagnostics_reports_a_raising_provider(hass, hub, connection):
+    def explode():
+        raise RuntimeError("boom")
+
+    hass.data["floorplan_hub_providers"]["broken"] = {
+        "provider_id": "broken", "name": "Broken", "data": explode,
+    }
+
+    await ws.websocket_diagnostics(hass, connection, {"id": 1})
+    status = connection.results[1]["providers"]["broken"]
+
+    assert status["ok"] is False
+    assert "RuntimeError: boom" in status["error"]

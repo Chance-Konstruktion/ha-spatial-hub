@@ -62,28 +62,36 @@ will:
 
 ## Eine Integration anbinden
 
-Siehe **[docs/PROVIDER_API.md](docs/PROVIDER_API.md)** — Lesezeit fünf
-Minuten, Umsetzung etwa zehn. Kurzfassung:
+Siehe **[docs/PROVIDER_API.md](docs/PROVIDER_API.md)**. Die vollständige
+Anbindung ist ein Aufruf:
 
 ```python
-from .floorplan_hub_provider import FloorplanHubProvider   # kopierte Datei
+from .floorplan_hub_provider import floorplan_provider   # kopierte Datei
 
-provider = FloorplanHubProvider(
+floorplan_provider(
     hass,
-    provider_id="my_integration",
+    entry,
     name="My Integration",
     icon="mdi:flash",
-    capabilities={"nodes": True, "edges": True},
-    layers=[{"id": "my_layer", "name": "My Layer"}],
-    data=lambda: {"nodes": [...], "edges": [...]},
+    data=lambda: ["light.kitchen", "sensor.hallway_temperature"],
+    coordinator=coordinator,
 )
-provider.async_register()
-entry.async_on_unload(provider.async_unregister)
 ```
+
+Mehr ist nicht nötig. Der Aufruf registriert, meldet beim Entladen des
+Config-Entries wieder ab und benachrichtigt den Hub nach jedem
+Coordinator-Refresh — Register/Unregister/Notify schreibt niemand von Hand.
+
+**Eine Entity-ID ist ein vollständiger Node.** Name, Bereich, Icon und
+Zustand stehen längst in Home Assistant; der Hub holt sie sich dort. Wer
+mehr zu sagen hat, nimmt die Builder `node()` / `edge()` / `action()` —
+alles Zusätzliche landet automatisch in den Metadaten und damit im Popup.
 
 Provider-Code gilt dem Hub als nicht vertrauenswürdig: Wer eine Exception
 wirft, ins Timeout läuft oder Unsinn liefert, verliert seinen eigenen Layer
-für genau einen Refresh — und sonst passiert nichts.
+für genau einen Refresh — und sonst passiert nichts. Damit das kein
+Ratespiel wird, sagt `floorplan_hub/diagnostics` pro Provider, was verworfen
+wurde und warum, inklusive vermuteter Tippfehler in der Registrierung.
 
 ## Websocket-API
 
@@ -96,6 +104,7 @@ für genau einen Refresh — und sonst passiert nichts.
 | `floorplan_hub/layout/reset` | Overrides eines Objekts verwerfen |
 | `floorplan_hub/history` | Zeitreihe zu Node oder Edge |
 | `floorplan_hub/action` | Provider-Action ausführen (Admin) |
+| `floorplan_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
 
 ## Installation
 

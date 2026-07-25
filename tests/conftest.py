@@ -133,6 +133,67 @@ if not hasattr(area_registry, "async_get"):
     helpers.area_registry = area_registry
     helpers.floor_registry = floor_registry
 
+entity_registry = _module("homeassistant.helpers.entity_registry")
+device_registry = _module("homeassistant.helpers.device_registry")
+
+
+class FakeEntity:
+    def __init__(self, entity_id, name=None, original_name=None, icon=None,
+                 area_id=None, device_id=None) -> None:
+        self.entity_id, self.name, self.original_name = entity_id, name, original_name
+        self.icon, self.area_id, self.device_id = icon, area_id, device_id
+        self.original_icon = None
+
+
+class FakeDevice:
+    def __init__(self, device_id, area_id=None) -> None:
+        self.id, self.area_id = device_id, area_id
+
+
+class FakeState:
+    def __init__(self, state, **attributes) -> None:
+        self.state, self.attributes = state, attributes
+
+
+if not hasattr(entity_registry, "async_get"):
+
+    class _EntityRegistry:
+        def __init__(self) -> None:
+            self.entities: dict[str, FakeEntity] = {}
+
+        def async_get(self, entity_id):
+            return self.entities.get(entity_id)
+
+    class _DeviceRegistry:
+        def __init__(self) -> None:
+            self.devices: dict[str, FakeDevice] = {}
+
+        def async_get(self, device_id):
+            return self.devices.get(device_id)
+
+    entity_registry.async_get = lambda hass: hass.data.setdefault(
+        "_entity_registry", _EntityRegistry()
+    )
+    device_registry.async_get = lambda hass: hass.data.setdefault(
+        "_device_registry", _DeviceRegistry()
+    )
+    helpers.entity_registry = entity_registry
+    helpers.device_registry = device_registry
+
+
+class FakeStates:
+    """Stand-in for hass.states."""
+
+    def __init__(self) -> None:
+        self._states: dict[str, FakeState] = {}
+
+    def set(self, entity_id, state, **attributes):
+        self._states[entity_id] = FakeState(state, **attributes)
+
+    def get(self, entity_id):
+        return self._states.get(entity_id)
+
+
 # -- homeassistant.components.websocket_api -----------------------------------
 components = _module("homeassistant.components")
 websocket_api = _module("homeassistant.components.websocket_api")
@@ -161,6 +222,7 @@ if not hasattr(websocket_api, "websocket_command"):
 def hass():
     """A bare Home Assistant stand-in with the registries wired up."""
     instance = core.HomeAssistant()
+    instance.states = FakeStates()
     return instance
 
 

@@ -1,122 +1,128 @@
 # Provider API (v1)
 
-Everything an integration needs to appear on the floor plan. Reading time:
-about five minutes. Implementation time: about ten.
+Wie eine Integration auf den Grundriss kommt. Lesezeit: zwei Minuten.
 
-The hub never imports your integration and you never import the hub. The
-whole coupling is one dict in `hass.data` and three dispatcher signals.
-That means:
-
-- your integration works exactly the same when the hub is not installed
-- load order does not matter — whoever is first creates the dict
-- the hub can be updated, reloaded or removed without touching you
-
-## 1. Copy the shim
-
-Copy [`floorplan_hub_provider.py`](./floorplan_hub_provider.py) into your
-integration folder. Do not import it from the hub package.
-
-## 2. Register
+## Die Kurzfassung
 
 ```python
-from .floorplan_hub_provider import FloorplanHubProvider
+from .floorplan_hub_provider import floorplan_provider
 
-provider = FloorplanHubProvider(
+floorplan_provider(
     hass,
-    provider_id="my_integration",   # unique, stable, snake_case
+    entry,
     name="My Integration",
     icon="mdi:flash",
-    version="1.0.0",
-    capabilities={"nodes": True, "edges": True, "history": True},
-    layers=[{"id": "my_layer", "name": "My Layer", "icon": "mdi:flash",
-             "z_index": 20}],
-    data=build_spatial_payload,
+    data=lambda: ["light.kitchen", "sensor.hallway_temperature"],
+    coordinator=coordinator,
 )
-provider.async_register()
-entry.async_on_unload(provider.async_unregister)
 ```
 
-Call `provider.async_notify()` whenever your data changed (e.g. at the end
-of a coordinator refresh). The hub pushes a hint to connected cards, which
-then re-fetch. You never push data yourself.
+Das ist die vollständige Anbindung. Kein Frontend, kein Rendering, kein
+Config-Flow für Kartenoptionen, kein Registrieren/Abmelden/Benachrichtigen
+von Hand.
 
-## 3. Deliver data
+Was dieser eine Aufruf erledigt:
 
-`data` is a callable (sync or async) returning:
+- **registriert** den Provider beim Hub
+- **meldet ihn ab**, wenn dein Config-Entry entladen wird (via `entry.async_on_unload`)
+- **benachrichtigt den Hub nach jedem Coordinator-Refresh** — das ist es, was den Grundriss live macht
+- **leitet die `provider_id`** aus der Domain deines Entries ab
+- **leitet die Capabilities ab** aus dem, was du übergeben hast — vergisst du ein Flag, wird trotzdem nichts abgeschaltet
+
+## Vorbereitung
+
+[`floorplan_hub_provider.py`](./floorplan_hub_provider.py) in deinen
+Integrationsordner **kopieren**. Nicht importieren.
+
+Der Grund: Der Hub ist keine Abhängigkeit. Die Datei importiert nichts aus
+`floorplan_hub`, sie schreibt ein Dict in `hass.data` und feuert ein
+Dispatcher-Signal. Beides kostet nichts, wenn niemand zuhört. Deine
+Integration verhält sich ohne installierten Hub exakt wie vorher — und die
+Ladereihenfolge ist egal, weil beide Seiten das Dict anlegen können.
+
+## Nodes
+
+**Eine Entity-ID ist ein vollständiger Node.** Home Assistant kennt Name,
+Bereich, Icon und Zustand bereits — dich das wiederholen zu lassen, ist
+genau die Fleißarbeit, die dieses Projekt abschaffen will:
 
 ```python
-{
+data=lambda: ["light.kitchen", "sensor.hallway_temperature"]
+```
+
+Wenn du mehr zu sagen hast, nimm `node()`. Alles, was du zusätzlich
+übergibst, landet in den Metadaten und erscheint im Popup:
+
+```python
+from .floorplan_hub_provider import node, edge, action
+
+data=lambda: {
     "nodes": [
-        {
-            "id": "f5e0dc",                 # unique within your provider
-            "label": "Router EG",
-            "area_id": "wohnzimmer",        # HA area id — that is all the
-                                            # placement info the hub needs
-            "state": "online",              # online | offline | unknown | your own
-            "icon": "mdi:lan",              # or a key from your icon_set
-            "color": "#00ff00",
-            "entity_id": "sensor.router_eg",  # optional, enables more-info
-            "layer_id": "my_layer",         # optional, defaults to your first layer
-            "actions": [{"id": "reboot", "label": "Reboot", "confirm": True}],
-            "metadata": {"tx_rate": 560},   # free-form, shown in the popup
-        }
+        node("f5e0dc",
+             label="Router EG",
+             area_id="wohnzimmer",        # oder entity_id=... und der Hub holt ihn
+             state="online",
+             icon="mdi:lan",
+             actions=[action("reboot", "Neustart", confirm=True)],
+             tx_rate=560, firmware="1.2.3"),   # → Metadaten
     ],
     "edges": [
-        {
-            "id": "f5e0dc__f5dba7",
-            "source": "f5e0dc",             # your own node ids, not namespaced
-            "target": "f5dba7",
-            "value": 560,
-            "quality": "good",              # good | fair | poor | unknown
-            "width": 3,
-            "animated": True,
-            "metadata": {},
-        }
+        edge("f5e0dc", "f5dba7", value=560, quality="good", animated=True),
     ],
 }
 ```
 
-Optional keys on a node: `floor_id`, `position` (`{"x": 0.25, "y": 0.6}` in
-normalised 0..1 floor coordinates). **Leave `position` out** unless you
-genuinely know where the device is — the hub places it in the centre of its
-area, and the user drags it from there. Positions the user sets are stored
-in the hub and never sent back to you.
+Plain Dicts funktionieren genauso — die Builder existieren nur, damit ein
+Tippfehler im Schlüsselnamen ein `TypeError` an der Aufrufstelle ist statt
+ein stillschweigend fehlendes Label.
 
-Ids are namespaced by the hub (`my_integration:f5e0dc`), so two providers
-can both have a node called `router` without colliding. Use your own plain
-ids everywhere in your payload.
+### Positionen: gib keine an
 
-### Robustness
+Es sei denn, du weißt wirklich, wo das Gerät hängt. Der Hub setzt jeden
+Node in die Mitte seines Bereichs, der Nutzer zieht ihn von dort weg, und
+diese Position gehört ab dann dem Hub. Du erfährst nie davon — und musst
+sie auch nie speichern.
 
-The hub treats provider code as untrusted: a `data` call that raises, times
-out (10 s) or returns nonsense costs your layer for that one refresh and
-nothing else. A single malformed node is dropped, not the whole payload. So
-prefer returning partial data over raising.
+### Zustände
 
-## 4. Capabilities
+`online` / `offline` / `unknown` sind das gemeinsame Vokabular, aber du
+darfst alles schicken. `heating`, `docked`, `dimmed` bedeuten deinem Layer
+etwas, und der Hub plättet sie nicht. Nur `unavailable`/`unknown` von
+Entities werden zu `unknown` vereinheitlicht.
 
-Describe yourself; the hub switches features on accordingly and never
-special-cases your integration by name.
+### Edges
 
-| Capability | Meaning |
-|---|---|
-| `nodes` | you deliver nodes (nearly everyone) |
-| `edges` | you deliver connections between nodes |
-| `history` | your `history` callable serves time series |
-| `animation` | your edges/nodes are meant to be animated |
-| `popup` | your metadata is worth a detail popup |
-| `actions` | your `action` callable can be invoked |
-| `custom_icons` | you ship an `icon_set` |
+`quality` ist `good` / `fair` / `poor` / `unknown` — dieselbe Sprache über
+alle Provider hinweg, damit ein Renderer deine Kanten einfärben kann, ohne
+zu wissen, was sie bedeuten. `dashed` für Schätzungen, `animated` für Fluss.
 
-## 5. Optional: history
+## Robustheit: dein Code gilt als nicht vertrauenswürdig
+
+Ein `data`-Aufruf, der eine Exception wirft, ins Timeout läuft (10 s) oder
+Unsinn liefert, kostet **deinen** Layer für genau einen Refresh — sonst
+passiert nichts. Ein einzelner kaputter Node fliegt raus, nicht der ganze
+Payload. Liefere also lieber unvollständige Daten als eine Exception.
+
+Damit das kein Ratespiel wird, sagt dir der Hub, was er verworfen hat:
+
+```js
+await hass.connection.sendMessagePromise({ type: "floorplan_hub/diagnostics" })
+```
+
+Pro Provider: Anzahl gelieferter Nodes/Edges, verworfene Objekte mit
+Begründung, Exceptions, Timeouts — und vermutete Tippfehler in deiner
+Registrierung (`capabilties` statt `capabilities` wird gemeldet, nicht
+stillschweigend ignoriert).
+
+## Optional: History
 
 ```python
 def history(kind: str, item_id: str, hours: float) -> list[dict]:
-    """kind is "node" or "edge"; item_id is YOUR id, already un-namespaced."""
-    return [{"t": "2026-07-25T20:00:00+02:00", "value": 560}, ...]
+    """kind ist "node" oder "edge"; item_id ist DEINE id, ohne Namespace."""
+    return [{"t": "2026-07-25T20:00:00+02:00", "value": 560}]
 ```
 
-## 6. Optional: actions
+## Optional: Actions
 
 ```python
 async def action(kind: str, item_id: str, action_id: str, data: dict) -> dict:
@@ -125,10 +131,10 @@ async def action(kind: str, item_id: str, action_id: str, data: dict) -> dict:
     return {"success": True}
 ```
 
-The hub forwards without interpreting — "toggle" means whatever you decide.
-Actions require an admin user.
+Der Hub leitet weiter, ohne zu interpretieren — was „toggle" bedeutet,
+entscheidest du. Actions erfordern einen Admin-Nutzer.
 
-## 7. Optional: custom icons
+## Optional: eigene Icons
 
 ```python
 icon_set={
@@ -137,24 +143,49 @@ icon_set={
 }
 ```
 
-Reference a key by name in a node's `icon`. Renderers fall back to MDI when
-they don't support inline SVG.
+Im `icon`-Feld eines Nodes per Schlüsselname referenzieren. Renderer, die
+kein Inline-SVG können, fallen auf MDI zurück.
 
-## Websocket API (for renderers)
+## Capabilities
 
-| Command | Purpose |
+Beschreibe dich selbst; der Hub schaltet Funktionen danach frei und
+behandelt nie eine Integration namentlich als Sonderfall. Übergibst du
+nichts, wird abgeleitet: `history` und `actions` an, wenn du die Callables
+mitgibst, `custom_icons` an, wenn du ein `icon_set` mitschickst.
+
+| Capability | Bedeutung |
 |---|---|
-| `floorplan_hub/model` | the complete spatial model |
-| `floorplan_hub/providers` | who is registered, and their capabilities |
-| `floorplan_hub/subscribe` | push hint when anything changed |
-| `floorplan_hub/layout/set` | persist one piece of the user's arrangement |
-| `floorplan_hub/layout/reset` | drop overrides for one item |
-| `floorplan_hub/history` | time series for one node/edge |
-| `floorplan_hub/action` | run a provider action (admin) |
+| `nodes` | du lieferst Nodes |
+| `edges` | du lieferst Verbindungen |
+| `history` | dein `history`-Callable liefert Zeitreihen |
+| `animation` | deine Edges/Nodes sind zum Animieren gedacht |
+| `popup` | deine Metadaten lohnen ein Detail-Popup |
+| `actions` | dein `action`-Callable ist aufrufbar |
+| `custom_icons` | du lieferst ein `icon_set` |
 
-`history` and `action` address an item with `item_id` (the namespaced
-`provider:local` id) — not `id`, which the websocket protocol reserves for
-the message itself.
+## IDs
 
-In `layout/set`, a `null` value clears an override and restores the
-automatic placement — that is how "reset to auto" is expressed.
+Der Hub namespaced deine IDs (`powerline:f5e0dc`), damit zwei Provider
+beide einen Node „router" haben dürfen. In deinem Payload benutzt du
+durchgehend deine eigenen, schlichten IDs — auch in `source`/`target` von
+Edges. In `history`/`action` bekommst du sie ebenfalls ohne Namespace
+zurück.
+
+## Websocket-API (für Renderer)
+
+| Command | Zweck |
+|---|---|
+| `floorplan_hub/model` | das komplette räumliche Modell |
+| `floorplan_hub/providers` | wer registriert ist, und was er kann |
+| `floorplan_hub/subscribe` | Push-Hinweis bei Änderungen |
+| `floorplan_hub/layout/set` | Nutzeranordnung speichern |
+| `floorplan_hub/layout/reset` | Overrides eines Objekts verwerfen |
+| `floorplan_hub/history` | Zeitreihe zu Node oder Edge |
+| `floorplan_hub/action` | Provider-Action ausführen (Admin) |
+| `floorplan_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
+
+`history` und `action` adressieren über `item_id` (die genamespacte ID) —
+nicht über `id`, das im HA-Websocket-Protokoll der Message gehört.
+
+In `layout/set` löscht ein `null`-Wert ein Override und stellt die
+automatische Platzierung wieder her — so wird „Reset" ausgedrückt.

@@ -55,11 +55,13 @@ async def test_ids_are_namespaced_per_provider():
             }
         )
     )
-    nodes, edges = await provider.async_fetch()
-    assert [node.id for node in nodes] == ["demo:router", "demo:peer"]
-    assert (edges[0].source, edges[0].target) == ("demo:router", "demo:peer")
-    assert nodes[0].metadata["provider_id"] == "demo"
-    assert nodes[0].metadata["layer_id"] == "demo_layer"
+    result = await provider.async_fetch()
+    assert [node.id for node in result.nodes] == ["demo:router", "demo:peer"]
+    assert (result.edges[0].source, result.edges[0].target) == (
+        "demo:router", "demo:peer"
+    )
+    assert result.nodes[0].metadata["provider_id"] == "demo"
+    assert result.nodes[0].metadata["layer_id"] == "demo_layer"
 
 
 @pytest.mark.asyncio
@@ -68,7 +70,12 @@ async def test_raising_provider_costs_only_its_own_layer():
         raise RuntimeError("boom")
 
     provider = Provider.from_registration(_registration(data=explode))
-    assert await provider.async_fetch() == ([], [])
+    result = await provider.async_fetch()
+
+    assert (result.nodes, result.edges) == ([], [])
+    assert "RuntimeError: boom" in result.error, (
+        "the developer must be able to see why their layer went empty"
+    )
 
 
 @pytest.mark.asyncio
@@ -76,14 +83,46 @@ async def test_broken_items_are_dropped_not_the_payload():
     provider = Provider.from_registration(
         _registration(
             data=lambda: {
-                "nodes": [{"id": "good"}, {"no_id": True}, "garbage"],
+                "nodes": [{"id": "good"}, {"no_id": True}, 42],
                 "edges": [{"source": "good"}],  # no target
             }
         )
     )
-    nodes, edges = await provider.async_fetch()
-    assert [node.id for node in nodes] == ["demo:good"]
-    assert edges == []
+    result = await provider.async_fetch()
+
+    assert [node.id for node in result.nodes] == ["demo:good"]
+    assert result.edges == []
+    assert len(result.warnings) == 3, "each dropped item is reported"
+
+
+@pytest.mark.asyncio
+async def test_a_bare_entity_id_is_a_complete_node():
+    """The shortest possible node definition -- HA knows the rest."""
+    provider = Provider.from_registration(
+        _registration(data=lambda: {"nodes": ["light.kitchen"]})
+    )
+    result = await provider.async_fetch()
+
+    assert result.nodes[0].id == "demo:light.kitchen"
+    assert result.nodes[0].entity_id == "light.kitchen"
+    assert result.warnings == []
+
+
+@pytest.mark.asyncio
+async def test_a_bare_list_of_nodes_is_a_valid_payload():
+    provider = Provider.from_registration(
+        _registration(data=lambda: ["light.kitchen", {"id": "b"}])
+    )
+    result = await provider.async_fetch()
+
+    assert [node.id for node in result.nodes] == ["demo:light.kitchen", "demo:b"]
+
+
+@pytest.mark.asyncio
+async def test_typos_in_the_registration_are_reported():
+    provider = Provider.from_registration(_registration(capabilties={"nodes": True}))
+
+    assert any("capabilties" in warning for warning in provider.warnings)
 
 
 @pytest.mark.asyncio
@@ -92,8 +131,8 @@ async def test_async_data_callable_is_awaited():
         return {"nodes": [{"id": "a"}]}
 
     provider = Provider.from_registration(_registration(data=data))
-    nodes, _ = await provider.async_fetch()
-    assert nodes[0].id == "demo:a"
+    result = await provider.async_fetch()
+    assert result.nodes[0].id == "demo:a"
 
 
 def test_load_providers_skips_the_invalid_ones(hass):

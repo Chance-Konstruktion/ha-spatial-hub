@@ -20,6 +20,7 @@ from .const import (
     SIGNAL_DATA_UPDATED,
     SIGNAL_PROVIDER_REGISTERED,
     SIGNAL_PROVIDER_REMOVED,
+    STATE_UNKNOWN,
 )
 from .models import Edge, Node, Position
 from .registry import Provider, async_load_providers
@@ -37,6 +38,10 @@ class FloorplanHub:
         # When off, areas are not auto-arranged into a grid: only the ones
         # the user placed by hand appear.
         self.auto_areas = True
+        # What each provider delivered last time, for the diagnostics
+        # command -- a developer should never have to guess why their layer
+        # came out empty.
+        self._status: dict[str, dict[str, Any]] = {}
         self._listeners: list[Callable[[str], None]] = []
         self._unsubscribes: list[Callable[[], None]] = []
 
@@ -135,12 +140,17 @@ class FloorplanHub:
         icon_sets: dict[str, Any] = {}
 
         for provider in providers.values():
-            provider_nodes, provider_edges = await provider.async_fetch()
-            nodes.extend(provider_nodes)
-            edges.extend(provider_edges)
+            result = await provider.async_fetch()
+            self._enrich_from_entities(result.nodes)
+            nodes.extend(result.nodes)
+            edges.extend(result.edges)
             layers.extend(layer.as_dict() for layer in provider.layers)
             if provider.icon_set:
                 icon_sets[provider.id] = provider.icon_set
+            self._status[provider.id] = {
+                **result.as_status(),
+                "registration_warnings": provider.warnings,
+            }
 
         discovery.async_place_nodes(self.hass, nodes, areas)
 
@@ -163,6 +173,31 @@ class FloorplanHub:
             "providers": [provider.as_dict() for provider in providers.values()],
             "icon_sets": icon_sets,
         }
+
+    def _enrich_from_entities(self, nodes: list[Node]) -> None:
+        """Fill blanks on entity-backed nodes from Home Assistant itself.
+
+        Naming an entity is the shortest possible node definition, so it has
+        to be enough: label, area, icon and state all come from the
+        registries. Whatever the provider stated itself is left alone --
+        it knows its own hardware better than the registry does.
+        """
+        for node in nodes:
+            if not node.entity_id:
+                continue
+            defaults = discovery.async_entity_defaults(self.hass, node.entity_id)
+            # Ids are namespaced by now; the label defaulted to the local one.
+            if node.label in ("", node.id, node.id.split(":", 1)[-1]):
+                node.label = defaults.get("label", node.label)
+            if not node.area_id:
+                node.area_id = defaults.get("area_id")
+            if not node.icon:
+                node.icon = defaults.get("icon", "")
+            if node.state == STATE_UNKNOWN and "state" in defaults:
+                node.state = defaults["state"]
+            # Entity attributes go underneath the provider's own metadata:
+            # a provider that measured something means it.
+            node.metadata = {**defaults.get("metadata", {}), **node.metadata}
 
     def _apply_node_layout(self, node: Node) -> dict[str, Any]:
         override = self.store.get("nodes", node.id)
@@ -223,6 +258,11 @@ class FloorplanHub:
         return merged
 
     # ── Pass-through to providers ─────────────────────────
+
+    @property
+    def status(self) -> dict[str, dict[str, Any]]:
+        """Per-provider diagnostics from the last model build."""
+        return self._status
 
     async def async_history(
         self, kind: str, item_id: str, hours: float
