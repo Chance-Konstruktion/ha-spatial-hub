@@ -88,6 +88,7 @@ const model = (overrides = {}) => ({
   api_version: 1,
   hidden: { nodes: [], areas: [] },
   theme: theme(),
+  custom_layers: [],
   floors: [
     { id: "eg", name: "Erdgeschoss", level: 0, icon: "" },
     { id: "og", name: "Obergeschoss", level: 1, icon: "" },
@@ -643,4 +644,128 @@ test("the dialog offers a colour per word of the vocabulary", () => {
     assert.match(html, new RegExp(`data-quality-color="${word}"`));
   }
   assert.match(html, /data-reset-theme/, "and a way back to the default");
+});
+
+
+// ── Custom layers ──────────────────────────────────────────
+
+test("custom layers are an editing concern, not a viewing one", () => {
+  const view = panel(model({ custom_layers: [{ id: "l1", name: "Lichter" }] }));
+  assert.equal(view._customLayersHtml(), "");
+  view._edit = true;
+  assert.match(view._customLayersHtml(), /data-edit-layer="l1"/);
+  assert.match(view._customLayersHtml(), /data-new-layer/);
+});
+
+test("a new layer gets an id that cannot collide with an existing one", () => {
+  const view = panel(model({ custom_layers: [{ id: "l1", name: "A" }] }),
+                     { edit: true });
+  view._render = () => {};
+  view._facets = { domains: [], labels: [], device_classes: [] };
+  view._openLayerDialog(null);
+
+  assert.ok(view._layerDialog._isNew);
+  assert.notEqual(view._layerDialog.id, "l1");
+});
+
+test("editing a layer starts from a copy, so cancelling really cancels", () => {
+  const stored = { id: "l1", name: "Lichter", domains: ["light"] };
+  const view = panel(model({ custom_layers: [stored] }), { edit: true });
+  view._render = () => {};
+  view._facets = { domains: [], labels: [], device_classes: [] };
+  view._openLayerDialog("l1");
+
+  view._layerDialog.name = "Etwas anderes";
+  view._layerDialog = null;
+
+  assert.equal(stored.name, "Lichter");
+});
+
+test("a facet chip toggles rather than only adding", () => {
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._layerDialog = { id: "l1", name: "A", domains: [] };
+
+  const chip = element({ "data-facet": "domains", "data-value": "light" });
+  view._onClick(pointer(0, 0, { target: [chip] }));
+  assert.deepEqual(view._layerDialog.domains, ["light"]);
+
+  view._onClick(pointer(0, 0, { target: [chip] }));
+  assert.deepEqual(view._layerDialog.domains, []);
+});
+
+test("saving writes the whole list, with the empty criteria dropped", () => {
+  const view = panel(model({ custom_layers: [{ id: "other", name: "Andere" }] }),
+                     { edit: true });
+  view._layerDialog = {
+    id: "l1", name: "Lichter", domains: ["light"], areas: [], labels: [],
+    _isNew: true,
+  };
+  view._saveLayer();
+
+  const [[section, key, values]] = view._written;
+  assert.equal(section, "settings");
+  assert.equal(key, "view");
+  assert.deepEqual(values.custom_layers, [
+    { id: "other", name: "Andere" },
+    { id: "l1", name: "Lichter", domains: ["light"] },
+  ]);
+  assert.equal(view._layerDialog, null, "the dialog closes on save");
+});
+
+test("an unnamed layer still gets a name rather than an empty row", () => {
+  const view = panel(model(), { edit: true });
+  view._layerDialog = { id: "l1", name: "", domains: ["light"], _isNew: true };
+  view._saveLayer();
+  assert.equal(view._written[0][2].custom_layers[0].name, "Eigene Ebene");
+});
+
+test("editing replaces the layer instead of duplicating it", () => {
+  const view = panel(model({ custom_layers: [{ id: "l1", name: "Alt" }] }),
+                     { edit: true });
+  view._layerDialog = { id: "l1", name: "Neu", domains: ["light"] };
+  view._saveLayer();
+
+  const written = view._written[0][2].custom_layers;
+  assert.equal(written.length, 1);
+  assert.equal(written[0].name, "Neu");
+});
+
+test("deleting removes only that layer", () => {
+  const view = panel(model({
+    custom_layers: [{ id: "l1", name: "A" }, { id: "l2", name: "B" }],
+  }), { edit: true });
+  view._layerDialog = { id: "l1", name: "A" };
+  view._deleteLayer();
+
+  assert.deepEqual(view._written[0][2].custom_layers, [{ id: "l2", name: "B" }]);
+});
+
+test("entity lists are typed as text and stored as a list", () => {
+  const view = panel(model(), { edit: true });
+  view._layerDialog = { id: "l1", name: "A" };
+  view._onInput({ target: {
+    value: " sensor.a , light.b ,, ",
+    getAttribute: (n) => (n === "data-layer-field" ? "entities" : null),
+  } }, false);
+
+  assert.deepEqual(view._layerDialog.entities, ["sensor.a", "light.b"]);
+  assert.deepEqual(view._written, [], "typing is not a round trip per keystroke");
+});
+
+test("the dialog offers the facets the house actually has", () => {
+  const view = panel(model(), { edit: true });
+  view._facets = {
+    domains: [{ value: "light", count: 12 }],
+    labels: [{ value: "security", count: 3 }],
+    device_classes: [],
+  };
+  view._layerDialog = { id: "l1", name: "A", domains: ["light"] };
+  const html = view._layerDialogHtml();
+
+  assert.match(html, /data-value="light"/);
+  assert.match(html, /data-value="security"/);
+  assert.match(html, /data-facet="areas"/, "and the areas from the model");
+  assert.match(html, /chip on" data-facet="domains"\s+data-value="light"/,
+               "what is already selected shows as selected");
 });

@@ -224,6 +224,7 @@ zurück.
 | `floorplan_hub/history` | Zeitreihe zu Node oder Edge |
 | `floorplan_hub/action` | Provider-Action ausführen (Admin) |
 | `floorplan_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
+| `floorplan_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
 
 Das Modell enthält unter `theme` die fertig aufgelösten Farben für die
 Zustands- und Qualitätswörter, unter `hidden` die vom Nutzer ausgeblendeten

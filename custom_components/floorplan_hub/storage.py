@@ -11,7 +11,7 @@ Stored shape::
         "layers": {"<layer_id>": {"visible": bool, "z_index": int, ...}},
         "floors": {"<floor_id>": {"background": "data:...", "aspect": 1.4}},
         "areas":  {"<area_id>": {"position": {...}}},
-        "settings": {"view": {"theme": {...}}},
+        "settings": {"view": {"theme": {...}, "custom_layers": [...]}},
     }
 """
 
@@ -32,7 +32,7 @@ _LAYER_KEYS = {"visible", "z_index", "opacity"}
 _FLOOR_KEYS = {"background", "aspect", "name", "order"}
 _AREA_KEYS = {"position", "size", "color", "hidden"}
 # View-wide settings rather than one item's arrangement. One key, "view".
-_SETTINGS_KEYS = {"theme"}
+_SETTINGS_KEYS = {"theme", "custom_layers"}
 
 _SECTIONS = {
     "nodes": _NODE_KEYS,

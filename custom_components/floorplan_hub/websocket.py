@@ -13,6 +13,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
 from .const import API_VERSION, DATA_HUB, DOMAIN, MAX_BACKGROUND_BYTES
+from .generic import async_facets
 from .hub import FloorplanHub
 
 _COLOUR = vol.All(str, vol.Length(max=64))
@@ -32,6 +33,25 @@ _THEME_SCHEMA = {
     vol.Optional("edge_style"): vol.In(["straight", "curved"]),
     vol.Optional("room_style"): vol.In(["outline", "filled", "none"]),
 }
+
+_NAMES = [vol.All(str, vol.Length(max=128))]
+
+# A custom layer is a *rule*, not a list: "all the lights" stays right when
+# a lamp is added next month.
+_CUSTOM_LAYER_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): vol.All(str, vol.Length(min=1, max=64)),
+        vol.Required("name"): vol.All(str, vol.Length(max=128)),
+        vol.Optional("icon"): vol.All(str, vol.Length(max=64)),
+        vol.Optional("domains"): _NAMES,
+        vol.Optional("areas"): _NAMES,
+        vol.Optional("labels"): _NAMES,
+        vol.Optional("device_classes"): _NAMES,
+        vol.Optional("entities"): _NAMES,
+        vol.Optional("exclude"): _NAMES,
+        vol.Optional("z_index"): vol.Coerce(int),
+    }
+)
 
 _SIZE_SCHEMA = {
     vol.Required("width"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=2)),
@@ -57,6 +77,7 @@ def async_register(hass: HomeAssistant) -> None:
         websocket_action,
         websocket_subscribe,
         websocket_diagnostics,
+        websocket_facets,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -99,6 +120,9 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
         vol.Required("key"): str,
         vol.Required("values"): {
             vol.Optional("theme"): vol.Any(None, _THEME_SCHEMA),
+            vol.Optional("custom_layers"): vol.Any(
+                None, vol.All([_CUSTOM_LAYER_SCHEMA], vol.Length(max=25))
+            ),
             vol.Optional("position"): vol.Any(None, _POSITION_SCHEMA),
             vol.Optional("size"): vol.Any(None, _SIZE_SCHEMA),
             vol.Optional("label_offset"): vol.Any(None, dict),
@@ -274,3 +298,14 @@ async def websocket_diagnostics(hass: HomeAssistant, connection, msg: dict) -> N
             },
         },
     )
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/entities/facets"})
+@callback
+def websocket_facets(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Domains, labels and device classes that actually exist here.
+
+    For building a custom layer's rule against what the house really has,
+    rather than against a guessed list of integration names.
+    """
+    connection.send_result(msg["id"], async_facets(hass))

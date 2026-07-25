@@ -14,10 +14,11 @@ einzige Zeile geändert wird.
 
 ## Status
 
-**Phase 1–6 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
+**Phase 1–7 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
 Event-System, Storage, Config-Flow, die komplette Websocket-API, ein
 Renderer in der Seitenleiste, ein Grundriss, der dem Haus von selbst folgt,
-ein Edit-Modus für alles, was die Automatik falsch geraten hat, und Themes.
+ein Edit-Modus für alles, was die Automatik falsch geraten hat, Themes — und
+eigene Ebenen für jede Integration, die nie einen Adapter schreiben wird.
 
 [ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) ist als
 erster Provider angebunden. Der vollständige Plan steht in
@@ -101,6 +102,26 @@ Entities darauf sind live, unabhängig davon, wie langsam der Provider
 pollt, der sie benannt hat. Beobachtet wird dabei nur, was gerade zu sehen
 ist — schaut niemand hin, ist nichts zu aktualisieren.
 
+## Ohne Adapter: eigene Ebenen
+
+Die meisten Integrationen werden nie einen Floorplan-Hub-Provider
+schreiben. Das ist kein Versäumnis, sondern der Normalfall — und eine
+Plattform, die nur für die Eingeweihten funktioniert, funktioniert nicht.
+
+Also beschreibt der Nutzer stattdessen eine Ebene: *„alle Lichter"*,
+*„alles mit Label security"*, *„diese vier Entitäten"*. Im Bearbeiten-Modus,
+Seitenleiste, **+ Ebene**.
+
+Eine **Regel, keine Liste**: „alle Lichter" stimmt auch noch, wenn nächsten
+Monat eine Lampe dazukommt — aus demselben Grund, aus dem Stockwerke und
+Bereiche aus den Registries kommen und nicht aus einem Zeichenprogramm.
+
+Und der entscheidende Teil: Diese Ebenen registrieren sich über **denselben
+öffentlichen Provider-Vertrag** wie jeder Fremde. Kein Sonderweg in den Hub,
+dieselbe Validierung, dieselbe Fehler-Isolierung. Ein Test hält das fest —
+eine Abkürzung an dieser Stelle wäre der erste Riss in dem, was den Hub
+überhaupt wertvoll macht.
+
 ## Eine Integration anbinden
 
 Siehe **[docs/PROVIDER_API.md](docs/PROVIDER_API.md)**. Die vollständige
@@ -155,6 +176,7 @@ wurde und warum, inklusive vermuteter Tippfehler in der Registrierung.
 | `floorplan_hub/history` | Zeitreihe zu Node oder Edge |
 | `floorplan_hub/action` | Provider-Action ausführen (Admin) |
 | `floorplan_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
+| `floorplan_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
 
 Unter `theme` steht das aufgelöste Theme — Preset plus Nutzerkorrekturen,
 fertig ausgerechnet. Ein zweiter Renderer bekommt damit dieselben Farben,
@@ -176,7 +198,8 @@ installieren, Home Assistant neu starten, unter *Geräte & Dienste* →
 python3 -m pytest
 ```
 
-Läuft ohne Home-Assistant-Installation — `tests/conftest.py` stubbt die
+Läuft in der CI bei jedem Pull Request (pytest, HACS, hassfest) und lokal
+ohne Home-Assistant-Installation — `tests/conftest.py` stubbt die
 benötigten Teile, wie in ha-powerline. Die Renderer-Logik wird von
 `tests/test_panel_logic.mjs` mitgeprüft (`node --test`); pytest ruft sie
 mit auf und überspringt sie, wenn kein Node installiert ist.

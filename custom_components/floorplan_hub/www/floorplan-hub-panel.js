@@ -69,6 +69,8 @@ class FloorplanHubPanel extends HTMLElement {
     this._dragged = false; // suppresses the click that follows a drag
     this._floorDialog = false;
     this._themeDialog = false;
+    this._layerDialog = null; // the custom layer being written
+    this._facets = null;
   }
 
   get _canEdit() {
@@ -319,6 +321,7 @@ class FloorplanHubPanel extends HTMLElement {
       ${this._showDiagnostics ? this._diagnosticsHtml() : ""}
       ${this._floorDialog ? this._floorDialogHtml() : ""}
       ${this._themeDialog ? this._themeDialogHtml() : ""}
+      ${this._layerDialog ? this._layerDialogHtml() : ""}
       ${this._popupHtml()}
     `;
   }
@@ -602,9 +605,179 @@ class FloorplanHubPanel extends HTMLElement {
       <h3>Ebenen</h3>
       <div class="rows">${layers || '<p class="note">Keine Ebenen.</p>'}</div>
       ${tray}
+      ${this._customLayersHtml()}
       ${this._hiddenTrayHtml()}
       <h3>Provider</h3>
       <ul class="providers">${providers}</ul>`;
+  }
+
+  get _customLayers() {
+    return (this._model && this._model.custom_layers) || [];
+  }
+
+  _customLayersHtml() {
+    if (!this._edit) return "";
+    const layers = this._customLayers
+      .map(
+        (layer) => `
+        <button class="row" data-edit-layer="${escapeHtml(layer.id)}">
+          <ha-icon icon="${escapeHtml(layer.icon || "mdi:shape-outline")}"></ha-icon>
+          <span>${escapeHtml(layer.name || layer.id)}</span>
+        </button>`,
+      )
+      .join("");
+    return `
+      <h3>Eigene Ebenen</h3>
+      <p class="note">Beschreibe, was auf den Grundriss soll — die
+      Integration dahinter spielt keine Rolle und wird nie gefragt.</p>
+      <div class="rows">${layers}</div>
+      <button class="chip" data-new-layer="1">+ Ebene</button>`;
+  }
+
+  _layerDialogHtml() {
+    const layer = this._layerDialog;
+    const facets = this._facets || { domains: [], labels: [], device_classes: [] };
+
+    const chips = (field, options, empty) =>
+      options.length
+        ? `<div class="chips">
+             ${options
+               .map(
+                 ({ value, count, label }) => `
+               <button class="chip ${
+                 (layer[field] || []).includes(value) ? "on" : ""
+               }" data-facet="${escapeHtml(field)}"
+                  data-value="${escapeHtml(value)}">
+                 ${escapeHtml(label || value)}${
+                   count ? ` <span class="muted">${count}</span>` : ""
+                 }
+               </button>`,
+               )
+               .join("")}
+           </div>`
+        : `<p class="note">${empty}</p>`;
+
+    const areas = (this._model.areas || []).map((area) => ({
+      value: area.id,
+      label: area.name,
+    }));
+
+    return `
+      <div class="scrim" data-close-layer="1"></div>
+      <div class="popup">
+        <div class="popup-head">
+          <h2>${layer._isNew ? "Neue Ebene" : "Ebene bearbeiten"}</h2>
+          <button class="icon-btn" data-close-layer="1">
+            <ha-icon icon="mdi:close"></ha-icon>
+          </button>
+        </div>
+        <label class="field">
+          <span>Name</span>
+          <input type="text" value="${escapeHtml(layer.name || "")}"
+                 data-layer-field="name" placeholder="Lichter">
+        </label>
+        <label class="field">
+          <span>Icon</span>
+          <input type="text" value="${escapeHtml(layer.icon || "")}"
+                 data-layer-field="icon" placeholder="mdi:lightbulb">
+        </label>
+
+        <h3>Was gehört dazu?</h3>
+        <p class="note">Eine Regel, keine Liste: „alle Lichter" stimmt auch
+        noch, wenn nächsten Monat eine Lampe dazukommt.</p>
+
+        <span class="muted">Art</span>
+        ${chips("domains", facets.domains, "Keine Entitäten gefunden.")}
+        <span class="muted">Bereich <i>(leer = überall)</i></span>
+        ${chips("areas", areas, "Keine Bereiche angelegt.")}
+        ${
+          facets.labels.length
+            ? `<span class="muted">Label</span>${chips("labels", facets.labels, "")}`
+            : ""
+        }
+        ${
+          facets.device_classes.length
+            ? `<span class="muted">Geräteklasse</span>
+               ${chips("device_classes", facets.device_classes, "")}`
+            : ""
+        }
+
+        <label class="field">
+          <span>Zusätzlich <i>(Entity-IDs, mit Komma getrennt)</i></span>
+          <input type="text" value="${escapeHtml((layer.entities || []).join(", "))}"
+                 data-layer-field="entities" placeholder="sensor.aussen, light.flur">
+        </label>
+        <label class="field">
+          <span>Ausnehmen</span>
+          <input type="text" value="${escapeHtml((layer.exclude || []).join(", "))}"
+                 data-layer-field="exclude">
+        </label>
+
+        <div class="edit-buttons">
+          <button class="action" data-save-layer="1">Speichern</button>
+          ${
+            layer._isNew
+              ? ""
+              : `<button class="chip" data-delete-layer="1">
+                   <ha-icon icon="mdi:delete-outline"></ha-icon> Löschen
+                 </button>`
+          }
+        </div>
+      </div>`;
+  }
+
+  async _openLayerDialog(layerId) {
+    const existing = this._customLayers.find((layer) => layer.id === layerId);
+    this._layerDialog = existing
+      ? { ...existing }
+      : {
+          id: `l${Date.now().toString(36)}`,
+          name: "",
+          icon: "",
+          domains: [],
+          areas: [],
+          _isNew: true,
+        };
+    if (!this._facets) {
+      try {
+        this._facets = await this._hass.callWS({
+          type: `${DOMAIN}/entities/facets`,
+        });
+      } catch (err) {
+        this._facets = { domains: [], labels: [], device_classes: [] };
+      }
+    }
+    this._render();
+  }
+
+  _writeCustomLayers(layers) {
+    this._setLayout("settings", "view", { custom_layers: layers });
+  }
+
+  _saveLayer() {
+    const layer = { ...this._layerDialog };
+    const isNew = layer._isNew;
+    delete layer._isNew;
+    if (!layer.name) layer.name = "Eigene Ebene";
+    // Drop the empty criteria: an absent key reads as "no opinion", and
+    // storing a pile of empty lists makes the stored rule unreadable.
+    for (const key of ["domains", "areas", "labels", "device_classes",
+                       "entities", "exclude"]) {
+      if (!layer[key] || !layer[key].length) delete layer[key];
+    }
+    const others = this._customLayers.filter(
+      (candidate) => candidate.id !== layer.id,
+    );
+    this._layerDialog = null;
+    this._writeCustomLayers(isNew ? [...others, layer] : [...others, layer]);
+  }
+
+  _deleteLayer() {
+    const id = this._layerDialog.id;
+    this._layerDialog = null;
+    this._writeCustomLayers(
+      this._customLayers.filter((layer) => layer.id !== id),
+    );
   }
 
   _hiddenTrayHtml() {
@@ -1063,6 +1236,17 @@ class FloorplanHubPanel extends HTMLElement {
       return;
     }
 
+    const layerField = attribute("data-layer-field");
+    if (layerField !== null && this._layerDialog) {
+      // Kept in the open dialog and written on save, so a half-typed name
+      // is not a round trip to the hub per keystroke.
+      this._layerDialog[layerField] =
+        layerField === "entities" || layerField === "exclude"
+          ? input.value.split(",").map((part) => part.trim()).filter(Boolean)
+          : input.value;
+      return;
+    }
+
     const stateColour = attribute("data-state-color");
     if (stateColour !== null) {
       if (committed) {
@@ -1200,6 +1384,43 @@ class FloorplanHubPanel extends HTMLElement {
       this._selected = null;
       this._floorDialog = false;
       this._render();
+      return;
+    }
+
+    const newLayer = hit("data-new-layer");
+    const editLayer = hit("data-edit-layer");
+    if (newLayer || editLayer) {
+      this._openLayerDialog(
+        editLayer ? editLayer.getAttribute("data-edit-layer") : null,
+      );
+      return;
+    }
+
+    if (hit("data-close-layer")) {
+      this._layerDialog = null;
+      this._render();
+      return;
+    }
+
+    const facet = hit("data-facet");
+    if (facet && this._layerDialog) {
+      const field = facet.getAttribute("data-facet");
+      const value = facet.getAttribute("data-value");
+      const current = this._layerDialog[field] || [];
+      this._layerDialog[field] = current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value];
+      this._render();
+      return;
+    }
+
+    if (hit("data-save-layer")) {
+      this._saveLayer();
+      return;
+    }
+
+    if (hit("data-delete-layer")) {
+      this._deleteLayer();
       return;
     }
 
@@ -1573,6 +1794,11 @@ select { font:inherit; padding:6px; border-radius:8px;
               padding:8px 0; margin:8px 0; }
 .field { display:flex; flex-direction:column; gap:4px; font-size:13px; margin:8px 0; }
 .field input[type=range] { width:100%; }
+.field input[type=text] { font:inherit; padding:8px; border-radius:8px;
+  border:1px solid var(--divider-color,#e0e0e0);
+  background:var(--card-background-color,#fff); color:inherit; }
+.field i { font-style:normal; color:var(--secondary-text-color,#727272); }
+.popup > .muted { display:block; font-size:12px; margin:10px 0 4px; }
 .edit-buttons { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
 .edit-buttons .chip { display:flex; align-items:center; gap:4px; }
 
