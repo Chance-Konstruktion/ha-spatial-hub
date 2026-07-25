@@ -1,0 +1,26 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Floorplan-Hub",
+        "description": "Floors, areas and providers are detected automatically. There is nothing to configure."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Floorplan-Hub is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Floorplan-Hub options",
+        "data": {
+          "auto_areas": "Arrange areas automatically"
+        },
+        "data_description": {
+          "auto_areas": "Off: only areas you placed yourself are shown."
+        }
+      }
+    }
+  }
+}

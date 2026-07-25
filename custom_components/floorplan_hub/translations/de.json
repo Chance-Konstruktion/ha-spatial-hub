@@ -1,0 +1,26 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Floorplan-Hub",
+        "description": "Stockwerke, Bereiche und Provider werden automatisch erkannt. Es gibt nichts einzustellen."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Floorplan-Hub ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Floorplan-Hub Optionen",
+        "data": {
+          "auto_areas": "Bereiche automatisch anordnen"
+        },
+        "data_description": {
+          "auto_areas": "Aus: Es werden nur selbst platzierte Bereiche angezeigt."
+        }
+      }
+    }
+  }
+}
