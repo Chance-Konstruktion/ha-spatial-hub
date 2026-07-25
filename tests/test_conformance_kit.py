@@ -12,11 +12,11 @@ from pathlib import Path
 
 import pytest
 
-_DOCS = Path(__file__).resolve().parents[1] / "docs"
+_SDK = Path(__file__).resolve().parents[1] / "sdk"
 
 
 def _load(name: str):
-    spec = importlib.util.spec_from_file_location(name, _DOCS / f"{name}.py")
+    spec = importlib.util.spec_from_file_location(name, _SDK / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

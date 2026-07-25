@@ -17,6 +17,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from . import discovery
 from .const import (
     API_VERSION,
+    CURRENT_SDK_VERSION,
     SIGNAL_DATA_UPDATED,
     SIGNAL_PROVIDER_REGISTERED,
     SIGNAL_PROVIDER_REMOVED,
@@ -154,6 +155,14 @@ class FloorplanHub:
             self._status[provider.id] = {
                 **result.as_status(),
                 "registration_warnings": provider.warnings,
+                "sdk_version": provider.sdk_version,
+                # Never a log warning and never a refusal: an old copy of
+                # the shim keeps working. This exists so its author finds
+                # out a better one exists, at the moment they go looking.
+                "sdk_outdated": bool(
+                    provider.sdk_version
+                    and provider.sdk_version < CURRENT_SDK_VERSION
+                ),
             }
 
         discovery.async_place_nodes(self.hass, nodes, areas)

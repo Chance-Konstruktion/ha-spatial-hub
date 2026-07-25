@@ -31,8 +31,14 @@ Was dieser eine Aufruf erledigt:
 
 ## Vorbereitung
 
-[`floorplan_hub_provider.py`](./floorplan_hub_provider.py) in deinen
-Integrationsordner **kopieren**. Nicht importieren.
+Ein Aufruf erledigt das Kopieren und sagt dir, was noch zu tun ist:
+
+```bash
+python3 sdk/install.py --into custom_components/<domain> --tests tests
+```
+
+Oder von Hand: [`sdk/floorplan_hub_provider.py`](../sdk/floorplan_hub_provider.py)
+in deinen Integrationsordner **kopieren**. Nicht importieren.
 
 Der Grund: Der Hub ist keine Abhängigkeit. Die Datei importiert nichts aus
 `floorplan_hub`, sie schreibt ein Dict in `hass.data` und feuert ein
@@ -116,7 +122,7 @@ stillschweigend ignoriert).
 
 ## Prüfen, ob es stimmt
 
-[`floorplan_hub_conformance.py`](./floorplan_hub_conformance.py) in deine
+[`sdk/floorplan_hub_conformance.py`](../sdk/floorplan_hub_conformance.py) in deine
 Tests kopieren, eine Klasse schreiben, fertig:
 
 ```python
