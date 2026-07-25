@@ -183,3 +183,14 @@ def test_the_shim_works_with_no_hub_installed(hass):
     )
     provider.async_notify()
     entry.unload()
+
+
+def test_switching_a_provider_off_stops_the_chatter(hass, hub):
+    """Unregistering mid-run must drop the coordinator listener too."""
+    coordinator = FakeCoordinator()
+    provider = shim.floorplan_provider(
+        hass, FakeEntry(), name="Demo", data=lambda: [], coordinator=coordinator
+    )
+    provider.async_unregister()
+
+    assert coordinator.listeners == []

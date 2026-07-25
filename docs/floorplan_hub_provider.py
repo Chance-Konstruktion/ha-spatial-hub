@@ -90,9 +90,11 @@ def floorplan_provider(
     if entry is not None and hasattr(entry, "async_on_unload"):
         entry.async_on_unload(provider.async_unregister)
     if coordinator is not None and hasattr(coordinator, "async_add_listener"):
-        remove = coordinator.async_add_listener(provider.async_notify)
-        if entry is not None and hasattr(entry, "async_on_unload"):
-            entry.async_on_unload(remove)
+        # Dropped by async_unregister too, so switching the provider off
+        # mid-run stops the chatter as well -- not just unloading.
+        provider.async_on_unregister(
+            coordinator.async_add_listener(provider.async_notify)
+        )
 
     return provider
 
@@ -248,6 +250,12 @@ class FloorplanHubProvider:
             self._registration["history"] = history
         if action is not None:
             self._registration["action"] = action
+        self._detach: list[Callable[[], None]] = []
+
+    @callback
+    def async_on_unregister(self, remove: Callable[[], None]) -> None:
+        """Run this when the provider withdraws (listeners, subscriptions)."""
+        self._detach.append(remove)
 
     @callback
     def async_register(self) -> None:
@@ -262,6 +270,9 @@ class FloorplanHubProvider:
     @callback
     def async_unregister(self) -> None:
         """Withdraw on unload, so the hub drops the layer immediately."""
+        for remove in self._detach:
+            remove()
+        self._detach.clear()
         self.hass.data.get(DATA_PROVIDERS, {}).pop(self.provider_id, None)
         async_dispatcher_send(self.hass, SIGNAL_PROVIDER_REMOVED, self.provider_id)
 
