@@ -14,8 +14,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Install pytest
-        run: pip install pytest pytest-asyncio
+      # voluptuous is genuinely used by the websocket schemas. Stubbing it
+      # would mean the schemas are never checked by the real validator,
+      # which is most of what there is to get wrong about them.
+      - name: Install test dependencies
+        run: pip install pytest pytest-asyncio voluptuous
       # The renderer's own test suite runs from here too, so one command
       # covers both languages. Node is present on ubuntu-latest.
       - name: Run unit tests
