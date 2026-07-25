@@ -14,7 +14,7 @@ Plattform ein weiteres Dashboard geworden.
 | 2 | Provider-API + DX | ✅ |
 | 3 | Renderer | ✅ |
 | 4 | Zero-Config: der Grundriss folgt dem Haus | ✅ |
-| 5 | Edit-Modus | ⬜ |
+| 5 | Edit-Modus | ✅ |
 | 6 | Themes | ⬜ |
 | 7 | Generic Adapter | ⬜ |
 | 8 | Provider-SDK | ⬜ |
@@ -85,15 +85,21 @@ neu laden" ist keine Antwort.
 
 ---
 
-## ⬜ Phase 5 — Edit-Modus
+## ✅ Phase 5 — Edit-Modus
 
-Nodes und Bereiche ziehen, skalieren, drehen; Hintergrundbild pro Etage;
-Ebenen sortieren. Das Storage-Format und die `layout/set`-API stehen
-bereits vollständig — `null` löscht ein Override und stellt die
-automatische Platzierung wieder her. Der Anfang ist im Renderer schon
-drin: nicht platzierte Bereiche lassen sich per Klick setzen.
+Ein Stift in der Kopfzeile, nur für Admins. Danach: Nodes und Bereiche
+ziehen (mit Rasterfang, `Shift` hält ihn aus), Bereiche an der Ecke in der
+Größe ändern, Nodes skalieren und drehen, ausblenden — und zurückholen,
+denn Ausblenden ist keine Einbahnstraße. Dazu Grundriss-Bild und
+Seitenverhältnis pro Etage, Ebenen sortieren und abdunkeln, und ein
+Zurücksetzen für die ganze Etage.
+
+Geschrieben wird beim Loslassen, nicht bei jeder Mausbewegung: Ein Zug ist
+ein Eintrag im Storage, kein Strom aus fünfzig.
 
 Grundsatz bleibt: Der Provider erfährt nie, dass etwas verschoben wurde.
+Und `null` löscht ein Override, statt einen Gegenwert festzuschreiben — was
+zurückgesetzt wurde, folgt wieder der Automatik.
 
 ## ⬜ Phase 6 — Themes
 

@@ -14,10 +14,10 @@ einzige Zeile geändert wird.
 
 ## Status
 
-**Phase 1–4 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
+**Phase 1–5 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
 Event-System, Storage, Config-Flow, die komplette Websocket-API, ein
-Renderer in der Seitenleiste — und ein Grundriss, der dem Haus von selbst
-folgt.
+Renderer in der Seitenleiste, ein Grundriss, der dem Haus von selbst folgt,
+und ein Edit-Modus für alles, was die Automatik falsch geraten hat.
 
 [ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) ist als
 erster Provider angebunden. Der vollständige Plan steht in
@@ -36,6 +36,10 @@ Dashboard anlegen, keine Karte konfigurieren, kein YAML:
 - **Popup** mit allen Metadaten, Verlauf und Actions (Actions nur für Admins)
 - **Diagnose** direkt im Panel: was jeder Provider geliefert hat, und was daran
   beanstandet wurde
+- **Bearbeiten** (nur Admins): Nodes und Bereiche ziehen, Bereiche in der
+  Größe ändern, Nodes skalieren und drehen, ausblenden und zurückholen,
+  Grundriss-Bild pro Etage, Ebenen sortieren und abdunkeln — alles mit
+  Rasterfang, `Shift` hält das Raster aus
 
 Der Renderer ist ein reines ES-Modul: kein Build, kein npm, kein Bundle.
 Was im Repository liegt, führt der Browser aus. Er kennt **keine einzige
@@ -147,6 +151,10 @@ wurde und warum, inklusive vermuteter Tippfehler in der Registrierung.
 | `floorplan_hub/history` | Zeitreihe zu Node oder Edge |
 | `floorplan_hub/action` | Provider-Action ausführen (Admin) |
 | `floorplan_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
+
+Im Modell steht unter `hidden` außerdem, was der Nutzer ausgeblendet hat —
+Ausblenden ist keine Einbahnstraße, ein Editor braucht die Liste, um es
+zurückzuholen. Ein einfacher Renderer zeichnet weiterhin nur `nodes`.
 
 ## Installation
 

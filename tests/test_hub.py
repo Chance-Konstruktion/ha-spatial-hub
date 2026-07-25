@@ -102,6 +102,39 @@ async def test_clearing_an_override_restores_auto_placement(hass, hub):
 
 
 @pytest.mark.asyncio
+async def test_hidden_things_are_reported_so_they_can_come_back(hass, hub):
+    """Hiding must not be a one-way door -- an editor needs the list."""
+    _register(hass, data=lambda: {"nodes": [{"id": "a"}, {"id": "b"}]})
+    hub.store.update("nodes", "demo:b", {"hidden": True})
+    hub.store.update("areas", "kueche", {"hidden": True})
+
+    model = await hub.async_model()
+
+    assert [n["id"] for n in model["nodes"]] == ["demo:a"]
+    assert model["hidden"]["nodes"] == [{"id": "demo:b", "label": "b"}]
+    assert model["hidden"]["areas"] == [{"id": "kueche", "name": "Küche"}]
+    assert "kueche" not in {area["id"] for area in model["areas"]}
+
+
+@pytest.mark.asyncio
+async def test_nothing_hidden_means_empty_lists_not_missing_keys(hass, hub):
+    _register(hass)
+    model = await hub.async_model()
+    assert model["hidden"] == {"nodes": [], "areas": []}
+
+
+@pytest.mark.asyncio
+async def test_the_user_can_reorder_the_floors(hass, hub):
+    _register(hass)
+    hub.store.update("floors", "og", {"order": -1})
+
+    model = await hub.async_model()
+    assert [floor["id"] for floor in model["floors"]] == ["og", "eg"], (
+        "an explicit order beats the registry's level"
+    )
+
+
+@pytest.mark.asyncio
 async def test_hidden_node_and_its_edges_disappear(hass, hub):
     _register(
         hass,

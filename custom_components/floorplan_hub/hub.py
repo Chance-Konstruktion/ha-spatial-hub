@@ -157,17 +157,28 @@ class FloorplanHub:
 
         discovery.async_place_nodes(self.hass, nodes, areas)
 
-        node_dicts = [self._apply_node_layout(node) for node in nodes]
-        node_dicts = [node for node in node_dicts if not node.pop("_hidden", False)]
+        laid_out = [self._apply_node_layout(node) for node in nodes]
+        node_dicts = [n for n in laid_out if not n["_hidden"]]
+        # Hidden items are reported separately rather than simply dropped:
+        # an editor needs somewhere to un-hide them from, and a plain
+        # renderer still only ever draws `nodes`.
+        hidden_nodes = [
+            {"id": n["id"], "label": n["label"]} for n in laid_out if n["_hidden"]
+        ]
+        for node in laid_out:
+            del node["_hidden"]
         known_ids = {node["id"] for node in node_dicts}
         self.entity_ids = {
             node["entity_id"] for node in node_dicts if node.get("entity_id")
         }
 
+        visible_areas, hidden_areas = self._apply_area_layout(areas)
+
         return {
             "api_version": API_VERSION,
             "floors": self._apply_floor_layout(floors),
-            "areas": self._apply_area_layout(areas),
+            "areas": visible_areas,
+            "hidden": {"nodes": hidden_nodes, "areas": hidden_areas},
             "layers": self._apply_layer_layout(layers),
             "nodes": node_dicts,
             # An edge to a dropped node would render as a line into nowhere.
@@ -208,6 +219,7 @@ class FloorplanHub:
     def _apply_node_layout(self, node: Node) -> dict[str, Any]:
         override = self.store.get("nodes", node.id)
         data = node.as_dict()
+        data["_hidden"] = False
         if not override:
             return data
         position = Position.from_dict(override.get("position"))
@@ -245,15 +257,26 @@ class FloorplanHub:
         if not merged:
             merged = [{"id": "default", "name": "Home", "level": 0, "icon": "",
                        **self.store.get("floors", "default")}]
-        return merged
+        # `order` is the user's own sorting; without one, the registry's
+        # level decides, as it did before anybody edited anything.
+        return sorted(
+            merged,
+            key=lambda floor: (
+                floor.get("order") if floor.get("order") is not None
+                else (floor.get("level") or 0)
+            ),
+        )
 
     def _apply_area_layout(
         self, areas: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        merged = []
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Areas to draw, and the ones the user hid but may want back."""
+        merged: list[dict[str, Any]] = []
+        hidden: list[dict[str, Any]] = []
         for area in areas:
             override = self.store.get("areas", area["id"])
             if override.get("hidden"):
+                hidden.append({"id": area["id"], "name": area["name"]})
                 continue
             area = {**area, **{k: v for k, v in override.items() if k != "hidden"}}
             if "position" in override:
@@ -266,7 +289,7 @@ class FloorplanHub:
                 area["position"] = None
                 area["unplaced"] = True
             merged.append(area)
-        return merged
+        return merged, hidden
 
     # ── Pass-through to providers ─────────────────────────
 

@@ -24,7 +24,7 @@ URL_BASE = f"/{DOMAIN}_frontend"
 PANEL_MODULE = "floorplan-hub-panel.js"
 # Bumped whenever the panel changes -- browsers cache modules aggressively
 # and a stale renderer against a fresh model is a bad first impression.
-PANEL_VERSION = "0.2.0"
+PANEL_VERSION = "0.3.0"
 
 
 async def async_register_panel(hass: HomeAssistant) -> None:
