@@ -279,9 +279,16 @@ test("a constant series does not divide by zero", () => {
 
 // ── The empty house ────────────────────────────────────────
 
-test("no providers yet says so instead of showing a blank rectangle", () => {
+test("the house is drawn before any provider exists", () => {
   const view = panel(model({ providers: [], nodes: [], edges: [] }));
-  assert.match(view._stageHtml(), /Noch kein Provider/);
+  const html = view._stageHtml();
+  assert.match(html, /class="area"/, "the areas alone are already your home");
+  assert.match(html, /erscheint sie hier von selbst/, "and it says what comes next");
+});
+
+test("nothing at all says so instead of showing a blank rectangle", () => {
+  const view = panel(model({ providers: [], nodes: [], edges: [], areas: [] }));
+  assert.match(view._stageHtml(), /Noch nichts zu zeichnen/);
 });
 
 test("unplaced areas get a tray and a way back onto the plan", () => {

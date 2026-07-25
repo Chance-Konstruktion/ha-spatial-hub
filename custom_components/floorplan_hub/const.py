@@ -33,6 +33,7 @@ API_VERSION: Final = 1
 # ── Internal hass.data keys ───────────────────────────────────────────
 DATA_HUB: Final = f"{DOMAIN}_hub"
 DATA_STORE: Final = f"{DOMAIN}_store"
+DATA_WATCHER: Final = f"{DOMAIN}_watcher"
 
 STORAGE_KEY: Final = f"{DOMAIN}.layout"
 STORAGE_VERSION: Final = 1

@@ -307,14 +307,25 @@ class FloorplanHubPanel extends HTMLElement {
 
   _stageHtml() {
     const model = this._model;
-    if (!model.providers.length) {
+    const areas = this._visibleAreas.filter((area) => area.position);
+
+    // Nothing at all to draw: no provider and no house either. Anything
+    // else gets rendered -- the areas alone are already the user's home,
+    // and an empty rectangle after installing is a bad first impression.
+    if (!model.providers.length && !areas.length) {
       return `<div class="empty">
-        <h2>Noch kein Provider</h2>
-        <p>Der Hub läuft, aber keine Integration liefert bisher räumliche
-        Daten. Sobald eine es tut, erscheint sie hier von selbst — hier ist
-        nichts einzurichten.</p>
+        <h2>Noch nichts zu zeichnen</h2>
+        <p>Keine Bereiche in Home Assistant und keine Integration, die
+        räumliche Daten liefert. Lege Bereiche unter <i>Einstellungen →
+        Bereiche & Zonen</i> an — der Grundriss folgt von selbst.</p>
       </div>`;
     }
+
+    const banner = model.providers.length
+      ? ""
+      : `<p class="banner">Dein Haus, direkt aus Home Assistant. Sobald eine
+         Integration räumliche Daten liefert, erscheint sie hier von selbst —
+         einzurichten ist dafür nichts.</p>`;
 
     const floor = this._floor;
     const aspect = (floor && floor.aspect) || 1.6;
@@ -323,6 +334,7 @@ class FloorplanHubPanel extends HTMLElement {
     const edges = this._visibleEdges;
 
     return `
+      ${banner}
       <div class="stage ${this._placing ? "placing" : ""}"
            style="aspect-ratio:${aspect};${
              background
@@ -854,6 +866,9 @@ h3 { margin:12px 0 6px; font-size:14px; }
 .providers { list-style:none; margin:0; padding:0; }
 .providers li { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:13px; }
 .hint { font-size:13px; margin:8px 2px; }
+.banner { margin:0 0 12px; padding:10px 14px; border-radius:10px; font-size:13px;
+          background:var(--card-background-color,#fff); color:var(--secondary-text-color,#727272);
+          box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
 .link { border:0; background:transparent; color:var(--primary-color,#03a9f4);
         cursor:pointer; font:inherit; padding:0; text-decoration:underline; }
 

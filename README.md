@@ -14,12 +14,14 @@ einzige Zeile geändert wird.
 
 ## Status
 
-**Phase 1–3 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
-Event-System, Storage, Config-Flow, die komplette Websocket-API — und seit
-Phase 3 ein Renderer, der in der Seitenleiste steht.
+**Phase 1–4 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
+Event-System, Storage, Config-Flow, die komplette Websocket-API, ein
+Renderer in der Seitenleiste — und ein Grundriss, der dem Haus von selbst
+folgt.
 
 [ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) ist als
-erster Provider angebunden.
+erster Provider angebunden. Der vollständige Plan steht in
+**[ROADMAP.md](ROADMAP.md)**.
 
 ## Der Renderer
 
@@ -84,6 +86,12 @@ will:
 2. Bereiche werden pro Stockwerk automatisch auf ein Raster gelegt
 3. Jeder Node landet in der Mitte seines Bereichs, mehrere werden gefächert
 4. Der Nutzer korrigiert nur das, was falsch liegt — einmalig, persistent
+
+Und es bleibt richtig. Wird ein Bereich umbenannt, eine Etage angelegt oder
+ein Gerät in einen anderen Raum verschoben, zieht der Grundriss nach; die
+Entities darauf sind live, unabhängig davon, wie langsam der Provider
+pollt, der sie benannt hat. Beobachtet wird dabei nur, was gerade zu sehen
+ist — schaut niemand hin, ist nichts zu aktualisieren.
 
 ## Eine Integration anbinden
 

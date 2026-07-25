@@ -247,6 +247,51 @@ if not hasattr(frontend, "async_register_built_in_panel"):
     components.http = http
 
 
+# -- homeassistant.helpers.event ----------------------------------------------
+event_helper = _module("homeassistant.helpers.event")
+if not hasattr(event_helper, "async_call_later"):
+
+    def async_call_later(hass, delay, action):
+        """Record the timer instead of running it; tests fire it by hand."""
+        hass.timers.append((delay, action))
+
+        def cancel():
+            hass.timers[:] = [t for t in hass.timers if t[1] is not action]
+
+        return cancel
+
+    def async_track_state_change_event(hass, entity_ids, action):
+        hass.tracked.append((list(entity_ids), action))
+
+        def cancel():
+            hass.tracked[:] = [t for t in hass.tracked if t[1] is not action]
+
+        return cancel
+
+    event_helper.async_call_later = async_call_later
+    event_helper.async_track_state_change_event = async_track_state_change_event
+    helpers.event = event_helper
+
+
+class FakeBus:
+    """Records event listeners so tests can fire Home Assistant's events."""
+
+    def __init__(self) -> None:
+        self.listeners: dict = {}
+
+    def async_listen(self, event_type, listener):
+        self.listeners.setdefault(event_type, []).append(listener)
+
+        def remove():
+            self.listeners[event_type].remove(listener)
+
+        return remove
+
+    def fire(self, event_type, data=None):
+        for listener in list(self.listeners.get(event_type, [])):
+            listener(data or {})
+
+
 class FakeHttp:
     """Stand-in for hass.http, recording what would be served."""
 
@@ -263,6 +308,9 @@ def hass():
     instance = core.HomeAssistant()
     instance.states = FakeStates()
     instance.http = FakeHttp()
+    instance.bus = FakeBus()
+    instance.timers = []
+    instance.tracked = []
     return instance
 
 

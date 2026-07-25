@@ -22,6 +22,7 @@ from .const import (
     CONF_PANEL,
     DATA_HUB,
     DATA_STORE,
+    DATA_WATCHER,
     DEFAULT_AUTO_AREAS,
     DEFAULT_PANEL,
     DOMAIN,
@@ -30,6 +31,7 @@ from .frontend import async_register_panel, async_remove_panel
 from .hub import FloorplanHub
 from .registry import async_get_registrations
 from .storage import LayoutStore
+from .watch import ModelWatcher
 from .websocket import async_register as async_register_websocket
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,6 +54,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hub.auto_areas = bool(entry.options.get(CONF_AUTO_AREAS, DEFAULT_AUTO_AREAS))
     hub.async_start()
     hass.data[DATA_HUB] = hub
+
+    # Follow the house: registry edits and the states of entities that are
+    # actually on the plan both refresh it, without anyone pressing reload.
+    watcher = ModelWatcher(hass, hub)
+    watcher.async_start()
+    hass.data[DATA_WATCHER] = watcher
 
     if not hass.data.get(_DATA_WS_REGISTERED):
         hass.data[_DATA_WS_REGISTERED] = True
@@ -100,6 +108,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     Providers keep their entry in hass.data: they are not ours to remove,
     and they must survive a hub reload without re-registering.
     """
+    watcher: ModelWatcher | None = hass.data.pop(DATA_WATCHER, None)
+    if watcher is not None:
+        watcher.async_stop()
     hub: FloorplanHub | None = hass.data.pop(DATA_HUB, None)
     if hub is not None:
         hub.async_stop()
