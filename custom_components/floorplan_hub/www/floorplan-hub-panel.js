@@ -13,7 +13,8 @@
 
 const DOMAIN = "floorplan_hub";
 
-/** Edge colours by the shared quality vocabulary. */
+/** Fallback edge colours by the shared quality vocabulary. The hub's
+ *  theme wins where it states one; these are what "inherit" means. */
 const QUALITY = {
   good: "var(--success-color, #4caf50)",
   fair: "var(--warning-color, #ff9800)",
@@ -67,6 +68,7 @@ class FloorplanHubPanel extends HTMLElement {
     this._drag = null; // live pointer drag, never persisted until release
     this._dragged = false; // suppresses the click that follows a drag
     this._floorDialog = false;
+    this._themeDialog = false;
   }
 
   get _canEdit() {
@@ -189,6 +191,32 @@ class FloorplanHubPanel extends HTMLElement {
     );
   }
 
+  /** The theme the hub resolved. Never a preset table of our own -- a
+   *  second renderer must be able to agree with this one for free. */
+  get _theme() {
+    return (this._model && this._model.theme) || {};
+  }
+
+  _stateColour(state) {
+    const themed = (this._theme.state_colors || {})[state];
+    return themed || STATE[state] || "var(--fp-accent, var(--primary-color, #03a9f4))";
+  }
+
+  _qualityColour(quality) {
+    const themed = (this._theme.quality_colors || {})[quality];
+    return themed || QUALITY[quality] || QUALITY.unknown;
+  }
+
+  /** Theme values a renderer cannot express in CSS alone. */
+  get _themeVars() {
+    const theme = this._theme;
+    const parts = [];
+    if (theme.accent) parts.push(`--fp-accent:${theme.accent}`);
+    if (theme.surface) parts.push(`--fp-surface:${theme.surface}`);
+    if (theme.ink) parts.push(`--fp-ink:${theme.ink}`);
+    return parts.join(";");
+  }
+
   _providerOf(itemId) {
     return String(itemId || "").split(":")[0];
   }
@@ -281,6 +309,7 @@ class FloorplanHubPanel extends HTMLElement {
     }
     if (!model) return;
 
+    this._root.setAttribute("style", this._themeVars);
     this._root.innerHTML = `
       ${this._headerHtml()}
       <div class="body">
@@ -289,6 +318,7 @@ class FloorplanHubPanel extends HTMLElement {
       </div>
       ${this._showDiagnostics ? this._diagnosticsHtml() : ""}
       ${this._floorDialog ? this._floorDialogHtml() : ""}
+      ${this._themeDialog ? this._themeDialogHtml() : ""}
       ${this._popupHtml()}
     `;
   }
@@ -312,7 +342,10 @@ class FloorplanHubPanel extends HTMLElement {
         <div class="spacer"></div>
         ${
           this._edit
-            ? `<button class="icon-btn" data-floor-dialog="1" title="Etage einrichten">
+            ? `<button class="icon-btn" data-theme-dialog="1" title="Aussehen">
+                 <ha-icon icon="mdi:palette-outline"></ha-icon>
+               </button>
+               <button class="icon-btn" data-floor-dialog="1" title="Etage einrichten">
                  <ha-icon icon="mdi:image-outline"></ha-icon>
                </button>
                <button class="icon-btn" data-reset-floor="1"
@@ -371,7 +404,9 @@ class FloorplanHubPanel extends HTMLElement {
       ${banner}
       <div class="stage ${this._placing ? "placing" : ""} ${
         this._edit ? "editing" : ""
-      }"
+      } shape-${escapeHtml(this._theme.node_shape || "circle")}
+        labels-${escapeHtml(this._theme.labels || "always")}
+        rooms-${escapeHtml(this._theme.room_style || "outline")}"
            style="aspect-ratio:${aspect};${
              background
                ? `background-image:url('${escapeHtml(background)}')`
@@ -433,7 +468,7 @@ class FloorplanHubPanel extends HTMLElement {
   }
 
   _edgeHtml(edge) {
-    const colour = edge.color || QUALITY[edge.quality] || QUALITY.unknown;
+    const colour = edge.color || this._qualityColour(edge.quality);
     const classes = [
       "edge",
       edge.animated ? "animated" : "",
@@ -445,30 +480,43 @@ class FloorplanHubPanel extends HTMLElement {
     ]
       .filter(Boolean)
       .join(" ");
-    return `
-      <line class="${classes}" data-edge="${escapeHtml(edge.id)}"
-        x1="${edge.from.x * 1000}" y1="${edge.from.y * 1000}"
-        x2="${edge.to.x * 1000}" y2="${edge.to.y * 1000}"
+    const shared = `class="${classes}" data-edge="${escapeHtml(edge.id)}"
         stroke="${escapeHtml(colour)}"
         stroke-width="${edge.width || 2}"
         vector-effect="non-scaling-stroke"
         ${edge.dashed ? 'stroke-dasharray="6 5"' : ""}
-        ${edge.directed ? 'marker-end="url(#arrow)"' : ""}
-      ><title>${escapeHtml(edge.label || edge.id)}</title></line>`;
+        ${edge.directed ? 'marker-end="url(#arrow)"' : ""}`;
+    const title = `<title>${escapeHtml(edge.label || edge.id)}</title>`;
+    const [x1, y1] = [edge.from.x * 1000, edge.from.y * 1000];
+    const [x2, y2] = [edge.to.x * 1000, edge.to.y * 1000];
+
+    if (this._theme.edge_style === "curved") {
+      // Bow the line out perpendicular to itself, so two edges between the
+      // same pair stay distinguishable and a dense plan reads as a network
+      // rather than a hairball.
+      const [dx, dy] = [x2 - x1, y2 - y1];
+      const bow = 0.14;
+      const cx = (x1 + x2) / 2 - dy * bow;
+      const cy = (y1 + y2) / 2 + dx * bow;
+      return `<path ${shared} fill="none"
+        d="M ${x1} ${y1} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${x2} ${y2}"
+      >${title}</path>`;
+    }
+
+    return `<line ${shared}
+        x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"
+      >${title}</line>`;
   }
 
   _nodeHtml(node) {
     const custom = this._customIcon(node);
     const colour =
-      node.color ||
-      (custom && custom.default_color) ||
-      STATE[node.state] ||
-      "var(--primary-color, #03a9f4)";
+      node.color || (custom && custom.default_color) || this._stateColour(node.state);
     const selected =
       this._selected &&
       this._selected.kind === "node" &&
       this._selected.id === node.id;
-    const scale = node.scale || 1;
+    const scale = (node.scale || 1) * (this._theme.node_size || 1);
     const icon = custom
       ? `<span class="custom-icon">${custom.svg}</span>`
       : `<ha-icon icon="${escapeHtml(node.icon || "mdi:circle-medium")}"></ha-icon>`;
@@ -584,6 +632,84 @@ class FloorplanHubPanel extends HTMLElement {
           </button>`,
           )
           .join("")}
+      </div>`;
+  }
+
+  _themeDialogHtml() {
+    const theme = this._theme;
+    const chips = ["auto", "classic", "blueprint", "neon", "paper"]
+      .map(
+        (preset) => `
+        <button class="chip ${theme.preset === preset ? "on" : ""}"
+                data-preset="${preset}">${preset}</button>`,
+      )
+      .join("");
+
+    const choice = (attribute, label, options, current) => `
+      <label class="field">
+        <span>${label}</span>
+        <select data-${attribute}>
+          ${options
+            .map(
+              ([value, text]) => `
+            <option value="${value}" ${value === current ? "selected" : ""}>
+              ${text}
+            </option>`,
+            )
+            .join("")}
+        </select>
+      </label>`;
+
+    const swatches = (attribute, colours, title) => `
+      <div class="swatches">
+        <span class="muted">${title}</span>
+        ${Object.entries(colours || {})
+          .map(
+            ([word, colour]) => `
+          <label class="swatch" title="${escapeHtml(word)}">
+            <input type="color" value="${escapeHtml(colour || "#888888")}"
+                   data-${attribute}="${escapeHtml(word)}">
+            <span>${escapeHtml(word)}</span>
+          </label>`,
+          )
+          .join("")}
+      </div>`;
+
+    return `
+      <div class="scrim" data-close-theme="1"></div>
+      <div class="popup">
+        <div class="popup-head">
+          <h2>Aussehen</h2>
+          <button class="icon-btn" data-close-theme="1">
+            <ha-icon icon="mdi:close"></ha-icon>
+          </button>
+        </div>
+        <p class="note">Ein Theme färbt das gemeinsame Vokabular — Zustände
+        und Verbindungsqualität. Nie eine einzelne Integration: die nächste,
+        die dazukommt, sieht dadurch von selbst richtig aus.</p>
+        <div class="chips">${chips}</div>
+        ${choice("node-shape", "Form", [
+          ["circle", "Kreis"], ["rounded", "Abgerundet"], ["square", "Eckig"],
+        ], theme.node_shape)}
+        ${choice("labels", "Beschriftung", [
+          ["always", "Immer"], ["hover", "Beim Zeigen"], ["never", "Nie"],
+        ], theme.labels)}
+        ${choice("edge-style", "Verbindungen", [
+          ["straight", "Gerade"], ["curved", "Gebogen"],
+        ], theme.edge_style)}
+        ${choice("room-style", "Räume", [
+          ["outline", "Umriss"], ["filled", "Gefüllt"], ["none", "Aus"],
+        ], theme.room_style)}
+        <label class="field">
+          <span>Größe <b data-size-value>${(theme.node_size || 1).toFixed(
+            2,
+          )}×</b></span>
+          <input type="range" min="0.4" max="3" step="0.05"
+                 value="${theme.node_size || 1}" data-theme-size="1">
+        </label>
+        ${swatches("state-color", theme.state_colors, "Zustände")}
+        ${swatches("quality-color", theme.quality_colors, "Qualität")}
+        <button class="link" data-reset-theme="1">Auf Standard zurücksetzen</button>
       </div>`;
   }
 
@@ -918,6 +1044,48 @@ class FloorplanHubPanel extends HTMLElement {
       }
       return;
     }
+    for (const [attributeName, key] of [
+      ["data-node-shape", "node_shape"],
+      ["data-labels", "labels"],
+      ["data-edge-style", "edge_style"],
+      ["data-room-style", "room_style"],
+    ]) {
+      if (attribute(attributeName) !== null) {
+        this._setTheme({ [key]: input.value });
+        return;
+      }
+    }
+
+    if (attribute("data-theme-size") !== null) {
+      const label = this._root.querySelector("[data-size-value]");
+      if (label) label.textContent = `${Number(input.value).toFixed(2)}×`;
+      if (committed) this._setTheme({ node_size: Number(input.value) });
+      return;
+    }
+
+    const stateColour = attribute("data-state-color");
+    if (stateColour !== null) {
+      if (committed) {
+        this._setTheme({
+          state_colors: { ...this._theme.state_colors, [stateColour]: input.value },
+        });
+      }
+      return;
+    }
+
+    const qualityColour = attribute("data-quality-color");
+    if (qualityColour !== null) {
+      if (committed) {
+        this._setTheme({
+          quality_colors: {
+            ...this._theme.quality_colors,
+            [qualityColour]: input.value,
+          },
+        });
+      }
+      return;
+    }
+
     const layerOpacity = attribute("data-layer-opacity");
     if (layerOpacity !== null) {
       if (committed) {
@@ -953,6 +1121,30 @@ class FloorplanHubPanel extends HTMLElement {
       this._floorDialog = false;
     };
     reader.readAsDataURL(file);
+  }
+
+  /** Pin what is on screen, then apply the change.
+   *
+   *  Picking a *preset* is different: it sends the preset alone, so the
+   *  preset's own answers take over instead of being overruled by values
+   *  the user never actually chose.
+   */
+  _setTheme(patch) {
+    const theme = this._theme;
+    this._setLayout("settings", "view", {
+      theme: {
+        preset: theme.preset || "auto",
+        accent: theme.accent || "",
+        node_shape: theme.node_shape,
+        node_size: theme.node_size,
+        labels: theme.labels,
+        edge_style: theme.edge_style,
+        room_style: theme.room_style,
+        state_colors: { ...theme.state_colors },
+        quality_colors: { ...theme.quality_colors },
+        ...patch,
+      },
+    });
   }
 
   async _resetFloor() {
@@ -1008,6 +1200,36 @@ class FloorplanHubPanel extends HTMLElement {
       this._selected = null;
       this._floorDialog = false;
       this._render();
+      return;
+    }
+
+    if (hit("data-theme-dialog")) {
+      this._themeDialog = true;
+      this._render();
+      return;
+    }
+
+    if (hit("data-close-theme")) {
+      this._themeDialog = false;
+      this._render();
+      return;
+    }
+
+    const preset = hit("data-preset");
+    if (preset) {
+      // Only the preset: anything else would overrule what it decided.
+      this._setLayout("settings", "view", {
+        theme: { preset: preset.getAttribute("data-preset") },
+      });
+      return;
+    }
+
+    if (hit("data-reset-theme")) {
+      this._themeDialog = false;
+      this._hass
+        .callWS({ type: `${DOMAIN}/layout/reset`, section: "settings", key: "view" })
+        .then(() => this._refresh())
+        .catch(() => this._refresh());
       return;
     }
 
@@ -1239,7 +1461,7 @@ const STYLES = `
 .app { display:flex; flex-direction:column; height:100%; color:var(--primary-text-color,#212121);
        font-family:var(--paper-font-body1_-_font-family, Roboto, sans-serif); }
 header { display:flex; align-items:center; gap:8px; padding:8px 12px;
-         background:var(--app-header-background-color, var(--primary-color,#03a9f4));
+         background:var(--fp-accent, var(--app-header-background-color, var(--primary-color,#03a9f4)));
          color:var(--app-header-text-color,#fff); }
 .tabs { display:flex; gap:4px; flex-wrap:wrap; }
 .tab { display:flex; align-items:center; gap:6px; border:0; border-radius:16px;
@@ -1256,7 +1478,8 @@ aside { width:260px; flex:0 0 auto; background:var(--card-background-color,#fff)
         border-radius:12px; padding:12px 16px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
 @media (max-width:800px) { .body { flex-direction:column; } aside { width:auto; align-self:stretch; } }
 
-.stage { position:relative; width:100%; background:var(--card-background-color,#fff);
+.stage { position:relative; width:100%;
+         background:var(--fp-surface, var(--card-background-color,#fff));
          border-radius:12px; background-size:cover; background-position:center;
          box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); overflow:hidden; }
 .stage.placing { cursor:crosshair; outline:2px dashed var(--primary-color,#03a9f4); }
@@ -1295,10 +1518,34 @@ h3 { margin:12px 0 6px; font-size:14px; }
 .chips { display:flex; flex-wrap:wrap; gap:6px; }
 .chip { border:1px solid var(--divider-color,#e0e0e0); border-radius:14px; padding:4px 10px;
         background:transparent; cursor:pointer; font:inherit; color:inherit; }
-.chip.on { background:var(--primary-color,#03a9f4); color:#fff; border-color:transparent; }
+.chip.on { background:var(--fp-accent, var(--primary-color,#03a9f4)); color:#fff;
+           border-color:transparent; }
 .providers { list-style:none; margin:0; padding:0; }
 .providers li { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:13px; }
 .hint { font-size:13px; margin:8px 2px; }
+/* ── Theme: shapes, labels, rooms ─────────────────────────── */
+.stage.shape-rounded .dot { border-radius:22%; }
+.stage.shape-square .dot { border-radius:2px; }
+.stage.labels-never .node .label { display:none; }
+.stage.labels-hover .node .label { opacity:0; transition:opacity .12s; }
+.stage.labels-hover .node:hover .label,
+.stage.labels-hover .node.on .label { opacity:1; }
+.stage.rooms-none .area { border-color:transparent; background:transparent; }
+.stage.rooms-none .area-name { opacity:.55; }
+.stage.rooms-filled .area { border-style:solid;
+  background:var(--fp-accent, var(--primary-color,#03a9f4)); opacity:.14; }
+.stage.rooms-filled .area-name { color:var(--fp-ink, var(--primary-text-color,#212121)); opacity:1; }
+
+.swatches { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:10px 0; }
+.swatches > .muted { width:100%; font-size:12px; }
+.swatch { display:flex; flex-direction:column; align-items:center; gap:2px;
+          font-size:11px; color:var(--secondary-text-color,#727272); }
+.swatch input[type=color] { width:34px; height:26px; border:0; background:none;
+                            padding:0; cursor:pointer; }
+select { font:inherit; padding:6px; border-radius:8px;
+         border:1px solid var(--divider-color,#e0e0e0);
+         background:var(--card-background-color,#fff); color:inherit; }
+
 .stage.editing .area { cursor:grab; opacity:.9; border-style:solid; }
 .stage.editing .node { cursor:grab; }
 /* The grid is an overlay, so it never fights the floor's background image. */
@@ -1360,7 +1607,7 @@ h3 { margin:12px 0 6px; font-size:14px; }
 .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .action { display:flex; align-items:center; gap:6px; border:0; border-radius:18px;
           padding:8px 16px; cursor:pointer; font:inherit;
-          background:var(--primary-color,#03a9f4); color:#fff; }
+          background:var(--fp-accent, var(--primary-color,#03a9f4)); color:#fff; }
 .spark { width:100%; height:48px; margin-top:8px; }
 `;
 

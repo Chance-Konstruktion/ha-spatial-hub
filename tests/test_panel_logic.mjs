@@ -69,9 +69,25 @@ const edge = (source, target, extra = {}) => ({
   ...extra,
 });
 
+const theme = (overrides = {}) => ({
+  preset: "auto",
+  accent: "",
+  surface: "",
+  ink: "",
+  state_colors: { online: "", offline: "", unknown: "" },
+  quality_colors: { good: "", fair: "", poor: "", unknown: "" },
+  node_shape: "circle",
+  node_size: 1,
+  labels: "always",
+  edge_style: "straight",
+  room_style: "outline",
+  ...overrides,
+});
+
 const model = (overrides = {}) => ({
   api_version: 1,
   hidden: { nodes: [], areas: [] },
+  theme: theme(),
   floors: [
     { id: "eg", name: "Erdgeschoss", level: 0, icon: "" },
     { id: "og", name: "Obergeschoss", level: 1, icon: "" },
@@ -226,7 +242,7 @@ test("a provider's own colour beats the quality default", () => {
 test("an unknown state gets the accent colour instead of being forced offline", () => {
   const view = panel();
   const html = view._nodeHtml(node("a:x", { state: "heating" }));
-  assert.match(html, /--node-color:var\(--primary-color/);
+  assert.match(html, /--node-color:var\(--fp-accent/);
   assert.doesNotMatch(html, /error-color/);
 });
 
@@ -505,4 +521,126 @@ test("an oversized background is refused before it is uploaded", () => {
   view._readBackground({ size: 9 * 1024 * 1024 });
   assert.match(view._error, /zu groß/);
   assert.deepEqual(view._written, []);
+});
+
+
+// ── Themes ─────────────────────────────────────────────────
+
+test("an empty theme colour means Home Assistant's own theme", () => {
+  const view = panel();
+  assert.match(view._stateColour("online"), /--success-color/);
+  assert.match(view._qualityColour("poor"), /--error-color/);
+  assert.equal(view._themeVars, "", "nothing is forced onto the page");
+});
+
+test("the hub's colours win over the built-in fallbacks", () => {
+  const view = panel(model({
+    theme: theme({ state_colors: { online: "#00ff00", offline: "", unknown: "" },
+                   quality_colors: { good: "#abc123" } }),
+  }));
+  assert.equal(view._stateColour("online"), "#00ff00");
+  assert.equal(view._qualityColour("good"), "#abc123");
+  assert.match(view._stateColour("offline"), /--error-color/,
+               "an empty one still inherits");
+});
+
+test("a provider's own colour still beats the theme", () => {
+  const view = panel(model({
+    theme: theme({ state_colors: { online: "#00ff00" } }),
+  }));
+  assert.match(view._nodeHtml(node("a:x", { color: "#123456" })),
+               /--node-color:#123456/);
+});
+
+test("a themed word an integration invented is not honoured as a state", () => {
+  const view = panel(model({ theme: theme({ state_colors: { online: "#00ff00" } }) }));
+  assert.match(view._stateColour("heating"), /--fp-accent/,
+               "unknown words fall back; they are not looked up per integration");
+});
+
+test("accent, surface and ink reach the page as variables", () => {
+  const view = panel(model({
+    theme: theme({ accent: "#ff0000", surface: "#111111", ink: "#eeeeee" }),
+  }));
+  assert.match(view._themeVars, /--fp-accent:#ff0000/);
+  assert.match(view._themeVars, /--fp-surface:#111111/);
+  assert.match(view._themeVars, /--fp-ink:#eeeeee/);
+});
+
+test("the theme's node size multiplies the user's own scale", () => {
+  const view = panel(model({ theme: theme({ node_size: 2 }) }));
+  assert.match(view._nodeHtml(node("a:x", { scale: 1.5 })), /--node-scale:3/);
+});
+
+test("shape, label and room choices reach the stage", () => {
+  const view = panel(model({
+    theme: theme({ node_shape: "square", labels: "hover", room_style: "filled" }),
+  }));
+  const html = view._stageHtml();
+  assert.match(html, /shape-square/);
+  assert.match(html, /labels-hover/);
+  assert.match(html, /rooms-filled/);
+});
+
+test("curved edges are a path, straight ones stay a line", () => {
+  const straight = panel();
+  assert.match(straight._edgeHtml(straight._visibleEdges[0]), /^\s*<line/);
+
+  const curved = panel(model({ theme: theme({ edge_style: "curved" }) }));
+  const html = curved._edgeHtml(curved._visibleEdges[0]);
+  assert.match(html, /<path/);
+  assert.match(html, /d="M 500 500 Q [\d.-]+ [\d.-]+ 800 200"/);
+  assert.match(html, /fill="none"/, "an unfilled curve, not a blob");
+});
+
+test("both edge styles keep what a renderer must not lose", () => {
+  for (const style of ["straight", "curved"]) {
+    const view = panel(model({ theme: theme({ edge_style: style }) }));
+    const html = view._edgeHtml({
+      ...view._visibleEdges[0], dashed: true, directed: true, label: "5 Mbit",
+    });
+    assert.match(html, /data-edge=/, `${style}: still clickable`);
+    assert.match(html, /stroke-dasharray/, `${style}: still dashed`);
+    assert.match(html, /marker-end/, `${style}: still directed`);
+    assert.match(html, /5 Mbit/, `${style}: still labelled`);
+  }
+});
+
+test("picking a preset sends the preset alone", () => {
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._onClick(pointer(0, 0, { target: [element({ "data-preset": "neon" })] }));
+  assert.deepEqual(view._written, [
+    ["settings", "view", { theme: { preset: "neon" } }],
+  ], "anything else would overrule what the preset decided");
+});
+
+test("tweaking one control keeps everything else on screen", () => {
+  const view = panel(model({ theme: theme({ preset: "neon", node_shape: "square" }) }),
+                     { edit: true });
+  view._setTheme({ labels: "never" });
+
+  const written = view._written[0][2].theme;
+  assert.equal(written.labels, "never");
+  assert.equal(written.preset, "neon");
+  assert.equal(written.node_shape, "square", "the rest is pinned, not lost");
+});
+
+test("the palette is offered only while editing", () => {
+  const view = panel();
+  assert.doesNotMatch(view._headerHtml(), /data-theme-dialog/);
+  view._edit = true;
+  assert.match(view._headerHtml(), /data-theme-dialog/);
+});
+
+test("the dialog offers a colour per word of the vocabulary", () => {
+  const view = panel(model(), { edit: true });
+  const html = view._themeDialogHtml();
+  for (const word of ["online", "offline", "unknown"]) {
+    assert.match(html, new RegExp(`data-state-color="${word}"`));
+  }
+  for (const word of ["good", "fair", "poor", "unknown"]) {
+    assert.match(html, new RegExp(`data-quality-color="${word}"`));
+  }
+  assert.match(html, /data-reset-theme/, "and a way back to the default");
 });

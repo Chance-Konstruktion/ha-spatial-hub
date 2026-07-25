@@ -15,7 +15,7 @@ Plattform ein weiteres Dashboard geworden.
 | 3 | Renderer | ✅ |
 | 4 | Zero-Config: der Grundriss folgt dem Haus | ✅ |
 | 5 | Edit-Modus | ✅ |
-| 6 | Themes | ⬜ |
+| 6 | Themes | ✅ |
 | 7 | Generic Adapter | ⬜ |
 | 8 | Provider-SDK | ⬜ |
 | 9 | Eigene Provider migrieren | 🟡 Powerline steht |
@@ -101,10 +101,28 @@ Grundsatz bleibt: Der Provider erfährt nie, dass etwas verschoben wurde.
 Und `null` löscht ein Override, statt einen Gegenwert festzuschreiben — was
 zurückgesetzt wurde, folgt wieder der Automatik.
 
-## ⬜ Phase 6 — Themes
+## ✅ Phase 6 — Themes
 
-Farbpaletten, Icon-Stile, Dark/Light über die HA-Variablen hinaus. Ohne
-dass ein Provider etwas davon mitbekommt.
+Die interessante Frage war nicht, wie man Farben speichert, sondern **was
+ein Theme überhaupt einfärben darf**. Nicht Integrationen: Gäbe es je ein
+„Powerline-Blau", bräuchte jeder Provider eine eigene Palette, und wer
+keine hat, sähe kaputt aus, ohne etwas falsch gemacht zu haben.
+
+Ein Theme färbt deshalb das **gemeinsame Vokabular** — die Zustände
+`online`/`offline`/`unknown` und die Qualitäten `good`/`fair`/`poor`, die
+ohnehin jeder Provider spricht. Eine Integration, die nächstes Jahr
+geschrieben wird, sieht in dem Moment richtig aus, in dem sie sich
+registriert.
+
+Fünf Presets (`auto`, `classic`, `blueprint`, `neon`, `paper`), dazu freie
+Farben pro Wort, Knotenform und -größe, Beschriftungsmodus, gerade oder
+gebogene Verbindungen, Raumdarstellung. Voreingestellt ist `auto`: leere
+Farben bedeuten „nimm, was Home Assistant sagt" — der Hub streitet nicht
+mit dem Theme, das der Nutzer längst gewählt hat.
+
+Aufgelöst wird im **Hub**, nicht im Renderer. `model["theme"]` ist fertig
+ausgerechnet, damit ein zweiter Renderer dieselben Farben bekommt, ohne ein
+einziges Preset nachzubauen.
 
 ## ⬜ Phase 7 — Generic Adapter
 
