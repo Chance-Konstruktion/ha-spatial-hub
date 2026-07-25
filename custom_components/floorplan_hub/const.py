@@ -30,6 +30,12 @@ SIGNAL_DATA_UPDATED: Final = "floorplan_hub_data_updated"
 # higher major version is refused rather than misread.
 API_VERSION: Final = 1
 
+# The newest revision of the copied provider shim this hub ships. A
+# provider that stamped an older one gets a note in diagnostics -- never a
+# warning in the log, and never a refusal. An old copy still works; the
+# point is that its author finds out a better one exists.
+CURRENT_SDK_VERSION: Final = 1
+
 # ── Internal hass.data keys ───────────────────────────────────────────
 DATA_HUB: Final = f"{DOMAIN}_hub"
 DATA_STORE: Final = f"{DOMAIN}_store"

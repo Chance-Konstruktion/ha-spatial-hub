@@ -17,7 +17,7 @@ Plattform ein weiteres Dashboard geworden.
 | 5 | Edit-Modus | ✅ |
 | 6 | Themes | ✅ |
 | 7 | Generic Adapter | ✅ |
-| 8 | Provider-SDK | ⬜ |
+| 8 | Provider-SDK | ✅ |
 | 9 | Eigene Provider migrieren | 🟡 Powerline steht |
 | 10 | Community | ⬜ |
 | 11 | Austauschbare Renderer | 🟡 Fundament steht |
@@ -144,12 +144,31 @@ Dazu `floorplan_hub/entities/facets`: welche Arten, Label und Geräteklassen
 es in diesem Haus wirklich gibt. Ohne das müsste der Editor raten — und
 Raten endet in einer fest verdrahteten Liste von Integrationsnamen.
 
-## ⬜ Phase 8 — Provider-SDK
+## ✅ Phase 8 — Provider-SDK
 
-Aus der kopierten Shim-Datei ein gepflegtes Paket machen — falls sich
-herausstellt, dass das überhaupt jemand will. Kopieren hat den Vorteil,
-dass niemand eine Abhängigkeit erbt; das ist nicht leichtfertig
-aufzugeben.
+Ursprünglich stand hier „ein gepflegtes Paket auf PyPI". Das wäre der
+falsche Schritt gewesen: Das ganze Versprechen an einen fremden Maintainer
+lautet *„das kostet dich nichts"* — und eine Abhängigkeit ist nicht nichts.
+Sie ist eine Version zum Pinnen, ein Konflikt zum Auflösen, eine
+Supply-Chain-Frage im Review und ein weiterer Grund, nein zu sagen.
+
+Also ein **Vendoring-SDK**:
+
+- `sdk/install.py` kopiert die zwei Dateien und druckt den fehlenden Code,
+  mit der Domain schon eingesetzt. Läuft auf einem nackten Python, ohne
+  Home Assistant, ohne Hub, ohne Netz.
+- Der Shim stempelt eine `SDK_VERSION` in seine Registrierung. Der Hub
+  meldet in `floorplan_hub/diagnostics`, wenn eine Kopie veraltet ist — das
+  Einzige, was ein Paket überhaupt gebracht hätte. Eine alte Kopie
+  funktioniert weiter; ihr Autor wird informiert, nicht bestraft.
+- `examples/example_provider/` ist eine **ganze** Integration, keine
+  Schnipsel. Sie läuft in unserer Testsuite gegen den echten Hub und muss
+  dasselbe Conformance-Kit bestehen wie fremder Code — Beispiele, die
+  verrotten, sind schlimmer als keine.
+- `docs/ASK_FOR_SUPPORT.md` ist der Text, den ein *Nutzer* bei einer
+  fremden Integration einreicht. Mit der Bitte, es einmal zu tun,
+  freundlich, und mit dem Angebot, den PR selbst zu schreiben. Der Weg
+  einer Plattform führt über die Nutzer der anderen, nicht über uns.
 
 ## 🟡 Phase 9 — Eigene Provider migrieren
 

@@ -16,7 +16,7 @@ from custom_components.floorplan_hub.storage import LayoutStore
 
 from conftest import FakeArea, FakeEntity
 
-_SHIM = Path(__file__).resolve().parents[1] / "docs" / "floorplan_hub_provider.py"
+_SHIM = Path(__file__).resolve().parents[1] / "sdk" / "floorplan_hub_provider.py"
 _spec = importlib.util.spec_from_file_location("floorplan_hub_provider", _SHIM)
 shim = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(shim)

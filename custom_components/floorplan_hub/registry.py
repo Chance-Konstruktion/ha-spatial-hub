@@ -55,6 +55,7 @@ _KNOWN_REGISTRATION_KEYS = frozenset(
     {
         "provider_id",
         "api_version",
+        "sdk_version",
         "name",
         "icon",
         "version",
@@ -104,6 +105,9 @@ class Provider:
     history_fn: Callable[..., Any] | None = None
     action_fn: Callable[..., Any] | None = None
     warnings: list[str] = field(default_factory=list)
+    # 0 means the registration was written by hand rather than with the
+    # copied shim. That is a perfectly good way to do it, and gets no note.
+    sdk_version: int = 0
 
     @classmethod
     def from_registration(cls, raw: dict[str, Any]) -> Provider:
@@ -125,6 +129,11 @@ class Provider:
         data_fn = raw.get("data")
         if not callable(data_fn):
             raise ProviderError(f"{provider_id} has no callable 'data'")
+
+        try:
+            sdk_version = int(raw.get("sdk_version") or 0)
+        except (TypeError, ValueError):
+            sdk_version = 0
 
         warnings = [
             f"unknown registration key '{key}' (typo?)"
@@ -165,6 +174,7 @@ class Provider:
             history_fn=raw.get("history") if callable(raw.get("history")) else None,
             action_fn=raw.get("action") if callable(raw.get("action")) else None,
             warnings=warnings,
+            sdk_version=sdk_version,
         )
 
     @property

@@ -14,11 +14,12 @@ einzige Zeile geändert wird.
 
 ## Status
 
-**Phase 1–7 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
+**Phase 1–8 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
 Event-System, Storage, Config-Flow, die komplette Websocket-API, ein
 Renderer in der Seitenleiste, ein Grundriss, der dem Haus von selbst folgt,
 ein Edit-Modus für alles, was die Automatik falsch geraten hat, Themes — und
-eigene Ebenen für jede Integration, die nie einen Adapter schreiben wird.
+eigene Ebenen für jede Integration, die nie einen Adapter schreiben wird, und
+ein SDK für die, die einen schreiben wollen.
 
 [ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) ist als
 erster Provider angebunden. Der vollständige Plan steht in
@@ -124,7 +125,14 @@ eine Abkürzung an dieser Stelle wäre der erste Riss in dem, was den Hub
 
 ## Eine Integration anbinden
 
-Siehe **[docs/PROVIDER_API.md](docs/PROVIDER_API.md)**. Die vollständige
+Für Maintainer: **[sdk/README.md](sdk/README.md)** — eine Seite, die ganze
+Antwort. Referenz: **[docs/PROVIDER_API.md](docs/PROVIDER_API.md)**.
+
+```bash
+python3 sdk/install.py --into custom_components/<domain> --tests tests
+```
+
+Kopiert zwei Dateien und druckt den Code, der noch fehlt. Die vollständige
 Anbindung ist ein Aufruf:
 
 ```python
@@ -150,13 +158,23 @@ mehr zu sagen hat, nimmt die Builder `node()` / `edge()` / `action()` —
 alles Zusätzliche landet automatisch in den Metadaten und damit im Popup.
 
 **Und ein Conformance-Kit**, das Entwickler in ihre eigene Testsuite
-kopieren ([docs/floorplan_hub_conformance.py](docs/floorplan_hub_conformance.py)):
+kopieren ([sdk/floorplan_hub_conformance.py](sdk/floorplan_hub_conformance.py)):
 eine Klasse, nur pytest als Abhängigkeit, kein Home Assistant und kein
 installierter Hub nötig. Es fängt die Fehler, die Grundrisse im Feld
 zerlegen — allen voran Node-IDs, die sich zwischen zwei Polls ändern und
 damit die gesamte Anordnung des Nutzers stillschweigend wegwerfen, und
 Metadaten, die sich nicht als JSON verschicken lassen und das Modell für
 *alle* Provider mitreißen.
+
+Ein **vollständiges Beispiel** liegt in
+[examples/example_provider/](examples/example_provider/) — keine Schnipsel,
+sondern eine ganze Integration, die in unserer eigenen Testsuite gegen den
+echten Hub läuft und denselben Conformance-Vertrag erfüllen muss wie fremder
+Code. Sie kann also nicht stillschweigend verrotten.
+
+Und wenn du Nutzer einer Integration bist, die noch fehlt:
+**[docs/ASK_FOR_SUPPORT.md](docs/ASK_FOR_SUPPORT.md)** ist der Text, den du
+dort einreichst — samt der Bitte, es einmal zu tun und freundlich.
 
 Provider-Code gilt dem Hub als nicht vertrauenswürdig: Wer eine Exception
 wirft, ins Timeout läuft oder Unsinn liefert, verliert seinen eigenen Layer

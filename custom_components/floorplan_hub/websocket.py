@@ -12,7 +12,13 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
-from .const import API_VERSION, DATA_HUB, DOMAIN, MAX_BACKGROUND_BYTES
+from .const import (
+    API_VERSION,
+    CURRENT_SDK_VERSION,
+    DATA_HUB,
+    DOMAIN,
+    MAX_BACKGROUND_BYTES,
+)
 from .generic import async_facets
 from .hub import FloorplanHub
 
@@ -292,6 +298,7 @@ async def websocket_diagnostics(hass: HomeAssistant, connection, msg: dict) -> N
         msg["id"],
         {
             "api_version": API_VERSION,
+            "sdk_version": CURRENT_SDK_VERSION,
             "providers": {
                 provider_id: status
                 for provider_id, status in hub.status.items()
