@@ -63,6 +63,14 @@ class FloorplanHubPanel extends HTMLElement {
     this._diagnostics = null;
     this._unsubscribe = null;
     this._pending = false;
+    this._edit = false;
+    this._drag = null; // live pointer drag, never persisted until release
+    this._dragged = false; // suppresses the click that follows a drag
+    this._floorDialog = false;
+  }
+
+  get _canEdit() {
+    return Boolean(this._hass && this._hass.user && this._hass.user.is_admin);
   }
 
   set hass(hass) {
@@ -255,6 +263,9 @@ class FloorplanHubPanel extends HTMLElement {
     this.shadowRoot.append(style, root);
     this._root = root;
     root.addEventListener("click", (event) => this._onClick(event));
+    root.addEventListener("pointerdown", (event) => this._onPointerDown(event));
+    root.addEventListener("input", (event) => this._onInput(event, false));
+    root.addEventListener("change", (event) => this._onInput(event, true));
     root.innerHTML = `<div class="loading">Grundriss wird geladen …</div>`;
   }
 
@@ -277,6 +288,7 @@ class FloorplanHubPanel extends HTMLElement {
         <aside>${this._sidebarHtml()}</aside>
       </div>
       ${this._showDiagnostics ? this._diagnosticsHtml() : ""}
+      ${this._floorDialog ? this._floorDialogHtml() : ""}
       ${this._popupHtml()}
     `;
   }
@@ -298,10 +310,32 @@ class FloorplanHubPanel extends HTMLElement {
       <header>
         <div class="tabs">${tabs}</div>
         <div class="spacer"></div>
+        ${
+          this._edit
+            ? `<button class="icon-btn" data-floor-dialog="1" title="Etage einrichten">
+                 <ha-icon icon="mdi:image-outline"></ha-icon>
+               </button>
+               <button class="icon-btn" data-reset-floor="1"
+                       title="Anordnung dieser Etage zurücksetzen">
+                 <ha-icon icon="mdi:backup-restore"></ha-icon>
+               </button>`
+            : ""
+        }
         <button class="icon-btn ${this._showDiagnostics ? "on" : ""}"
                 data-toggle="diagnostics" title="Diagnose">
           <ha-icon icon="mdi:stethoscope"></ha-icon>
         </button>
+        ${
+          this._canEdit
+            ? `<button class="icon-btn ${this._edit ? "on" : ""}"
+                       data-toggle-edit="1"
+                       title="${this._edit ? "Bearbeiten beenden" : "Bearbeiten"}">
+                 <ha-icon icon="${
+                   this._edit ? "mdi:check" : "mdi:pencil-outline"
+                 }"></ha-icon>
+               </button>`
+            : ""
+        }
       </header>`;
   }
 
@@ -335,7 +369,9 @@ class FloorplanHubPanel extends HTMLElement {
 
     return `
       ${banner}
-      <div class="stage ${this._placing ? "placing" : ""}"
+      <div class="stage ${this._placing ? "placing" : ""} ${
+        this._edit ? "editing" : ""
+      }"
            style="aspect-ratio:${aspect};${
              background
                ? `background-image:url('${escapeHtml(background)}')`
@@ -354,6 +390,12 @@ class FloorplanHubPanel extends HTMLElement {
         ${nodes.map((node) => this._nodeHtml(node)).join("")}
       </div>
       ${
+        this._edit && !this._placing
+          ? `<p class="hint">Ziehen ordnet an, die Ecke eines Bereichs
+             ändert seine Größe. <b>Shift</b> hält gedrückt das Raster aus.</p>`
+          : ""
+      }
+      ${
         this._placing
           ? `<p class="hint">Klick auf den Grundriss setzt „${escapeHtml(
               this._placingLabel(),
@@ -368,13 +410,23 @@ class FloorplanHubPanel extends HTMLElement {
       .map((area) => {
         const size = area.size || { width: 0.3, height: 0.3 };
         return `
-        <div class="area" style="
+        <div class="area" data-area="${escapeHtml(area.id)}" style="
               left:${area.position.x * 100}%; top:${area.position.y * 100}%;
               width:${size.width * 100}%; height:${size.height * 100}%;">
           <span class="area-name">
             ${area.icon ? `<ha-icon icon="${escapeHtml(area.icon)}"></ha-icon>` : ""}
             ${escapeHtml(area.name)}
           </span>
+          ${
+            this._edit
+              ? `<span class="grip" data-resize-area="${escapeHtml(area.id)}"
+                       title="Größe ändern"></span>
+                 <button class="area-hide" data-hide-area="${escapeHtml(area.id)}"
+                         title="Bereich ausblenden">
+                   <ha-icon icon="mdi:eye-off-outline"></ha-icon>
+                 </button>`
+              : ""
+          }
         </div>`;
       })
       .join("");
@@ -438,14 +490,32 @@ class FloorplanHubPanel extends HTMLElement {
       .reverse()
       .map(
         (layer) => `
-        <button class="row" data-layer="${escapeHtml(layer.id)}">
-          <ha-icon icon="${
-            layer.visible === false ? "mdi:eye-off-outline" : "mdi:eye-outline"
-          }"></ha-icon>
-          <span class="${layer.visible === false ? "muted" : ""}">
-            ${escapeHtml(layer.name || layer.id)}
-          </span>
-        </button>`,
+        <div class="layer">
+          <button class="row" data-layer="${escapeHtml(layer.id)}">
+            <ha-icon icon="${
+              layer.visible === false ? "mdi:eye-off-outline" : "mdi:eye-outline"
+            }"></ha-icon>
+            <span class="${layer.visible === false ? "muted" : ""}">
+              ${escapeHtml(layer.name || layer.id)}
+            </span>
+          </button>
+          ${
+            this._edit
+              ? `<div class="layer-edit">
+                   <input type="range" min="0.1" max="1" step="0.05"
+                          value="${layer.opacity ?? 1}"
+                          data-layer-opacity="${escapeHtml(layer.id)}"
+                          title="Deckkraft">
+                   <button class="icon-btn small" data-layer-up="${escapeHtml(
+                     layer.id,
+                   )}" title="Nach vorn"><ha-icon icon="mdi:arrow-up"></ha-icon></button>
+                   <button class="icon-btn small" data-layer-down="${escapeHtml(
+                     layer.id,
+                   )}" title="Nach hinten"><ha-icon icon="mdi:arrow-down"></ha-icon></button>
+                 </div>`
+              : ""
+          }
+        </div>`,
       )
       .join("");
 
@@ -484,8 +554,96 @@ class FloorplanHubPanel extends HTMLElement {
       <h3>Ebenen</h3>
       <div class="rows">${layers || '<p class="note">Keine Ebenen.</p>'}</div>
       ${tray}
+      ${this._hiddenTrayHtml()}
       <h3>Provider</h3>
       <ul class="providers">${providers}</ul>`;
+  }
+
+  _hiddenTrayHtml() {
+    const hidden = (this._model && this._model.hidden) || {};
+    const nodes = hidden.nodes || [];
+    const areas = hidden.areas || [];
+    if (!nodes.length && !areas.length) return "";
+    return `
+      <h3>Ausgeblendet</h3>
+      <p class="note">Anklicken holt es zurück.</p>
+      <div class="chips">
+        ${areas
+          .map(
+            (area) => `
+          <button class="chip" data-show-area="${escapeHtml(area.id)}">
+            ${escapeHtml(area.name)}
+          </button>`,
+          )
+          .join("")}
+        ${nodes
+          .map(
+            (node) => `
+          <button class="chip" data-show-node="${escapeHtml(node.id)}">
+            ${escapeHtml(node.label)}
+          </button>`,
+          )
+          .join("")}
+      </div>`;
+  }
+
+  _floorDialogHtml() {
+    const floor = this._floor;
+    if (!floor) return "";
+    return `
+      <div class="scrim" data-close-floor="1"></div>
+      <div class="popup">
+        <div class="popup-head">
+          <h2>${escapeHtml(floor.name)}</h2>
+          <button class="icon-btn" data-close-floor="1">
+            <ha-icon icon="mdi:close"></ha-icon>
+          </button>
+        </div>
+        <p class="note">Ein Grundriss-Bild als Hintergrund. Es bleibt im
+        Browser des Nutzers nichts hängen — der Hub speichert es, und jeder
+        Renderer bekommt es mit dem Modell.</p>
+        <label class="field">
+          <span>Hintergrundbild</span>
+          <input type="file" accept="image/*" data-background="1">
+        </label>
+        ${
+          floor.background
+            ? `<button class="link" data-clear-background="1">Bild entfernen</button>`
+            : ""
+        }
+        <label class="field">
+          <span>Seitenverhältnis <b data-aspect-value>${(
+            floor.aspect || 1.6
+          ).toFixed(2)}</b></span>
+          <input type="range" min="0.5" max="3" step="0.05"
+                 value="${floor.aspect || 1.6}" data-aspect="1">
+        </label>
+      </div>`;
+  }
+
+  _editPanelHtml(kind, id, item) {
+    if (kind !== "node") return "";
+    return `
+      <div class="edit-panel">
+        <label class="field">
+          <span>Größe <b>${(item.scale || 1).toFixed(2)}×</b></span>
+          <input type="range" min="0.4" max="3" step="0.1"
+                 value="${item.scale || 1}" data-node-scale="${escapeHtml(id)}">
+        </label>
+        <label class="field">
+          <span>Drehung <b>${Math.round(item.rotation || 0)}°</b></span>
+          <input type="range" min="-180" max="180" step="5"
+                 value="${item.rotation || 0}" data-node-rotation="${escapeHtml(id)}">
+        </label>
+        <div class="edit-buttons">
+          <button class="chip" data-hide-node="${escapeHtml(id)}">
+            <ha-icon icon="mdi:eye-off-outline"></ha-icon> Ausblenden
+          </button>
+          <button class="chip" data-reset-item="${escapeHtml(id)}">
+            <ha-icon icon="mdi:backup-restore"></ha-icon> Zurücksetzen
+          </button>
+        </div>
+      </div>`;
   }
 
   _diagnosticsHtml() {
@@ -582,6 +740,7 @@ class FloorplanHubPanel extends HTMLElement {
               )}">Entität öffnen</button>`
             : ""
         }
+        ${this._edit ? this._editPanelHtml(kind, id, item) : ""}
         <table>${rows}</table>
         ${
           capabilities.history
@@ -640,7 +799,190 @@ class FloorplanHubPanel extends HTMLElement {
     return (area && area.name) || this._placing.key;
   }
 
+  // ── Dragging ────────────────────────────────────────────
+
+  /** Snap to a 2 % grid so rooms line up; Shift is the escape hatch. */
+  _snap(value, event) {
+    if (event.shiftKey) return Math.min(1, Math.max(0, value));
+    return Math.min(1, Math.max(0, Math.round(value / 0.02) * 0.02));
+  }
+
+  _onPointerDown(event) {
+    if (!this._edit || event.button !== 0) return;
+    const path = event.composedPath();
+    const find = (attribute) =>
+      path.find(
+        (element) =>
+          element.getAttribute && element.getAttribute(attribute) !== null,
+      );
+
+    const stage = path.find(
+      (element) => element.classList && element.classList.contains("stage"),
+    );
+    if (!stage) return;
+
+    const grip = find("data-resize-area");
+    const areaElement = find("data-area");
+    const nodeElement = find("data-node");
+    if (!grip && !areaElement && !nodeElement) return;
+
+    // Buttons drawn on top of a draggable thing keep working.
+    if (!grip && find("data-hide-area")) return;
+
+    const target = grip
+      ? { mode: "resize", section: "areas", key: grip.getAttribute("data-resize-area"),
+          element: areaElement }
+      : nodeElement
+        ? { mode: "move", section: "nodes", key: nodeElement.getAttribute("data-node"),
+            element: nodeElement }
+        : { mode: "move", section: "areas", key: areaElement.getAttribute("data-area"),
+            element: areaElement };
+
+    event.preventDefault();
+    this._dragged = false;
+    this._drag = { ...target, stage, box: stage.getBoundingClientRect() };
+
+    const move = (moveEvent) => this._onPointerMove(moveEvent);
+    const up = (upEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      this._onPointerUp(upEvent);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  _onPointerMove(event) {
+    const drag = this._drag;
+    if (!drag) return;
+    this._dragged = true;
+    const x = (event.clientX - drag.box.left) / drag.box.width;
+    const y = (event.clientY - drag.box.top) / drag.box.height;
+
+    if (drag.mode === "resize") {
+      // The grip sits at the bottom-right; the area is centred on its
+      // position, so half the delta on each side keeps the centre still.
+      const centreX = drag.element.offsetLeft / drag.box.width;
+      const centreY = drag.element.offsetTop / drag.box.height;
+      drag.value = {
+        width: Math.min(1, Math.max(0.04, (x - centreX) * 2)),
+        height: Math.min(1, Math.max(0.04, (y - centreY) * 2)),
+      };
+      drag.element.style.width = `${drag.value.width * 100}%`;
+      drag.element.style.height = `${drag.value.height * 100}%`;
+      return;
+    }
+
+    drag.value = { x: this._snap(x, event), y: this._snap(y, event) };
+    drag.element.style.left = `${drag.value.x * 100}%`;
+    drag.element.style.top = `${drag.value.y * 100}%`;
+  }
+
+  _onPointerUp() {
+    const drag = this._drag;
+    this._drag = null;
+    if (!drag || !drag.value) return;
+    if (drag.mode === "resize") {
+      this._setLayout("areas", drag.key, {
+        size: {
+          width: Number(drag.value.width.toFixed(4)),
+          height: Number(drag.value.height.toFixed(4)),
+        },
+      });
+      return;
+    }
+    this._setLayout(drag.section, drag.key, {
+      position: {
+        x: Number(drag.value.x.toFixed(4)),
+        y: Number(drag.value.y.toFixed(4)),
+      },
+    });
+  }
+
+  // ── Sliders and file pickers ────────────────────────────
+
+  _onInput(event, committed) {
+    const input = event.target;
+    if (!input || !input.getAttribute) return;
+    const attribute = (name) => input.getAttribute(name);
+
+    const nodeScale = attribute("data-node-scale");
+    if (nodeScale !== null) {
+      if (committed) this._setLayout("nodes", nodeScale, { scale: Number(input.value) });
+      return;
+    }
+    const nodeRotation = attribute("data-node-rotation");
+    if (nodeRotation !== null) {
+      if (committed) {
+        this._setLayout("nodes", nodeRotation, { rotation: Number(input.value) });
+      }
+      return;
+    }
+    const layerOpacity = attribute("data-layer-opacity");
+    if (layerOpacity !== null) {
+      if (committed) {
+        this._setLayout("layers", layerOpacity, { opacity: Number(input.value) });
+      }
+      return;
+    }
+    if (attribute("data-aspect") !== null) {
+      const label = this._root.querySelector("[data-aspect-value]");
+      if (label) label.textContent = Number(input.value).toFixed(2);
+      if (committed && this._floor) {
+        this._setLayout("floors", this._floor.id, { aspect: Number(input.value) });
+      }
+      return;
+    }
+    if (attribute("data-background") !== null && input.files && input.files[0]) {
+      this._readBackground(input.files[0]);
+    }
+  }
+
+  _readBackground(file) {
+    // 4 MB is the hub's own limit; refusing here means a clear message
+    // instead of a websocket error after a long upload.
+    if (file.size > 3 * 1024 * 1024) {
+      this._error = "Bild zu groß (max. 3 MB). Bitte vorher verkleinern.";
+      this._render();
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (!this._floor) return;
+      this._setLayout("floors", this._floor.id, { background: reader.result });
+      this._floorDialog = false;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async _resetFloor() {
+    const floor = this._floor;
+    if (!floor) return;
+    if (!window.confirm(`Anordnung von „${floor.name}“ zurücksetzen?`)) return;
+
+    const areas = this._visibleAreas.map((area) => ["areas", area.id]);
+    const nodes = this._visibleNodes.map((node) => ["nodes", node.id]);
+    for (const [section, key] of [...areas, ...nodes, ["floors", floor.id]]) {
+      try {
+        await this._hass.callWS({
+          type: `${DOMAIN}/layout/reset`,
+          section,
+          key,
+        });
+      } catch (err) {
+        console.warn("Floorplan-Hub: reset failed", section, key, err);
+      }
+    }
+    await this._refresh();
+  }
+
   _onClick(event) {
+    // A drag ends in a click; that must not also open a popup.
+    if (this._dragged) {
+      this._dragged = false;
+      return;
+    }
+
     const path = event.composedPath();
     const hit = (attribute) =>
       path.find(
@@ -657,6 +999,97 @@ class FloorplanHubPanel extends HTMLElement {
       this._floorId = floorButton.getAttribute("data-floor");
       this._selected = null;
       this._render();
+      return;
+    }
+
+    if (hit("data-toggle-edit")) {
+      this._edit = !this._edit;
+      this._placing = null;
+      this._selected = null;
+      this._floorDialog = false;
+      this._render();
+      return;
+    }
+
+    if (hit("data-floor-dialog")) {
+      this._floorDialog = true;
+      this._render();
+      return;
+    }
+
+    if (hit("data-close-floor")) {
+      this._floorDialog = false;
+      this._render();
+      return;
+    }
+
+    if (hit("data-clear-background")) {
+      if (this._floor) this._setLayout("floors", this._floor.id, { background: null });
+      this._floorDialog = false;
+      return;
+    }
+
+    if (hit("data-reset-floor")) {
+      this._resetFloor();
+      return;
+    }
+
+    const layerUp = hit("data-layer-up");
+    const layerDown = hit("data-layer-down");
+    if (layerUp || layerDown) {
+      const id = (layerUp || layerDown).getAttribute(
+        layerUp ? "data-layer-up" : "data-layer-down",
+      );
+      const layer = (this._model.layers || []).find((l) => l.id === id);
+      if (layer) {
+        this._setLayout("layers", id, {
+          z_index: (layer.z_index || 10) + (layerUp ? 5 : -5),
+        });
+      }
+      return;
+    }
+
+    const hideArea = hit("data-hide-area");
+    if (hideArea) {
+      this._setLayout("areas", hideArea.getAttribute("data-hide-area"), {
+        hidden: true,
+      });
+      return;
+    }
+
+    const showArea = hit("data-show-area");
+    if (showArea) {
+      this._setLayout("areas", showArea.getAttribute("data-show-area"), {
+        hidden: null,
+      });
+      return;
+    }
+
+    const hideNode = hit("data-hide-node");
+    if (hideNode) {
+      this._selected = null;
+      this._setLayout("nodes", hideNode.getAttribute("data-hide-node"), {
+        hidden: true,
+      });
+      return;
+    }
+
+    const showNode = hit("data-show-node");
+    if (showNode) {
+      this._setLayout("nodes", showNode.getAttribute("data-show-node"), {
+        hidden: null,
+      });
+      return;
+    }
+
+    const resetItem = hit("data-reset-item");
+    if (resetItem) {
+      const id = resetItem.getAttribute("data-reset-item");
+      this._selected = null;
+      this._hass
+        .callWS({ type: `${DOMAIN}/layout/reset`, section: "nodes", key: id })
+        .then(() => this._refresh())
+        .catch(() => this._refresh());
       return;
     }
 
@@ -866,6 +1299,36 @@ h3 { margin:12px 0 6px; font-size:14px; }
 .providers { list-style:none; margin:0; padding:0; }
 .providers li { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:13px; }
 .hint { font-size:13px; margin:8px 2px; }
+.stage.editing .area { cursor:grab; opacity:.9; border-style:solid; }
+.stage.editing .node { cursor:grab; }
+/* The grid is an overlay, so it never fights the floor's background image. */
+.stage.editing::before { content:""; position:absolute; inset:0; pointer-events:none;
+  background-image:
+    linear-gradient(to right, rgba(127,127,127,.14) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(127,127,127,.14) 1px, transparent 1px);
+  background-size:4% 4%; }
+.grip { position:absolute; right:-6px; bottom:-6px; width:14px; height:14px;
+        border-radius:50%; background:var(--primary-color,#03a9f4);
+        border:2px solid var(--card-background-color,#fff); cursor:nwse-resize; }
+.area-hide { position:absolute; top:2px; right:2px; border:0; background:transparent;
+             color:var(--secondary-text-color,#727272); cursor:pointer; padding:2px;
+             display:flex; border-radius:50%; }
+.area-hide:hover { background:var(--secondary-background-color,#fafafa); }
+
+.layer { display:flex; flex-direction:column; }
+.layer-edit { display:flex; align-items:center; gap:4px; padding:0 4px 6px 30px; }
+.layer-edit input[type=range] { flex:1; min-width:0; }
+.icon-btn.small { padding:2px; }
+.icon-btn.small ha-icon { --mdc-icon-size:18px; }
+
+.edit-panel { border-top:1px solid var(--divider-color,#e0e0e0);
+              border-bottom:1px solid var(--divider-color,#e0e0e0);
+              padding:8px 0; margin:8px 0; }
+.field { display:flex; flex-direction:column; gap:4px; font-size:13px; margin:8px 0; }
+.field input[type=range] { width:100%; }
+.edit-buttons { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.edit-buttons .chip { display:flex; align-items:center; gap:4px; }
+
 .banner { margin:0 0 12px; padding:10px 14px; border-radius:10px; font-size:13px;
           background:var(--card-background-color,#fff); color:var(--secondary-text-color,#727272);
           box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }

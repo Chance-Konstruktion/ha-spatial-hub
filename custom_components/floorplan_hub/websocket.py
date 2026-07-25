@@ -15,6 +15,11 @@ from homeassistant.core import HomeAssistant, callback
 from .const import API_VERSION, DATA_HUB, DOMAIN, MAX_BACKGROUND_BYTES
 from .hub import FloorplanHub
 
+_SIZE_SCHEMA = {
+    vol.Required("width"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=2)),
+    vol.Required("height"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=2)),
+}
+
 _POSITION_SCHEMA = {
     vol.Required("x"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=2)),
     vol.Required("y"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=2)),
@@ -74,7 +79,7 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
         vol.Required("key"): str,
         vol.Required("values"): {
             vol.Optional("position"): vol.Any(None, _POSITION_SCHEMA),
-            vol.Optional("size"): vol.Any(None, dict),
+            vol.Optional("size"): vol.Any(None, _SIZE_SCHEMA),
             vol.Optional("label_offset"): vol.Any(None, dict),
             vol.Optional("icon"): vol.Any(None, str),
             vol.Optional("color"): vol.Any(None, str),

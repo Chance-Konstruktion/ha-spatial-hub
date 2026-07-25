@@ -24,6 +24,8 @@ globalThis.HTMLElement = class {
   addEventListener() {}
 };
 globalThis.customElements = { define() {} };
+globalThis.window = { addEventListener() {}, removeEventListener() {},
+                      confirm: () => true };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const { FloorplanHubPanel, QUALITY } = await import(
@@ -69,6 +71,7 @@ const edge = (source, target, extra = {}) => ({
 
 const model = (overrides = {}) => ({
   api_version: 1,
+  hidden: { nodes: [], areas: [] },
   floors: [
     { id: "eg", name: "Erdgeschoss", level: 0, icon: "" },
     { id: "og", name: "Obergeschoss", level: 1, icon: "" },
@@ -92,12 +95,48 @@ const model = (overrides = {}) => ({
 });
 
 /** A panel wired to a model, with no DOM behind it. */
-function panel(data = model()) {
+function panel(data = model(), { admin = true, edit = false } = {}) {
   const instance = new FloorplanHubPanel();
   instance._model = data;
-  instance._hass = { user: { is_admin: true } };
+  instance._edit = edit;
+  instance._written = [];
+  instance._hass = {
+    user: { is_admin: admin },
+    callWS: async () => ({}),
+  };
+  instance._setLayout = (section, key, values) => {
+    instance._written.push([section, key, values]);
+  };
   return instance;
 }
+
+/** A pointer event carrying only what the drag code reads. */
+const pointer = (x, y, { shift = false, target = null } = {}) => ({
+  clientX: x,
+  clientY: y,
+  shiftKey: shift,
+  button: 0,
+  preventDefault() {},
+  composedPath: () => target || [],
+});
+
+/** A stand-in for one positioned element on the stage. */
+function element(attributes = {}, offset = {}) {
+  return {
+    style: {},
+    classList: { contains: (name) => name === attributes._class },
+    offsetLeft: offset.left || 0,
+    offsetTop: offset.top || 0,
+    getAttribute: (name) =>
+      name in attributes ? attributes[name] : null,
+  };
+}
+
+const stage = () => {
+  const el = element({ _class: "stage" });
+  el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 1000 });
+  return el;
+};
 
 // ── What belongs on screen ─────────────────────────────────
 
@@ -299,4 +338,171 @@ test("unplaced areas get a tray and a way back onto the plan", () => {
   const html = view._sidebarHtml();
   assert.match(html, /Nicht platziert/);
   assert.match(html, /data-place-area="wohnzimmer"/);
+});
+
+
+// ── Edit mode ──────────────────────────────────────────────
+
+test("only an admin is offered the pencil", () => {
+  assert.match(panel()._headerHtml(), /data-toggle-edit/);
+  assert.doesNotMatch(panel(model(), { admin: false })._headerHtml(),
+                      /data-toggle-edit/);
+});
+
+test("editing tools appear only in edit mode", () => {
+  const view = panel();
+  assert.doesNotMatch(view._headerHtml(), /data-floor-dialog/);
+  view._edit = true;
+  assert.match(view._headerHtml(), /data-floor-dialog/);
+  assert.match(view._headerHtml(), /data-reset-floor/);
+});
+
+test("areas grow a grip and a hide button only while editing", () => {
+  const view = panel();
+  assert.doesNotMatch(view._areasHtml(), /data-resize-area/);
+  view._edit = true;
+  const html = view._areasHtml();
+  assert.match(html, /data-resize-area="wohnzimmer"/);
+  assert.match(html, /data-hide-area="wohnzimmer"/);
+});
+
+test("dragging a node writes its position once, on release", () => {
+  const view = panel(model(), { edit: true });
+  const target = element({ "data-node": "a:one" });
+  const board = stage();
+  view._onPointerDown(pointer(0, 0, { target: [target, board] }));
+
+  view._onPointerMove(pointer(300, 700));
+  assert.deepEqual(view._written, [], "nothing is persisted mid-drag");
+  assert.equal(target.style.left, "30%", "but it does follow the pointer");
+
+  view._onPointerUp();
+  assert.deepEqual(view._written, [
+    ["nodes", "a:one", { position: { x: 0.3, y: 0.7 } }],
+  ]);
+});
+
+test("dragging snaps to the grid, and Shift lets go of it", () => {
+  const view = panel(model(), { edit: true });
+  const target = element({ "data-node": "a:one" });
+  view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
+
+  view._onPointerMove(pointer(313, 487));
+  view._onPointerUp();
+  assert.deepEqual(view._written[0][2].position, { x: 0.32, y: 0.48 });
+
+  view._written = [];
+  view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
+  view._onPointerMove(pointer(313, 487, { shift: true }));
+  view._onPointerUp();
+  assert.deepEqual(view._written[0][2].position, { x: 0.313, y: 0.487 });
+});
+
+test("a drag never leaves the floor plan", () => {
+  const view = panel(model(), { edit: true });
+  const target = element({ "data-node": "a:one" });
+  view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
+  view._onPointerMove(pointer(-500, 4000, { shift: true }));
+  view._onPointerUp();
+  assert.deepEqual(view._written[0][2].position, { x: 0, y: 1 });
+});
+
+test("the grip resizes the area around its centre", () => {
+  const view = panel(model(), { edit: true });
+  const area = element({ "data-area": "wohnzimmer" }, { left: 250, top: 500 });
+  const grip = element({ "data-resize-area": "wohnzimmer" });
+  view._onPointerDown(pointer(0, 0, { target: [grip, area, stage()] }));
+
+  view._onPointerMove(pointer(450, 700));
+  view._onPointerUp();
+
+  assert.deepEqual(view._written, [
+    ["areas", "wohnzimmer", { size: { width: 0.4, height: 0.4 } }],
+  ]);
+});
+
+test("an area cannot be resized into nothing", () => {
+  const view = panel(model(), { edit: true });
+  const area = element({ "data-area": "wohnzimmer" }, { left: 250, top: 500 });
+  const grip = element({ "data-resize-area": "wohnzimmer" });
+  view._onPointerDown(pointer(0, 0, { target: [grip, area, stage()] }));
+  view._onPointerMove(pointer(0, 0));
+  view._onPointerUp();
+  const { width, height } = view._written[0][2].size;
+  assert.ok(width > 0 && height > 0, "still grabbable afterwards");
+});
+
+test("nothing drags while not editing", () => {
+  const view = panel();
+  const target = element({ "data-node": "a:one" });
+  view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
+  assert.equal(view._drag, null);
+});
+
+test("the click that ends a drag does not open a popup", () => {
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._dragged = true;
+  view._onClick(pointer(0, 0, {
+    target: [element({ "data-node": "a:one" })],
+  }));
+  assert.equal(view._selected, null);
+});
+
+// ── Getting things back ────────────────────────────────────
+
+test("hidden things are listed with a way back", () => {
+  const view = panel(model({
+    hidden: { nodes: [{ id: "a:gone", label: "Verschwunden" }],
+              areas: [{ id: "keller", name: "Keller" }] },
+  }));
+  const html = view._sidebarHtml();
+  assert.match(html, /data-show-node="a:gone"/);
+  assert.match(html, /data-show-area="keller"/);
+});
+
+test("nothing hidden means no tray at all", () => {
+  assert.equal(panel()._hiddenTrayHtml(), "");
+});
+
+test("un-hiding clears the override rather than writing a false", () => {
+  const view = panel();
+  view._render = () => {};
+  view._onClick(pointer(0, 0, {
+    target: [element({ "data-show-node": "a:gone" })],
+  }));
+  assert.deepEqual(view._written, [["nodes", "a:gone", { hidden: null }]], (
+    "null restores the automatic behaviour; false would pin it"
+  ));
+});
+
+// ── Sliders ────────────────────────────────────────────────
+
+test("a slider persists on release, not on every tick", () => {
+  const view = panel(model(), { edit: true });
+  const slider = { value: "2", getAttribute: (n) =>
+    n === "data-node-scale" ? "a:one" : null };
+
+  view._onInput({ target: slider }, false);
+  assert.deepEqual(view._written, [], "dragging a slider is not fifty writes");
+
+  view._onInput({ target: slider }, true);
+  assert.deepEqual(view._written, [["nodes", "a:one", { scale: 2 }]]);
+});
+
+test("the node edit panel shows what is stored", () => {
+  const view = panel(model(), { edit: true });
+  const html = view._editPanelHtml("node", "a:one",
+                                   { ...view._model.nodes[0], scale: 1.5, rotation: 90 });
+  assert.match(html, /value="1.5"/);
+  assert.match(html, /value="90"/);
+  assert.match(html, /data-hide-node="a:one"/);
+});
+
+test("an oversized background is refused before it is uploaded", () => {
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._readBackground({ size: 9 * 1024 * 1024 });
+  assert.match(view._error, /zu groß/);
+  assert.deepEqual(view._written, []);
 });
