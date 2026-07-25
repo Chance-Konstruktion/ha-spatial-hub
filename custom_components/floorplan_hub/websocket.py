@@ -12,7 +12,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
-from .const import DATA_HUB, DOMAIN, MAX_BACKGROUND_BYTES
+from .const import API_VERSION, DATA_HUB, DOMAIN, MAX_BACKGROUND_BYTES
 from .hub import FloorplanHub
 
 _POSITION_SCHEMA = {
@@ -33,6 +33,7 @@ def async_register(hass: HomeAssistant) -> None:
         websocket_history,
         websocket_action,
         websocket_subscribe,
+        websocket_diagnostics,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -216,3 +217,32 @@ def websocket_subscribe(hass: HomeAssistant, connection, msg: dict) -> None:
 
     connection.subscriptions[msg["id"]] = hub.async_add_listener(forward)
     connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/diagnostics"})
+@websocket_api.async_response
+async def websocket_diagnostics(hass: HomeAssistant, connection, msg: dict) -> None:
+    """What each provider actually delivered, and what was wrong with it.
+
+    Aimed squarely at integration developers: an empty layer should never
+    be a mystery. Reports dropped items, timeouts, exceptions and suspected
+    typos in the registration, per provider.
+    """
+    hub = _hub(hass)
+    if hub is None:
+        connection.send_error(msg["id"], "not_found", "Floorplan-Hub not set up")
+        return
+
+    # Build the model first so the status reflects right now, not whenever
+    # a card last asked.
+    await hub.async_model()
+    connection.send_result(
+        msg["id"],
+        {
+            "api_version": API_VERSION,
+            "providers": {
+                provider_id: status
+                for provider_id, status in hub.status.items()
+            },
+        },
+    )

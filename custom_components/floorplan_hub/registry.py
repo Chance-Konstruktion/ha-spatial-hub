@@ -48,6 +48,47 @@ class ProviderError(Exception):
     """A provider registration is unusable."""
 
 
+# Keys a registration may contain. Anything else is almost certainly a typo
+# and is reported rather than silently ignored -- a developer who writes
+# "capabilties" should find out from the hub, not from an empty layer.
+_KNOWN_REGISTRATION_KEYS = frozenset(
+    {
+        "provider_id",
+        "api_version",
+        "name",
+        "icon",
+        "version",
+        "capabilities",
+        "layers",
+        "icon_set",
+        "data",
+        "history",
+        "action",
+    }
+)
+
+
+@dataclass(slots=True)
+class FetchResult:
+    """One refresh of one provider, plus what went wrong doing it."""
+
+    nodes: list[Node] = field(default_factory=list)
+    edges: list[Edge] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    error: str | None = None
+
+    def as_status(self) -> dict[str, Any]:
+        return {
+            "nodes": len(self.nodes),
+            "edges": len(self.edges),
+            # Enough to spot a pattern, not enough to flood the UI.
+            "warnings": self.warnings[:20],
+            "warning_count": len(self.warnings),
+            "error": self.error,
+            "ok": self.error is None and not self.warnings,
+        }
+
+
 @dataclass(slots=True)
 class Provider:
     """A normalised, validated provider registration."""
@@ -62,6 +103,7 @@ class Provider:
     data_fn: Callable[[], Any] | None = None
     history_fn: Callable[..., Any] | None = None
     action_fn: Callable[..., Any] | None = None
+    warnings: list[str] = field(default_factory=list)
 
     @classmethod
     def from_registration(cls, raw: dict[str, Any]) -> Provider:
@@ -84,12 +126,21 @@ class Provider:
         if not callable(data_fn):
             raise ProviderError(f"{provider_id} has no callable 'data'")
 
+        warnings = [
+            f"unknown registration key '{key}' (typo?)"
+            for key in sorted(set(raw) - _KNOWN_REGISTRATION_KEYS)
+        ]
+        for key in ("history", "action"):
+            if raw.get(key) is not None and not callable(raw.get(key)):
+                warnings.append(f"'{key}' is not callable and was ignored")
+
         layers: list[Layer] = []
         for raw_layer in raw.get("layers") or []:
             try:
                 layers.append(Layer.from_dict(raw_layer, provider_id))
             except (SpatialError, AttributeError, TypeError) as err:
                 _LOGGER.warning("%s: skipping bad layer (%s)", provider_id, err)
+                warnings.append(f"skipped bad layer: {err}")
         if not layers:
             # Every provider gets at least one layer, so its data has a home
             # even if it never bothered to describe one.
@@ -113,6 +164,7 @@ class Provider:
             data_fn=data_fn,
             history_fn=raw.get("history") if callable(raw.get("history")) else None,
             action_fn=raw.get("action") if callable(raw.get("action")) else None,
+            warnings=warnings,
         )
 
     @property
@@ -130,12 +182,16 @@ class Provider:
             "icon_set": self.icon_set,
         }
 
-    async def async_fetch(self) -> tuple[list[Node], list[Edge]]:
+    async def async_fetch(self) -> FetchResult:
         """Pull this provider's current nodes and edges.
 
         Anything the provider gets wrong -- raising, timing out, returning
         junk -- costs it its own layer for this refresh and nothing more.
+        What went wrong is recorded rather than swallowed, so the developer
+        can see it in ``floorplan_hub/diagnostics`` instead of guessing why
+        their layer is empty.
         """
+        result = FetchResult()
         try:
             async with asyncio.timeout(DATA_TIMEOUT):
                 payload = self.data_fn()
@@ -143,32 +199,55 @@ class Provider:
                     payload = await payload
         except TimeoutError:
             _LOGGER.warning("Provider %s timed out delivering data", self.id)
-            return [], []
-        except Exception:  # noqa: BLE001 - third-party code, never trust it
+            result.error = f"timed out after {DATA_TIMEOUT}s"
+            return result
+        except Exception as err:  # noqa: BLE001 - third-party code, never trust it
             _LOGGER.exception("Provider %s raised while delivering data", self.id)
-            return [], []
+            result.error = f"{type(err).__name__}: {err}"
+            return result
 
+        # A provider with nothing but nodes may return the bare list.
+        if isinstance(payload, list):
+            payload = {"nodes": payload}
         if not isinstance(payload, dict):
-            _LOGGER.warning("Provider %s returned %s, expected dict",
+            _LOGGER.warning("Provider %s returned %s, expected dict or list",
                             self.id, type(payload).__name__)
-            return [], []
+            result.error = (
+                f"data returned {type(payload).__name__}, expected dict or list"
+            )
+            return result
 
-        nodes = self._normalise(payload.get("nodes"), Node, "node")
-        edges = self._normalise(payload.get("edges"), Edge, "edge")
-        return nodes, edges
+        result.nodes = self._normalise(payload.get("nodes"), Node, "node", result)
+        result.edges = self._normalise(payload.get("edges"), Edge, "edge", result)
+        return result
 
-    def _normalise(self, raw_items: Any, model: type, kind: str) -> list[Any]:
-        """Turn raw dicts into model objects, dropping the broken ones."""
+    def _normalise(
+        self, raw_items: Any, model: type, kind: str, result: FetchResult
+    ) -> list[Any]:
+        """Turn raw payload entries into model objects, dropping the broken ones."""
+        if raw_items is None:
+            return []
         if not isinstance(raw_items, list):
+            result.warnings.append(
+                f"{kind}s must be a list, got {type(raw_items).__name__}"
+            )
             return []
         items = []
         for raw in raw_items:
+            # A bare entity id is a complete node: Home Assistant already
+            # knows its name, area, icon and state.
+            if isinstance(raw, str) and kind == "node":
+                raw = {"id": raw, "entity_id": raw}
             if not isinstance(raw, dict):
+                result.warnings.append(
+                    f"{kind} entry of type {type(raw).__name__} ignored"
+                )
                 continue
             try:
                 item = model.from_dict(raw)
             except (SpatialError, TypeError, ValueError) as err:
                 _LOGGER.debug("%s: dropping bad %s (%s)", self.id, kind, err)
+                result.warnings.append(f"dropped {kind}: {err}")
                 continue
             # Namespace ids so two providers can both call a node "router",
             # and remember which layer the item belongs to.

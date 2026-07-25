@@ -15,8 +15,14 @@ import math
 from typing import Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import area_registry as ar, floor_registry as fr
+from homeassistant.helpers import (
+    area_registry as ar,
+    device_registry as dr,
+    entity_registry as er,
+    floor_registry as fr,
+)
 
+from .const import STATE_UNKNOWN
 from .models import Node, Position
 
 # Nodes sharing an area are spread on a small circle around its centre so
@@ -72,6 +78,70 @@ def async_areas(hass: HomeAssistant) -> list[dict[str, Any]]:
                 }
             )
     return result
+
+
+def async_entity_defaults(hass: HomeAssistant, entity_id: str) -> dict[str, Any]:
+    """Everything Home Assistant already knows about an entity.
+
+    A provider that names an entity has said enough: label, area, icon and
+    state are all on record already. Making it repeat them would be exactly
+    the kind of busywork this project exists to delete.
+
+    Only keys that could be resolved are returned, so the caller can fill
+    blanks without ever overwriting what the provider stated itself.
+    """
+    defaults: dict[str, Any] = {"entity_id": entity_id}
+
+    entry = None
+    try:
+        entry = er.async_get(hass).async_get(entity_id)
+    except (AttributeError, KeyError):  # pragma: no cover - registry absent
+        entry = None
+
+    area_id = getattr(entry, "area_id", None) if entry else None
+    if entry is not None and not area_id and entry.device_id:
+        # The entity inherits its device's area unless it overrides it.
+        try:
+            device = dr.async_get(hass).async_get(entry.device_id)
+            area_id = getattr(device, "area_id", None) if device else None
+        except (AttributeError, KeyError):  # pragma: no cover
+            area_id = None
+    if area_id:
+        defaults["area_id"] = area_id
+
+    if entry is not None:
+        label = entry.name or entry.original_name
+        if label:
+            defaults["label"] = label
+        icon = entry.icon or getattr(entry, "original_icon", None)
+        if icon:
+            defaults["icon"] = icon
+
+    state = hass.states.get(entity_id) if hasattr(hass, "states") else None
+    if state is not None:
+        defaults.setdefault(
+            "label", state.attributes.get("friendly_name") or entity_id
+        )
+        if state.attributes.get("icon"):
+            defaults["icon"] = state.attributes["icon"]
+        defaults["state"] = _entity_state(state.state)
+        defaults["metadata"] = dict(state.attributes)
+
+    defaults.setdefault("label", entity_id)
+    return defaults
+
+
+def _entity_state(state: str) -> str:
+    """Map an entity state into the hub's vocabulary where it fits.
+
+    Only the "we have no idea" cases are translated. Everything else passes
+    through verbatim -- "on", "heating" and "docked" all mean something to
+    the layer that produced them, and flattening them would throw away the
+    only information the renderer has to style with.
+    """
+    if state in ("unavailable", "unknown", None, ""):
+        return STATE_UNKNOWN
+    return state
 
 
 def _grid_cell(index: int, total: int) -> tuple[Position, dict[str, float]]:
