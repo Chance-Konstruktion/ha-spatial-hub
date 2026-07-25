@@ -1,0 +1,287 @@
+"""The generic adapter: any integration, without an adapter of its own.
+
+The test that matters most is the last one. Everything else here is
+matching logic; that one is the architecture.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from custom_components.floorplan_hub import generic
+from custom_components.floorplan_hub.hub import FloorplanHub
+from custom_components.floorplan_hub.registry import Provider
+from custom_components.floorplan_hub.storage import LayoutStore
+
+from conftest import FakeArea, FakeDevice, FakeEntity
+
+
+@pytest.fixture
+def house(hass):
+    """A small house with entities from several imaginary integrations."""
+    from homeassistant.helpers import (
+        area_registry as ar,
+        device_registry as dr,
+        entity_registry as er,
+    )
+
+    ar.async_get(hass).areas = [
+        FakeArea("wohnzimmer", "Wohnzimmer", floor_id="eg"),
+        FakeArea("kueche", "Küche", floor_id="eg"),
+    ]
+    dr.async_get(hass).devices["dev1"] = FakeDevice("dev1", area_id="kueche")
+
+    entities = er.async_get(hass).entities
+    entities["light.wohnzimmer"] = FakeEntity(
+        "light.wohnzimmer", name="Stehlampe", area_id="wohnzimmer"
+    )
+    entities["light.kueche"] = FakeEntity("light.kueche", device_id="dev1")
+    entities["sensor.temperatur"] = FakeEntity(
+        "sensor.temperatur", area_id="wohnzimmer"
+    )
+    entities["switch.alt"] = FakeEntity("switch.alt", area_id="kueche")
+    entities["switch.alt"].disabled_by = "user"
+    return hass
+
+
+def _match(hass, **config):
+    entities, _warnings = generic.matching_entities(hass, config)
+    return entities
+
+
+# ── Matching ──────────────────────────────────────────────
+
+
+def test_a_domain_is_enough_to_describe_a_layer(house):
+    assert _match(house, domains=["light"]) == ["light.kueche", "light.wohnzimmer"]
+
+
+def test_an_entity_inherits_its_devices_area(house):
+    assert _match(house, domains=["light"], areas=["kueche"]) == ["light.kueche"]
+
+
+def test_criteria_narrow_rather_than_widen(house):
+    assert _match(house, domains=["light", "sensor"], areas=["wohnzimmer"]) == [
+        "light.wohnzimmer",
+        "sensor.temperatur",
+    ]
+
+
+def test_disabled_entities_stay_off_the_plan(house):
+    assert "switch.alt" not in _match(house, domains=["switch"])
+
+
+def test_a_named_entity_joins_whether_or_not_the_rule_matches(house):
+    assert _match(house, domains=["light"], entities=["sensor.temperatur"]) == [
+        "light.kueche",
+        "light.wohnzimmer",
+        "sensor.temperatur",
+    ]
+
+
+def test_an_excluded_entity_leaves_whether_or_not_the_rule_matches(house):
+    assert _match(house, domains=["light"], exclude=["light.kueche"]) == [
+        "light.wohnzimmer"
+    ]
+
+
+def test_a_layer_with_no_rule_at_all_selects_nothing(house):
+    """Better an empty layer than every entity in the house by accident."""
+    assert _match(house) == []
+
+
+def test_labels_select_across_domains_and_areas(house):
+    from homeassistant.helpers import entity_registry as er
+
+    entities = er.async_get(house).entities
+    entities["light.wohnzimmer"].labels = {"security"}
+    entities["sensor.temperatur"].labels = {"security", "climate"}
+
+    assert _match(house, labels=["security"]) == [
+        "light.wohnzimmer",
+        "sensor.temperatur",
+    ]
+
+
+def test_an_enormous_layer_is_capped_and_says_so(house):
+    from homeassistant.helpers import entity_registry as er
+
+    entities = er.async_get(house).entities
+    for index in range(generic.MAX_ENTITIES + 50):
+        entities[f"light.l{index:04d}"] = FakeEntity(f"light.l{index:04d}")
+
+    selected, warnings = generic.matching_entities(house, {"domains": ["light"]})
+
+    assert len(selected) == generic.MAX_ENTITIES
+    assert any("Narrow the layer down" in warning for warning in warnings)
+
+
+def test_a_rule_that_matches_nothing_says_so(house):
+    _selected, warnings = generic.matching_entities(house, {"domains": ["vacuum"]})
+    assert warnings == ["nothing matched this layer's rule"]
+
+
+# ── Registration and reconciliation ───────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_custom_layer_becomes_nodes_on_the_plan(house):
+    store = LayoutStore(house)
+    store.update("settings", "view", {"custom_layers": [
+        {"id": "lights", "name": "Lichter", "domains": ["light"]}
+    ]})
+    generic.GenericProviders(house, store).async_sync()
+
+    model = await FloorplanHub(house, store).async_model()
+
+    assert [node["id"] for node in model["nodes"]] == [
+        "custom_lights:light.kueche",
+        "custom_lights:light.wohnzimmer",
+    ]
+    assert model["nodes"][1]["label"] == "Stehlampe", (
+        "a bare entity id is a complete node -- the hub fills the rest in"
+    )
+    assert model["nodes"][1]["area_id"] == "wohnzimmer"
+    assert [layer["id"] for layer in model["layers"]] == ["custom_lights"]
+
+
+def test_each_layer_is_its_own_provider_so_it_toggles_on_its_own(house):
+    store = LayoutStore(house)
+    store.update("settings", "view", {"custom_layers": [
+        {"id": "lights", "name": "Lichter", "domains": ["light"]},
+        {"id": "sensors", "name": "Sensoren", "domains": ["sensor"]},
+    ]})
+    generic.GenericProviders(house, store).async_sync()
+
+    assert set(house.data["floorplan_hub_providers"]) == {
+        "custom_lights",
+        "custom_sensors",
+    }
+
+
+def test_syncing_twice_changes_nothing(house):
+    store = LayoutStore(house)
+    store.update("settings", "view", {"custom_layers": [
+        {"id": "lights", "name": "Lichter", "domains": ["light"]}
+    ]})
+    providers = generic.GenericProviders(house, store)
+    providers.async_sync()
+    first = house.data["floorplan_hub_providers"]["custom_lights"]
+
+    providers.async_sync()
+
+    assert house.data["floorplan_hub_providers"]["custom_lights"] is first, (
+        "an untouched layer must not blink out and back on every layout change"
+    )
+
+
+def test_deleting_a_layer_withdraws_its_registration(house):
+    store = LayoutStore(house)
+    store.update("settings", "view", {"custom_layers": [
+        {"id": "lights", "name": "Lichter", "domains": ["light"]}
+    ]})
+    providers = generic.GenericProviders(house, store)
+    providers.async_sync()
+
+    store.update("settings", "view", {"custom_layers": []})
+    providers.async_sync()
+
+    assert house.data["floorplan_hub_providers"] == {}
+
+
+def test_editing_a_layer_re_registers_it(house):
+    store = LayoutStore(house)
+    store.update("settings", "view", {"custom_layers": [
+        {"id": "l", "name": "Alt", "domains": ["light"]}
+    ]})
+    providers = generic.GenericProviders(house, store)
+    providers.async_sync()
+
+    store.update("settings", "view", {"custom_layers": [
+        {"id": "l", "name": "Neu", "domains": ["sensor"]}
+    ]})
+    providers.async_sync()
+
+    assert house.data["floorplan_hub_providers"]["custom_l"]["name"] == "Neu"
+
+
+def test_unloading_takes_the_custom_layers_with_it(house):
+    store = LayoutStore(house)
+    store.update("settings", "view", {"custom_layers": [
+        {"id": "lights", "name": "Lichter", "domains": ["light"]}
+    ]})
+    providers = generic.GenericProviders(house, store)
+    providers.async_sync()
+
+    providers.async_stop()
+
+    assert house.data["floorplan_hub_providers"] == {}
+
+
+def test_garbage_in_the_stored_config_is_stepped_over(house):
+    store = LayoutStore(house)
+    store.update("settings", "view", {"custom_layers": [
+        "not a layer", {"no": "id"}, {"id": "ok", "name": "OK", "domains": ["light"]},
+    ]})
+    generic.GenericProviders(house, store).async_sync()
+
+    assert set(house.data["floorplan_hub_providers"]) == {"custom_ok"}
+
+
+# ── Facets ────────────────────────────────────────────────
+
+
+def test_facets_report_what_the_house_actually_has(house):
+    facets = generic.async_facets(house)
+
+    domains = {item["value"]: item["count"] for item in facets["domains"]}
+    assert domains == {"light": 2, "sensor": 1}, "disabled entities do not count"
+    assert facets["max_entities"] == generic.MAX_ENTITIES
+
+
+# ── The one that is the architecture ──────────────────────
+
+
+def test_the_generic_adapter_gets_no_shortcut_into_the_hub(house):
+    """It registers exactly as a third party does, or it proves nothing.
+
+    A privileged path here would be the first crack in the thing that
+    makes the hub worth having -- and the built-in layers would quietly
+    become better citizens than anybody else's integration.
+    """
+    config = {"id": "lights", "name": "Lichter", "domains": ["light"]}
+    raw = generic.registration(house, config)
+
+    # The same validation every third-party registration goes through,
+    # with no keys the public contract does not know about.
+    provider = Provider.from_registration(raw)
+
+    assert provider.warnings == [], (
+        f"the hub's own adapter would warn a third party: {provider.warnings}"
+    )
+    assert provider.id == "custom_lights"
+    assert callable(provider.data_fn)
+    assert set(raw) <= {
+        "provider_id", "api_version", "name", "icon", "version",
+        "capabilities", "layers", "icon_set", "data", "history", "action",
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_custom_layer_is_isolated_like_any_other_provider(house):
+    """It is not trusted more than a stranger's code, either."""
+    store = LayoutStore(house)
+    store.update("settings", "view", {"custom_layers": [
+        {"id": "lights", "name": "Lichter", "domains": ["light"]}
+    ]})
+    generic.GenericProviders(house, store).async_sync()
+
+    def explode():
+        raise RuntimeError("boom")
+
+    house.data["floorplan_hub_providers"]["custom_lights"]["data"] = explode
+
+    model = await FloorplanHub(house, store).async_model()
+
+    assert model["nodes"] == []
+    assert len(model["providers"]) == 1, "it fails alone, like anyone else"

@@ -164,6 +164,7 @@ def test_the_renderer_only_uses_documented_commands():
         "history",
         "action",
         "diagnostics",
+        "entities/facets",
     }
     assert used <= documented, f"undocumented commands used: {sorted(used - documented)}"
 

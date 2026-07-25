@@ -16,7 +16,7 @@ Plattform ein weiteres Dashboard geworden.
 | 4 | Zero-Config: der Grundriss folgt dem Haus | ✅ |
 | 5 | Edit-Modus | ✅ |
 | 6 | Themes | ✅ |
-| 7 | Generic Adapter | ⬜ |
+| 7 | Generic Adapter | ✅ |
 | 8 | Provider-SDK | ⬜ |
 | 9 | Eigene Provider migrieren | 🟡 Powerline steht |
 | 10 | Community | ⬜ |
@@ -124,11 +124,25 @@ Aufgelöst wird im **Hub**, nicht im Renderer. `model["theme"]` ist fertig
 ausgerechnet, damit ein zweiter Renderer dieselben Farben bekommt, ohne ein
 einziges Preset nachzubauen.
 
-## ⬜ Phase 7 — Generic Adapter
+## ✅ Phase 7 — Generic Adapter
 
-Ein Provider, den der Nutzer selbst konfiguriert: „diese Entities, dieses
-Label, dieser Layer". Damit kommt jede Integration ohne eigenen Adapter auf
-den Grundriss — ohne dass der Hub sie kennt.
+Die meisten Integrationen werden nie einen Provider schreiben. Eine
+Plattform, die nur für die Eingeweihten funktioniert, funktioniert nicht.
+
+Also beschreibt der Nutzer eine Ebene selbst — nach Art, Bereich, Label,
+Geräteklasse, oder namentlich. Eine **Regel, keine Liste**: „alle Lichter"
+stimmt auch noch, wenn nächsten Monat eine Lampe dazukommt. Jede Ebene ist
+ein eigener Provider und lässt sich damit einzeln schalten.
+
+Der entscheidende Teil ist, **wie** sie sich registriert: über denselben
+öffentlichen Vertrag wie jeder Fremde, mit derselben Validierung und
+derselben Fehler-Isolierung. Ein Sonderweg an dieser Stelle wäre der erste
+Riss — die eingebauten Ebenen wären dann stillschweigend bessere Bürger als
+die Integration von irgendjemand anderem. Ein Test hält das fest.
+
+Dazu `floorplan_hub/entities/facets`: welche Arten, Label und Geräteklassen
+es in diesem Haus wirklich gibt. Ohne das müsste der Editor raten — und
+Raten endet in einer fest verdrahteten Liste von Integrationsnamen.
 
 ## ⬜ Phase 8 — Provider-SDK
 

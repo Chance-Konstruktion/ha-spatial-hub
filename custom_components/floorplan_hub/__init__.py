@@ -20,6 +20,7 @@ from homeassistant.core import HomeAssistant
 from .const import (
     CONF_AUTO_AREAS,
     CONF_PANEL,
+    DATA_GENERIC,
     DATA_HUB,
     DATA_STORE,
     DATA_WATCHER,
@@ -28,6 +29,7 @@ from .const import (
     DOMAIN,
 )
 from .frontend import async_register_panel, async_remove_panel
+from .generic import GenericProviders
 from .hub import FloorplanHub
 from .registry import async_get_registrations
 from .storage import LayoutStore
@@ -54,6 +56,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hub.auto_areas = bool(entry.options.get(CONF_AUTO_AREAS, DEFAULT_AUTO_AREAS))
     hub.async_start()
     hass.data[DATA_HUB] = hub
+
+    # Layers the user described themselves. They register through the same
+    # public contract as any third party -- no shortcut into the hub.
+    generic = GenericProviders(hass, store)
+    generic.async_sync()
+    hass.data[DATA_GENERIC] = generic
+    entry.async_on_unload(hub.async_add_listener(
+        lambda reason: generic.async_sync() if reason.startswith("layout") else None
+    ))
 
     # Follow the house: registry edits and the states of entities that are
     # actually on the plan both refresh it, without anyone pressing reload.
@@ -108,6 +119,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     Providers keep their entry in hass.data: they are not ours to remove,
     and they must survive a hub reload without re-registering.
     """
+    generic: GenericProviders | None = hass.data.pop(DATA_GENERIC, None)
+    if generic is not None:
+        generic.async_stop()
     watcher: ModelWatcher | None = hass.data.pop(DATA_WATCHER, None)
     if watcher is not None:
         watcher.async_stop()

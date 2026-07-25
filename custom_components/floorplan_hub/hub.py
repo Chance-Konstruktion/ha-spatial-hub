@@ -192,6 +192,14 @@ class FloorplanHub:
             # Resolved here, not in the renderer: a second renderer gets
             # the same colours without reimplementing a single preset.
             "theme": resolve_theme(self.store.get("settings", "view")),
+            # The user's own layer rules, for whatever edits them. A plain
+            # renderer ignores this and just draws the nodes they produced.
+            "custom_layers": [
+                layer
+                for layer in self.store.get("settings", "view").get("custom_layers")
+                or []
+                if isinstance(layer, dict)
+            ],
             "icon_sets": icon_sets,
         }
 
