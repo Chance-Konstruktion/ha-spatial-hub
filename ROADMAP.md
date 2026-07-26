@@ -18,7 +18,7 @@ Plattform ein weiteres Dashboard geworden.
 | 6 | Themes | ✅ |
 | 7 | Generic Adapter | ✅ |
 | 8 | Provider-SDK | ✅ |
-| 9 | Eigene Provider migrieren | 🟡 Powerline steht |
+| 9 | Eigene Provider migrieren | ✅ |
 | 10 | Community | ✅ |
 | 11 | Austauschbare Renderer | ✅ |
 | 12 | Zero-Config als Endzustand | ✅ |
@@ -170,11 +170,32 @@ Also ein **Vendoring-SDK**:
   freundlich, und mit dem Angebot, den PR selbst zu schreiben. Der Weg
   einer Plattform führt über die Nutzer der anderen, nicht über uns.
 
-## 🟡 Phase 9 — Eigene Provider migrieren
+## ✅ Phase 9 — Eigene Provider migrieren
 
-[ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) ist
-angebunden und besteht den Conformance-Vertrag ohne Sonderbehandlung.
-Weitere folgen.
+Zwei sind angebunden, und die zweite war der Punkt.
+
+[ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) besteht
+den Conformance-Vertrag seit Phase 2 ohne Sonderbehandlung — und hat vier
+Phasen lang jede SDK-Entscheidung bestätigt, weil es genau die Form hatte,
+für die das SDK gebaut war. Ein Provider ist keine Stichprobe.
+
+[ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p) hat
+in zwanzig Minuten zwei Fehler gefunden. Es hat **keinen
+`DataUpdateCoordinator`**, sondern einen UDP-Socket und eigene
+Dispatcher-Signale. Der Shim nahm sein `coordinator=` entgegen, fand kein
+`async_add_listener` und tat stillschweigend nichts — der Grundriss wäre
+einmal gezeichnet worden und hätte sich nie wieder bewegt. Daraus wurde
+`signals=` (SDK v2). Und beim Schreiben des Adapters fiel der Fehler *in*
+dieser neuen Funktion auf: Dispatcher-Signale reichen ihre Nutzlast an die
+Zuhörer weiter, `async_notify()` nimmt keine Argumente. Alle drei
+ESPEasy-Signale tragen eine Unit-Nummer — jedes hätte in Produktion beim
+ersten Paket geworfen (SDK v3).
+
+Der Adapter selbst hält sich an das, was seine Integration **weiß**: Sie
+kann den Pfad zwischen zwei ESP-Knoten nicht messen, also erfindet sie
+keine Kanten dazwischen. Home Assistant in der Mitte, eine gestrichelte
+Kante je Unit, eingefärbt nach der Stille seit dem letzten Paket — mit einem
+Warnband dazwischen, damit ein Knoten sichtbar ist, bevor er rausfällt.
 
 ## ✅ Phase 10 — Community
 

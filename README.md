@@ -14,15 +14,17 @@ einzige Zeile geändert wird.
 
 ## Status
 
-**Phase 1–8 und 10–12 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
+**Die Roadmap ist durch — Phase 1–12:** Datenmodell, Provider-Registry,
 Event-System, Storage, Config-Flow, die komplette Websocket-API, ein
 Renderer in der Seitenleiste, ein Grundriss, der dem Haus von selbst folgt,
 ein Edit-Modus für alles, was die Automatik falsch geraten hat, Themes — und
 eigene Ebenen für jede Integration, die nie einen Adapter schreiben wird, und
 ein SDK für die, die einen schreiben wollen.
 
-[ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) ist als
-erster Provider angebunden. Der vollständige Plan steht in
+[ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) und
+[ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p) sind
+angebunden — die zweite ohne `DataUpdateCoordinator`, was zwei Löcher im SDK
+ans Licht gebracht hat. Der vollständige Plan steht in
 **[ROADMAP.md](ROADMAP.md)**.
 
 ## Der Renderer
