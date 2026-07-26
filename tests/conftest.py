@@ -177,6 +177,14 @@ if not hasattr(entity_registry, "async_get"):
         def async_get(self, device_id):
             return self.devices.get(device_id)
 
+        def async_get_device(self, identifiers=None, connections=None):
+            """Home Assistant's own lookup, which adapters really use."""
+            for device in self.devices.values():
+                own = getattr(device, "identifiers", set())
+                if identifiers and own & set(identifiers):
+                    return device
+            return None
+
     entity_registry.async_get = lambda hass: hass.data.setdefault(
         "_entity_registry", _EntityRegistry()
     )
@@ -274,6 +282,18 @@ if not hasattr(event_helper, "async_call_later"):
 
         return cancel
 
+    def async_track_time_interval(hass, action, interval, **kwargs):
+        """A tick nobody fires. The adapters that use it are checked by
+        calling their data() directly; what matters here is that they can
+        register one and unregister it again."""
+        hass.data.setdefault("_intervals", []).append(action)
+
+        def cancel():
+            hass.data["_intervals"].remove(action)
+
+        return cancel
+
+    event_helper.async_track_time_interval = async_track_time_interval
     event_helper.async_call_later = async_call_later
     event_helper.async_track_state_change_event = async_track_state_change_event
     helpers.event = event_helper
