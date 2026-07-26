@@ -32,7 +32,11 @@ ans Licht gebracht hat. Der vollständige Plan steht in
 Nach der Einrichtung steht **Floorplan** in der Seitenleiste. Kein
 Dashboard anlegen, keine Karte konfigurieren, kein YAML:
 
-- **Etagen** als Reiter, direkt aus der Floor-Registry
+- **Haus**: alle Etagen übereinander, als Erstes und voreingestellt — die
+  einzige Ansicht, in der eine Verbindung zwischen zwei Stockwerken
+  überhaupt zu sehen ist
+- **Etagen** als Reiter, direkt aus der Floor-Registry — zum Anordnen und
+  für Details
 - **Bereiche** als Räume, automatisch angeordnet
 - **Ebenen** einzeln ein-/ausschaltbar — die Auswahl wird gespeichert
 - **Nodes** mit Zustandsfarbe, Provider-Icon oder eigenem Inline-SVG

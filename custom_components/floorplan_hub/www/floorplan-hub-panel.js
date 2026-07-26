@@ -27,6 +27,17 @@ const HA_COLOURS = {
   poor: "var(--error-color, #f44336)",
 };
 
+/** The stacked view: every floor at once, which is the only view in which
+ *  a connection between two storeys is visible at all. Per-floor tabs stay
+ *  for detail and for arranging -- dragging in a sheared projection would
+ *  be guesswork. */
+const ALL_FLOORS = "__all__";
+
+// The shear that turns a flat plan into a storey seen from the side. Not
+// a true isometric projection: rooms stay rectangles-in-parallel, which
+// keeps them recognisable as the same rooms from the detail view.
+const STACK = { pad: 40, width: 620, depth: 300, skew: 260, top: 50, gap: 230 };
+
 const escapeHtml = (value) =>
   String(value ?? "").replace(
     /[&<>"']/g,
@@ -53,7 +64,9 @@ class FloorplanHubPanel extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._model = null;
     this._error = null;
-    this._floorId = null;
+    // The house as a whole is the first thing to show. A single storey
+    // is a detail of it, not the other way round.
+    this._floorId = ALL_FLOORS;
     this._selected = null; // { kind, id }
     this._history = null;
     this._placing = null; // { section, key } -- next stage click places it
@@ -162,11 +175,40 @@ class FloorplanHubPanel extends HTMLElement {
     return (this._model && this._model.floors) || [];
   }
 
+  get _stacked() {
+    return this._floorId === ALL_FLOORS && this._floors.length > 1;
+  }
+
   get _floor() {
+    if (this._stacked) return null;
     const floors = this._floors;
     return (
       floors.find((floor) => floor.id === this._floorId) || floors[0] || null
     );
+  }
+
+  /** Floors bottom-up in the model; drawn top-down, like a section.
+   *
+   *  The storey for rooms with no floor is not a storey and must not be
+   *  reversed into the attic: it stays at the bottom, where "everything
+   *  else" belongs.
+   */
+  get _stackFloors() {
+    const floors = this._floors;
+    const real = floors.filter((floor) => !floor.unassigned).reverse();
+    return [...real, ...floors.filter((floor) => floor.unassigned)];
+  }
+
+  /** Where a point on a given floor lands in the stacked drawing. */
+  _project(floorIndex, x, y) {
+    const gap = Math.min(
+      STACK.gap,
+      (1000 - STACK.top - STACK.depth) / Math.max(1, this._floors.length - 1),
+    );
+    return {
+      x: STACK.pad + x * STACK.width + (1 - y) * STACK.skew,
+      y: STACK.top + floorIndex * gap + y * STACK.depth,
+    };
   }
 
   /** Providers whose every layer is switched off.
@@ -351,6 +393,12 @@ class FloorplanHubPanel extends HTMLElement {
   _headerHtml() {
     const floors = this._floors;
     const current = this._floor;
+    const stackTab = floors.length > 1
+      ? `<button class="tab ${this._stacked ? "on" : ""}"
+                 data-floor="${ALL_FLOORS}" title="Alle Etagen übereinander">
+           <ha-icon icon="mdi:layers-triple-outline"></ha-icon> Haus
+         </button>`
+      : "";
     const tabs = floors
       .map(
         (floor) => `
@@ -363,7 +411,7 @@ class FloorplanHubPanel extends HTMLElement {
       .join("");
     return `
       <header>
-        <div class="tabs">${tabs}</div>
+        <div class="tabs">${stackTab}${tabs}</div>
         <div class="spacer"></div>
         ${
           this._edit
@@ -397,6 +445,105 @@ class FloorplanHubPanel extends HTMLElement {
       </header>`;
   }
 
+  _stackHtml() {
+    const floors = this._stackFloors;
+    const index = new Map(floors.map((floor, at) => [floor.id, at]));
+    const last = Math.max(0, floors.length - 1);
+    // A node with no storey at all still exists. Drawn on the front plane
+    // and marked, rather than quietly missing from the one view that is
+    // supposed to show the whole house.
+    const planeOf = (node) =>
+      index.has(node.floor_id) ? index.get(node.floor_id) : last;
+
+    const spots = new Map(
+      this._visibleNodes.map((node) => [
+        node.id,
+        this._project(planeOf(node), node.position.x, node.position.y),
+      ]),
+    );
+
+    const plans = floors.map((floor, at) => {
+      const corners = [[0, 0], [1, 0], [1, 1], [0, 1]]
+        .map(([x, y]) => this._project(at, x, y))
+        .map((point) => `${point.x},${point.y}`)
+        .join(" ");
+      const label = this._project(at, 0, 0);
+      const rooms = this._model.areas
+        .filter((area) => area.floor_id === floor.id && area.position)
+        .map((area) => this._roomPolygon(at, area))
+        .join("");
+      return `<g class="plane">
+        <polygon class="storey" points="${corners}"/>
+        ${rooms}
+        <text class="storey-name" x="${label.x - 34}" y="${label.y - 6}"
+          >${escapeHtml(floor.name)}</text>
+      </g>`;
+    });
+
+    const edges = this._visibleEdges
+      .filter((edge) => spots.has(edge.source) && spots.has(edge.target))
+      .map((edge) => {
+        const from = spots.get(edge.source);
+        const to = spots.get(edge.target);
+        const across = planeOf(this._node(edge.source)) !==
+          planeOf(this._node(edge.target));
+        return `<line class="stack-edge ${across ? "across" : ""}"
+          x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"
+          stroke="${this._qualityColour(edge.quality)}"
+          stroke-width="${across ? 5 : 3}"
+          ${edge.dashed ? 'stroke-dasharray="10 7"' : ""}
+          data-edge="${escapeHtml(edge.id)}"/>`;
+      })
+      .join("");
+
+    const nodes = this._visibleNodes
+      .map((node) => {
+        const at = spots.get(node.id);
+        const selected =
+          this._selected && this._selected.kind === "node" &&
+          this._selected.id === node.id;
+        const crowded = this._visibleNodes.filter(
+          (other) => planeOf(other) === planeOf(node),
+        ).length > 8;
+        return `<g class="stack-node ${selected ? "on" : ""}
+                   ${crowded ? "crowded" : ""}
+                   ${node.floor_id ? "" : "floorless"}"
+                   data-node="${escapeHtml(node.id)}"
+                   transform="translate(${at.x},${at.y})">
+          <circle r="11" fill="${this._stateColour(node.state)}"/>
+          <text class="stack-label" y="26">${escapeHtml(node.label)}</text>
+        </g>`;
+      })
+      .join("");
+
+    return `<div class="stack">
+      <svg viewBox="0 0 1000 1000">
+        ${plans.join("")}
+        ${edges}
+        ${nodes}
+      </svg>
+    </div>
+    <p class="hint">Alle Etagen auf einmal — die einzige Ansicht, in der eine
+    Verbindung zwischen zwei Stockwerken überhaupt zu sehen ist. Zum
+    Anordnen und für Details eine einzelne Etage wählen.</p>`;
+  }
+
+  _roomPolygon(plane, area) {
+    const width = (area.size && area.size.width) || 0.3;
+    const height = (area.size && area.size.height) || 0.3;
+    const x0 = area.position.x - width / 2;
+    const y0 = area.position.y - height / 2;
+    const points = [[x0, y0], [x0 + width, y0], [x0 + width, y0 + height],
+                    [x0, y0 + height]]
+      .map(([x, y]) => this._project(plane, x, y))
+      .map((point) => `${point.x},${point.y}`)
+      .join(" ");
+    const label = this._project(plane, x0, y0);
+    return `<polygon class="room" points="${points}"/>
+      <text class="room-label" x="${label.x + 6}" y="${label.y + 16}"
+        >${escapeHtml(area.name)}</text>`;
+  }
+
   _stageHtml() {
     const model = this._model;
     const areas = this._visibleAreas.filter((area) => area.position);
@@ -423,6 +570,8 @@ class FloorplanHubPanel extends HTMLElement {
       : `<p class="banner">Dein Haus, direkt aus Home Assistant. Sobald eine
          Integration räumliche Daten liefert, erscheint sie hier von selbst —
          einzurichten ist dafür nichts.</p>`;
+
+    if (this._stacked) return `${banner}${this._stackHtml()}`;
 
     const aspect = (floor && floor.aspect) || 1.6;
     const background = floor && floor.background;
@@ -1743,6 +1892,30 @@ main { flex:1; min-width:0; }
 aside { width:260px; flex:0 0 auto; background:var(--card-background-color,#fff);
         border-radius:12px; padding:12px 16px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
 @media (max-width:800px) { .body { flex-direction:column; } aside { width:auto; align-self:stretch; } }
+
+.stack { background:var(--fp-surface, var(--card-background-color,#fff));
+         border-radius:12px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12));
+         padding:8px; }
+.stack svg { display:block; width:100%; height:auto; }
+.storey { fill:none; stroke:var(--divider-color,rgba(128,128,128,.45)); stroke-width:2; }
+.storey-name { font-size:26px; fill:currentColor; opacity:.65; text-anchor:end; }
+.stack .room { fill:rgba(128,128,128,.10);
+               stroke:var(--divider-color,rgba(128,128,128,.35)); stroke-width:1.5; }
+.stack .room-label { font-size:17px; fill:currentColor; opacity:.5; }
+.stack-edge { stroke-linecap:round; }
+/* A connection between two storeys is the whole reason this view exists. */
+.stack-edge.across { opacity:.95; }
+.stack-node { cursor:pointer; }
+.stack-node circle { stroke:var(--card-background-color,#fff); stroke-width:2; }
+.stack-node.on circle { stroke:var(--fp-accent, var(--primary-color,#03a9f4)); stroke-width:4; }
+.stack-node.floorless circle { stroke-dasharray:3 2; }
+.stack-label { font-size:18px; fill:currentColor; text-anchor:middle; }
+/* Nineteen labels on one storey is a smear, not information. On a crowded
+   plane they appear on hover and for the selected node -- the dot is still
+   there, and clicking it still says what it is. */
+.stack-node.crowded .stack-label { opacity:0; transition:opacity .12s; }
+.stack-node.crowded:hover .stack-label,
+.stack-node.crowded.on .stack-label { opacity:1; }
 
 .stage { position:relative; width:100%;
          background:var(--fp-surface, var(--card-background-color,#fff));

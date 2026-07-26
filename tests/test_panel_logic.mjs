@@ -112,8 +112,13 @@ const model = (overrides = {}) => ({
 });
 
 /** A panel wired to a model, with no DOM behind it. */
-function panel(data = model(), { admin = true, edit = false } = {}) {
+// Most tests here are about one storey at a time. The panel now opens on
+// the stacked view of the whole house, so a test that means "the detail
+// view" has to say so -- pass floor:null for the stack.
+function panel(data = model(), { admin = true, edit = false,
+                                 floor = "eg" } = {}) {
   const instance = new FloorplanHubPanel();
+  instance._floorId = floor === null ? "__all__" : floor;
   instance._model = data;
   instance._edit = edit;
   instance._written = [];
@@ -855,4 +860,101 @@ test("inside Home Assistant its own theme still wins over the fallback", () => {
   const view = panel(data);
 
   assert.equal(view._stateColour("online"), HA_COLOURS.online);
+});
+
+// ── The house as a whole ───────────────────────────────────
+
+test("the panel opens on the whole house, not on one storey", () => {
+  const view = panel(model(), { floor: null });
+  assert.equal(view._stacked, true);
+});
+
+test("a house with one storey has nothing to stack", () => {
+  const data = model();
+  data.floors = [data.floors[0]];
+  const view = panel(data, { floor: null });
+  assert.equal(view._stacked, false, "a single floor is just the floor");
+});
+
+test("an edge between two storeys is drawn, not dropped", () => {
+  // The reason the stacked view exists at all. In the per-floor view such
+  // an edge has no second end to attach to and is correctly discarded --
+  // which meant it was invisible everywhere.
+  const data = model({
+    nodes: [node("a:down"), node("a:up", { floor_id: "og" })],
+    edges: [edge("a:down", "a:up", { quality: "good" })],
+  });
+  const flat = panel(data, { floor: "eg" });
+  const stacked = panel(data, { floor: null });
+
+  assert.equal(flat._visibleEdges.length, 0);
+  assert.equal(stacked._visibleEdges.length, 1);
+  assert.match(stacked._stackHtml(), /class="stack-edge across/);
+});
+
+test("storeys are drawn top down, the way a section is read", () => {
+  const view = panel(model(), { floor: null });
+  assert.deepEqual(view._stackFloors.map((f) => f.id), ["og", "eg"]);
+});
+
+test("the same point on a higher storey is drawn higher up", () => {
+  const view = panel(model(), { floor: null });
+  const upper = view._project(0, 0.5, 0.5);
+  const lower = view._project(1, 0.5, 0.5);
+
+  assert.equal(upper.x, lower.x);
+  assert.ok(upper.y < lower.y, "the storeys would sit on top of each other");
+});
+
+test("the back of a storey is sheared right, which is what makes it a solid", () => {
+  const view = panel(model(), { floor: null });
+  assert.ok(view._project(0, 0, 0).x > view._project(0, 0, 1).x);
+});
+
+test("many storeys are squeezed instead of running off the bottom", () => {
+  const data = model();
+  data.floors = ["a", "b", "c", "d", "e", "f"].map((id, level) => ({
+    id, name: id.toUpperCase(), level, icon: "",
+  }));
+  const view = panel(data, { floor: null });
+
+  assert.ok(view._project(5, 1, 1).y <= 1000, "the bottom storey is off-canvas");
+});
+
+test("a node on no storey at all is drawn, not silently missing", () => {
+  const data = model({ nodes: [node("a:lost", { floor_id: null })] });
+  const view = panel(data, { floor: null });
+
+  assert.match(view._stackHtml(), /floorless/);
+  assert.match(view._stackHtml(), /a:lost/);
+});
+
+test("the storey for roomless areas stays at the bottom of the stack", () => {
+  // Reversing it into the attic would say the house has a floor above the
+  // top one, which is the opposite of what "no floor" means.
+  const data = model();
+  data.floors = [
+    { id: "eg", name: "EG", level: 0, icon: "" },
+    { id: "og", name: "OG", level: 1, icon: "" },
+    { id: "_unassigned", name: "Ohne Etage", level: null, unassigned: true },
+  ];
+  const view = panel(data, { floor: null });
+
+  assert.deepEqual(view._stackFloors.map((f) => f.id), ["og", "eg", "_unassigned"]);
+});
+
+test("a crowded storey hides its labels until you point at one", () => {
+  const data = model({
+    nodes: Array.from({ length: 12 }, (_, i) => node(`a:n${i}`)),
+  });
+  const view = panel(data, { floor: null });
+
+  assert.match(view._stackHtml(), /stack-node[^"]*crowded/);
+});
+
+test("a storey with a handful of nodes keeps its labels", () => {
+  const data = model({ nodes: [node("a:one"), node("a:two")] });
+  const view = panel(data, { floor: null });
+
+  assert.ok(!/crowded/.test(view._stackHtml()));
 });
