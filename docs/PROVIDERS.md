@@ -7,6 +7,7 @@ nicht die Ersten sind.
 | Integration | Domain | Repository | Angebunden seit |
 |---|---|---|---|
 | Powerline | `powerline` | [Chance-Konstruktion/ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) | 2026-07 |
+| ESPEasy P2P | `espeasy_p2p` | [Chance-Konstruktion/ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p) | 2026-07 |
 
 ## Diese Liste ist Dokumentation, sonst nichts
 
