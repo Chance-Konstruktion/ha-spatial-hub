@@ -1,0 +1,42 @@
+name: "Meine Integration ist angebunden"
+description: "Eintrag in die Provider-Liste — du brauchst dafür keine Freigabe von uns."
+title: "Provider: "
+labels: ["provider"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ein PR auf [`docs/PROVIDERS.md`](../blob/main/docs/PROVIDERS.md) mit
+        einer Zeile ist schneller als dieses Issue — nimm gern den Weg. Wenn
+        du lieber fragst, ist das hier richtig.
+
+        **Wichtig:** Am Hub muss dafür nichts geändert werden. Die Liste ist
+        Dokumentation, damit Nutzer dich finden.
+  - type: input
+    id: repo
+    attributes:
+      label: Repository der Integration
+      placeholder: "https://github.com/…"
+    validations:
+      required: true
+  - type: input
+    id: domain
+    attributes:
+      label: Domain
+      description: "Die `domain` aus deiner manifest.json."
+    validations:
+      required: true
+  - type: input
+    id: conformance
+    attributes:
+      label: Link auf den Conformance-Test
+      description: "Der Test in deiner Testsuite, der das Kit ausführt."
+    validations:
+      required: true
+  - type: checkboxes
+    id: released
+    attributes:
+      label: Bedingungen
+      options:
+        - label: "Der Adapter ist released, nicht nur in einem Branch."
+          required: true
