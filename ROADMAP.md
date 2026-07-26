@@ -208,6 +208,12 @@ Dazu:
 
 ## 🟡 Phase 11 — Austauschbare Renderer
 
+Zwischendurch wurde das Panel zum ersten Mal in einem echten Home Assistant
+gerendert — und lieferte sofort den ersten echten Fehler des Projekts:
+Bereiche ohne Etage lagen auf *jeder* Etage über deren Räumen. Behoben im
+Hub, nicht im Renderer, damit ein zweiter Renderer die Korrektur erbt.
+[`tools/`](tools/README.md) ist das, was ihn gefunden hat.
+
 Das Fundament steht: Der mitgelieferte Renderer hat keinen Sonderzugang und
 lässt sich in den Optionen abschalten. Was fehlt, ist ein zweiter Renderer,
 der beweist, dass es stimmt.
