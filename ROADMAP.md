@@ -21,7 +21,7 @@ Plattform ein weiteres Dashboard geworden.
 | 9 | Eigene Provider migrieren | 🟡 Powerline steht |
 | 10 | Community | ✅ |
 | 11 | Austauschbare Renderer | ✅ |
-| 12 | Zero-Config als Endzustand | ⬜ |
+| 12 | Zero-Config als Endzustand | ✅ |
 
 ---
 
@@ -230,8 +230,22 @@ aufzulösen der Sinn der Sache war. Jedes Theme trägt jetzt zusätzlich
 `theme.fallback` mit echten Farben. Leer heißt weiter „erben"; wer nichts zu
 erben hat, nimmt den Fallback, ohne zu wissen, welcher Fall vorliegt.
 
-## ⬜ Phase 12 — Zero-Config als Endzustand
+## ✅ Phase 12 — Zero-Config als Endzustand
 
 Installieren, und der Grundriss ist da. Nichts anlegen, nichts zeichnen,
-nichts konfigurieren — korrigieren nur, was die Automatik falsch geraten
-hat.
+nichts konfigurieren — korrigieren nur, was die Automatik falsch geraten hat.
+
+Nachgeprüft auf einer frisch aufgesetzten Instanz, nicht behauptet:
+
+- **Registry noch leer**: kein leeres Rechteck, sondern „Noch nichts zu
+  zeichnen" und der eine Satz, der weiterhilft — *Bereiche unter
+  Einstellungen → Bereiche & Zonen anlegen, der Grundriss folgt von selbst.*
+  Keine Fehlermeldung, kein Ladezustand, der nie endet.
+- **Bereiche vorhanden**: der Plan steht nach dem Hinzufügen der Integration
+  da. Kein Dashboard, keine Karte, kein YAML.
+- **Und er folgt**: Etage angelegt, Bereich angelegt, Bereich umbenannt —
+  alles drei im offenen Panel sichtbar, **ohne Reload**.
+  [`tools/live_follow.py`](tools/README.md) prüft genau das und räumt hinter
+  sich auf.
+
+
