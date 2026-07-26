@@ -176,4 +176,15 @@ def resolve(stored: Any) -> dict[str, Any]:
             },
         }
 
+    # `auto` resolves its colours to "" -- inherit whatever the host says.
+    # Inside Home Assistant that is right and is the whole point. Opened
+    # from a desktop, a renderer has nothing to inherit *from*, and the
+    # second renderer duly drew the entire house in grey. So every theme
+    # also carries concrete colours for the shared vocabulary: use them
+    # wherever the resolved colour is empty and your host offers nothing.
+    resolved["fallback"] = {
+        "state_colors": dict(PRESETS["classic"]["state_colors"]),
+        "quality_colors": dict(PRESETS["classic"]["quality_colors"]),
+        "accent": PRESETS["classic"]["accent"],
+    }
     return resolved

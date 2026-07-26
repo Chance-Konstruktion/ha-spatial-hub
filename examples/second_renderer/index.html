@@ -1,0 +1,198 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Floorplan-Hub — Übersicht</title>
+<!--
+  A second renderer, deliberately unlike the first.
+
+  The built-in panel lives inside Home Assistant, shows one floor at a
+  time and lets you rearrange it. This one is a single file you open from
+  your desktop, shows every floor at once, and cannot edit anything. It
+  shares no code with the hub -- not a line -- and it asks for exactly two
+  websocket commands: `floorplan_hub/model` and `floorplan_hub/subscribe`.
+
+  That is the claim Phase 11 had to prove: the built-in renderer has no
+  privileged access. Anything it can draw, a stranger can draw, through
+  the same documented API.
+
+  Colours come out of `model.theme`, already resolved by the hub. This
+  file does not know that a preset called "blueprint" exists, and it will
+  still look right if somebody adds a sixth one.
+-->
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif;
+         background: var(--surface, Canvas); color: CanvasText; }
+  header { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+           padding: 10px 16px; border-bottom: 1px solid rgba(128,128,128,.3); }
+  input { flex: 1; min-width: 200px; padding: 6px 8px; font: inherit;
+          border: 1px solid rgba(128,128,128,.5); border-radius: 6px;
+          background: Canvas; color: CanvasText; }
+  button { padding: 6px 14px; font: inherit; border-radius: 6px;
+           border: 1px solid rgba(128,128,128,.5); background: Canvas;
+           color: CanvasText; cursor: pointer; }
+  #status { padding: 8px 16px; opacity: .75; }
+  #floors { display: grid; gap: 20px; padding: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .floor { border: 1px solid rgba(128,128,128,.3); border-radius: 10px;
+           overflow: hidden; }
+  .floor h2 { margin: 0; padding: 8px 12px; font-size: 15px;
+              background: rgba(128,128,128,.12); }
+  .floor h2 small { font-weight: normal; opacity: .7; }
+  svg { display: block; width: 100%; aspect-ratio: 16 / 10; }
+  .room { fill: rgba(128,128,128,.10); stroke: rgba(128,128,128,.45); }
+  .room-name { font-size: 22px; fill: currentColor; opacity: .6; }
+  .label { font-size: 20px; fill: currentColor; text-anchor: middle; }
+  #legend { display: flex; gap: 16px; flex-wrap: wrap; padding: 0 16px 24px; }
+  #legend span { display: flex; gap: 6px; align-items: center; }
+  #legend i { width: 12px; height: 12px; border-radius: 50%;
+              border: 1px solid rgba(128,128,128,.5); }
+</style>
+
+<header>
+  <input id="url" placeholder="http://homeassistant.local:8123">
+  <input id="token" type="password" placeholder="Long-Lived Access Token">
+  <button id="connect">Verbinden</button>
+</header>
+<p id="status">Nicht verbunden.</p>
+<div id="floors"></div>
+<div id="legend"></div>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const SAVED = "floorplan-hub-second-renderer";
+
+  // Only ever read. This renderer has no edit mode, so it never sends
+  // layout/set -- the user's arrangement is not its business.
+  const COMMANDS = { model: "floorplan_hub/model",
+                     subscribe: "floorplan_hub/subscribe" };
+
+  const saved = JSON.parse(localStorage.getItem(SAVED) || "{}");
+  $("url").value = saved.url || "";
+  $("token").value = saved.token || "";
+
+  let socket = null;
+  let messageId = 0;
+
+  const status = (text) => { $("status").textContent = text; };
+
+  function connect() {
+    const url = $("url").value.replace(/\/+$/, "");
+    const token = $("token").value;
+    if (!url || !token) return status("URL und Token fehlen.");
+    localStorage.setItem(SAVED, JSON.stringify({ url, token }));
+
+    if (socket) socket.close();
+    status("Verbinde …");
+    socket = new WebSocket(url.replace(/^http/, "ws") + "/api/websocket");
+
+    socket.addEventListener("message", (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === "auth_required") {
+        socket.send(JSON.stringify({ type: "auth", access_token: token }));
+      } else if (message.type === "auth_invalid") {
+        status("Token abgelehnt.");
+      } else if (message.type === "auth_ok") {
+        status("Verbunden.");
+        request(COMMANDS.model);
+        // The hub tells us when something changed; we ask again. No
+        // polling, and no assumption about what changed.
+        request(COMMANDS.subscribe);
+      } else if (message.type === "event") {
+        request(COMMANDS.model);
+      } else if (message.result && message.result.floors) {
+        draw(message.result);
+      } else if (message.success === false) {
+        status("Fehler: " + (message.error && message.error.message));
+      }
+    });
+
+    socket.addEventListener("error", () => status("Verbindung fehlgeschlagen."));
+    socket.addEventListener("close", () => status("Verbindung getrennt."));
+  }
+
+  function request(type) {
+    socket.send(JSON.stringify({ id: ++messageId, type }));
+  }
+
+  // ── Drawing ────────────────────────────────────────────
+
+  const escape = (value) =>
+    String(value ?? "").replace(/[&<>"]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+  function draw(model) {
+    const theme = model.theme || {};
+    // An empty colour means "inherit what your host says". Opened from a
+    // desktop there is no host to inherit from, so the hub hands every
+    // theme a set of concrete colours as well. Neither branch is a preset
+    // this file knows the name of.
+    const spare = theme.fallback || {};
+    const pick = (group, word) =>
+      (theme[group] || {})[word]
+      || (spare[group] || {})[word]
+      || (theme[group] || {}).unknown
+      || (spare[group] || {}).unknown
+      || "#9e9e9e";
+    const stateColour = (state) => pick("state_colors", state);
+    const qualityColour = (quality) => pick("quality_colors", quality);
+
+    $("floors").innerHTML = model.floors.map((floor) => {
+      const areas = model.areas.filter((a) => a.floor_id === floor.id);
+      const nodes = model.nodes.filter(
+        (n) => n.floor_id === floor.id && n.position);
+      const ids = new Set(nodes.map((n) => n.id));
+      const edges = model.edges.filter(
+        (e) => ids.has(e.source) && ids.has(e.target));
+      const at = (id) => nodes.find((n) => n.id === id).position;
+
+      return `<section class="floor">
+        <h2>${escape(floor.name)}
+          ${floor.unassigned ? "<small>— keiner Etage zugeordnet</small>" : ""}
+          <small>· ${areas.length} Bereiche, ${nodes.length} Objekte</small>
+        </h2>
+        <svg viewBox="0 0 1000 625" preserveAspectRatio="none">
+          ${areas.map((area) => {
+            const w = (area.size?.width ?? 0.3) * 1000;
+            const h = (area.size?.height ?? 0.3) * 625;
+            const x = area.position.x * 1000 - w / 2;
+            const y = area.position.y * 625 - h / 2;
+            return `<rect class="room" x="${x}" y="${y}" width="${w}"
+                      height="${h}" rx="8"></rect>
+                    <text class="room-name" x="${x + 8}" y="${y + 26}"
+                      >${escape(area.name)}</text>`;
+          }).join("")}
+          ${edges.map((edge) => {
+            const a = at(edge.source);
+            const b = at(edge.target);
+            return `<line x1="${a.x * 1000}" y1="${a.y * 625}"
+                      x2="${b.x * 1000}" y2="${b.y * 625}"
+                      stroke="${qualityColour(edge.quality)}" stroke-width="3"
+                      ${edge.dashed ? 'stroke-dasharray="8 6"' : ""}></line>`;
+          }).join("")}
+          ${nodes.map((node) => `
+            <circle cx="${node.position.x * 1000}" cy="${node.position.y * 625}"
+                    r="11" fill="${stateColour(node.state)}"></circle>
+            <text class="label" x="${node.position.x * 1000}"
+                  y="${node.position.y * 625 + 30}">${escape(node.label)}</text>
+          `).join("")}
+        </svg>
+      </section>`;
+    }).join("");
+
+    // The legend is built from whatever words the theme actually carries,
+    // so a state nobody has thought of yet appears here by itself.
+    const swatches = [
+      ...Object.keys(theme.state_colors || {}).map((w) => [w, stateColour(w)]),
+      ...Object.keys(theme.quality_colors || {}).map((w) => [w, qualityColour(w)]),
+    ];
+    $("legend").innerHTML = swatches.map(([word, colour]) =>
+      `<span><i style="background:${escape(colour)}"></i>
+        ${escape(word)}</span>`).join("");
+
+    status(`${model.floors.length} Etagen, ${model.nodes.length} Objekte, `
+           + `${model.providers.length} Provider.`);
+  }
+
+  $("connect").addEventListener("click", connect);
+  if (saved.url && saved.token) connect();
+</script>
