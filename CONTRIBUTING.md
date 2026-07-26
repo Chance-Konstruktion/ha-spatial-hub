@@ -45,6 +45,11 @@ python -m pytest -q          # the hub
 node --test tests/test_panel_logic.mjs   # the renderer's own logic
 ```
 
+Before changing the renderer, also render it: [`tools/README.md`](tools/README.md)
+sets up a throwaway Home Assistant and drives the panel in a real browser.
+The first genuine bug this project had -- rooms drawn on top of each other --
+was invisible to every test above and obvious in the first screenshot.
+
 The renderer has no build step and no bundler — it is one ES module, and it
 is meant to stay readable by someone who did not write it.
 
