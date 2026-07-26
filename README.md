@@ -14,6 +14,8 @@ einzige Zeile geändert wird.
 
 ## Status
 
+ - BAUSTELLE - 
+
 **Die Roadmap ist durch — Phase 1–12:** Datenmodell, Provider-Registry,
 Event-System, Storage, Config-Flow, die komplette Websocket-API, ein
 Renderer in der Seitenleiste, ein Grundriss, der dem Haus von selbst folgt,
