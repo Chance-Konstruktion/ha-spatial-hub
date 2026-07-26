@@ -52,6 +52,64 @@ VIA_PREFIX = "via:"
 
 PROVIDER_PREFIX = "custom_"
 
+# What a fresh installation shows before anybody has configured anything
+# or installed a single provider. Chosen to be useful in an ordinary house
+# and, above all, *bounded*: "all sensors" in a real home is four hundred
+# dots and no floor plan, so the sensor layer is narrowed to the classes
+# that actually mean something spatially.
+#
+# These are rules, not a list of integrations. A house with Z-Wave lights
+# and a house with ESPHome lights get the same four layers, and neither is
+# named anywhere. `topology` is on for the light layer because that is
+# where bridges and controllers actually appear -- which is the structure
+# a new user has never been shown before.
+DEFAULT_LAYERS: list[dict[str, Any]] = [
+    {
+        "id": "licht",
+        "name": "Licht",
+        "icon": "mdi:lightbulb-outline",
+        "domains": ["light"],
+        "topology": True,
+        "z_index": 12,
+    },
+    {
+        "id": "klima",
+        "name": "Klima",
+        "icon": "mdi:thermostat",
+        "domains": ["climate", "fan", "humidifier", "water_heater"],
+        "z_index": 11,
+    },
+    {
+        "id": "zugang",
+        "name": "Türen & Bewegung",
+        "icon": "mdi:door-open",
+        "domains": ["binary_sensor", "lock", "cover"],
+        "device_classes": ["motion", "occupancy", "presence", "door", "window",
+                           "garage_door", "opening"],
+        "z_index": 10,
+    },
+    {
+        "id": "medien",
+        "name": "Medien",
+        "icon": "mdi:speaker",
+        "domains": ["media_player"],
+        "z_index": 9,
+    },
+]
+
+
+def effective_layers(store: Any) -> tuple[list[dict[str, Any]], bool]:
+    """The layers in force, and whether they are still the defaults.
+
+    Never configured and configured-to-nothing are different answers. A
+    user who deleted every layer meant it, and resurrecting the defaults
+    on the next restart would be the hub arguing with them.
+    """
+    stored = store.get("settings", "view").get("custom_layers")
+    if stored is None:
+        return [dict(layer) for layer in DEFAULT_LAYERS], True
+    return [layer for layer in stored if isinstance(layer, dict)], False
+
 
 def matching_entities(
     hass: HomeAssistant, config: dict[str, Any]
@@ -275,8 +333,7 @@ class GenericProviders:
 
     @property
     def configs(self) -> list[dict[str, Any]]:
-        stored = self.store.get("settings", "view").get("custom_layers")
-        return [layer for layer in stored or [] if isinstance(layer, dict)]
+        return effective_layers(self.store)[0]
 
     @callback
     def async_sync(self) -> None:

@@ -415,3 +415,81 @@ def test_no_integration_is_named_anywhere_in_the_adapter():
             f"{integration!r} is named in the generic adapter -- then it is "
             "not generic, it is a list of the integrations somebody thought of"
         )
+
+
+# ── What a fresh installation shows ───────────────────────
+
+
+def test_a_fresh_install_already_has_layers(hass):
+    from custom_components.floorplan_hub.generic import DEFAULT_LAYERS, effective_layers
+    from custom_components.floorplan_hub.storage import LayoutStore
+
+    layers, are_default = effective_layers(LayoutStore(hass))
+
+    assert [layer["id"] for layer in layers] == [d["id"] for d in DEFAULT_LAYERS]
+    assert are_default is True, "an editor must be able to say whose these are"
+
+
+def test_deleting_every_layer_is_respected(hass):
+    """Configured-to-nothing is not the same answer as never configured.
+
+    Bringing the defaults back on the next restart would be the hub
+    arguing with a user who meant it.
+    """
+    from custom_components.floorplan_hub.generic import effective_layers
+    from custom_components.floorplan_hub.storage import LayoutStore
+
+    store = LayoutStore(hass)
+    store.update("settings", "view", {"custom_layers": []})
+
+    layers, are_default = effective_layers(store)
+
+    assert layers == []
+    assert are_default is False
+
+
+def test_the_users_own_layers_replace_the_defaults_entirely(hass):
+    from custom_components.floorplan_hub.generic import effective_layers
+    from custom_components.floorplan_hub.storage import LayoutStore
+
+    store = LayoutStore(hass)
+    store.update(
+        "settings", "view", {"custom_layers": [{"id": "mine", "name": "Mine"}]}
+    )
+
+    layers, are_default = effective_layers(store)
+
+    assert [layer["id"] for layer in layers] == ["mine"]
+    assert are_default is False
+
+
+def test_the_defaults_name_no_integration():
+    """They are rules. A Z-Wave house and an ESPHome house get the same four."""
+    import json
+
+    from custom_components.floorplan_hub.generic import DEFAULT_LAYERS
+
+    text = json.dumps(DEFAULT_LAYERS).lower()
+    for integration in ("zwave", "esphome", "zigbee", "hue", "matter", "shelly"):
+        assert integration not in text
+
+
+def test_the_defaults_are_bounded(hass):
+    """"All sensors" in a real house is four hundred dots and no floor plan."""
+    from custom_components.floorplan_hub.generic import DEFAULT_LAYERS
+
+    sensors = next(layer for layer in DEFAULT_LAYERS if layer["id"] == "zugang")
+
+    assert sensors.get("device_classes"), (
+        "a layer over binary_sensor without a device_class filter is every "
+        "battery and connectivity sensor in the house"
+    )
+
+
+def test_the_defaults_register_like_anybody_else(hass):
+    from custom_components.floorplan_hub.generic import DEFAULT_LAYERS, registration
+    from custom_components.floorplan_hub.registry import Provider
+
+    for layer in DEFAULT_LAYERS:
+        provider = Provider.from_registration(registration(hass, layer))
+        assert provider.warnings == [], f"{layer['id']}: {provider.warnings}"

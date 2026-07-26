@@ -25,6 +25,7 @@ from .const import (
     UNASSIGNED_FLOOR_ID,
     UNASSIGNED_FLOOR_NAME,
 )
+from .generic import effective_layers
 from .models import Edge, Node, Position
 from .registry import Provider, async_load_providers
 from .theme import resolve as resolve_theme
@@ -210,10 +211,12 @@ class FloorplanHub:
             # renderer ignores this and just draws the nodes they produced.
             "custom_layers": [
                 layer
-                for layer in self.store.get("settings", "view").get("custom_layers")
-                or []
+                for layer in effective_layers(self.store)[0]
                 if isinstance(layer, dict)
             ],
+            # So an editor can say "these are ours, not yours" and offer to
+            # put them back after the user has taken them apart.
+            "custom_layers_are_default": effective_layers(self.store)[1],
             "icon_sets": icon_sets,
         }
 

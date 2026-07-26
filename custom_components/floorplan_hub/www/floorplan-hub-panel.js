@@ -15,19 +15,16 @@ const DOMAIN = "floorplan_hub";
 
 /** Fallback edge colours by the shared quality vocabulary. The hub's
  *  theme wins where it states one; these are what "inherit" means. */
-const QUALITY = {
-  good: "var(--success-color, #4caf50)",
-  fair: "var(--warning-color, #ff9800)",
-  poor: "var(--error-color, #f44336)",
-  unknown: "var(--disabled-text-color, #9e9e9e)",
-};
-
-/** Node colours by state. Anything else is a provider's own word, and gets
- *  the accent colour rather than being forced into online/offline. */
-const STATE = {
+/** Home Assistant's own variables, preferred over the hub's fallback when
+ *  running inside it: they follow whatever theme the user already chose.
+ *  Keyed by the shared vocabulary, never by a provider's private word. */
+const HA_COLOURS = {
   online: "var(--success-color, #4caf50)",
   offline: "var(--error-color, #f44336)",
   unknown: "var(--disabled-text-color, #9e9e9e)",
+  good: "var(--success-color, #4caf50)",
+  fair: "var(--warning-color, #ff9800)",
+  poor: "var(--error-color, #f44336)",
 };
 
 const escapeHtml = (value) =>
@@ -199,14 +196,35 @@ class FloorplanHubPanel extends HTMLElement {
     return (this._model && this._model.theme) || {};
   }
 
+  /** A colour for one word of the shared vocabulary.
+   *
+   *  Order: what the theme says, then what Home Assistant's own theme says
+   *  for the words it has an opinion about, then the hub's resolved
+   *  fallback. That last step is why `on` and `off` are coloured at all:
+   *  keeping a private table here meant every word the hub learned needed
+   *  a change in every renderer, which is exactly what resolving themes in
+   *  the hub was supposed to stop.
+   */
+  _vocabularyColour(group, word, spare) {
+    const themed = (this._theme[group] || {})[word];
+    if (themed) return themed;
+    if (HA_COLOURS[word]) return HA_COLOURS[word];
+    const fallback = (this._theme.fallback || {})[group] || {};
+    return fallback[word] || spare;
+  }
+
   _stateColour(state) {
-    const themed = (this._theme.state_colors || {})[state];
-    return themed || STATE[state] || "var(--fp-accent, var(--primary-color, #03a9f4))";
+    return this._vocabularyColour(
+      "state_colors", state,
+      "var(--fp-accent, var(--primary-color, #03a9f4))",
+    );
   }
 
   _qualityColour(quality) {
-    const themed = (this._theme.quality_colors || {})[quality];
-    return themed || QUALITY[quality] || QUALITY.unknown;
+    return this._vocabularyColour(
+      "quality_colors", quality,
+      "var(--disabled-text-color, #9e9e9e)",
+    );
   }
 
   /** Theme values a renderer cannot express in CSS alone. */
@@ -1869,4 +1887,4 @@ customElements.define("floorplan-hub-panel", FloorplanHubPanel);
 // Exported so the test suite can drive the rendering logic without a
 // browser. Home Assistant loads this file as a module and only ever uses
 // the custom element above.
-export { FloorplanHubPanel, QUALITY, STATE };
+export { FloorplanHubPanel, HA_COLOURS };

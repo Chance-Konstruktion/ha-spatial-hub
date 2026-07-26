@@ -114,7 +114,14 @@ Die meisten Integrationen werden nie einen Floorplan-Hub-Provider
 schreiben. Das ist kein Versäumnis, sondern der Normalfall — und eine
 Plattform, die nur für die Eingeweihten funktioniert, funktioniert nicht.
 
-Also beschreibt der Nutzer stattdessen eine Ebene: *„alle Lichter"*,
+**Vier Ebenen sind ab Werk da**: Licht, Klima, Türen & Bewegung, Medien.
+Direkt nach der Installation, ohne dass jemand eine Regel schreibt und
+bevor irgendein Provider existiert. Es sind Regeln, keine Integrationsliste
+— ein Haus mit Z-Wave-Lampen und eines mit ESPHome-Lampen bekommen dieselben
+vier. Wer sie nicht will, löscht sie; wer alle löscht, hat sie gelöscht und
+bekommt sie nicht beim nächsten Neustart zurück.
+
+Darüber hinaus beschreibt der Nutzer eine Ebene selbst: *„alle Lichter"*,
 *„alles mit Label security"*, *„diese vier Entitäten"*. Im Bearbeiten-Modus,
 Seitenleiste, **+ Ebene**.
 

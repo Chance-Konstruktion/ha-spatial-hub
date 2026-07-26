@@ -25,9 +25,17 @@ from homeassistant.helpers import (
 from .const import STATE_UNKNOWN
 from .models import Node, Position
 
-# Nodes sharing an area are spread on a small circle around its centre so
-# they don't stack into one unclickable blob before the user arranges them.
-_SPREAD_RADIUS = 0.035
+# Nodes sharing a spot are spread over a grid so they do not stack into one
+# unclickable blob before the user arranges them. A circle was the first
+# attempt and it only worked for the handful of nodes a single provider
+# puts in a single room: with the built-in layers switched on, nineteen
+# area-less entities landed on one 0.035 circle in the middle of the plan
+# and could not be told apart, let alone clicked.
+#
+# The area a node has no claim on is the whole floor, inset so nothing
+# sits on the edge; inside a real room it is that room's own box.
+_PLAN_INSET = 0.08
+_ROOM_FILL = 0.7
 
 
 def async_floors(hass: HomeAssistant) -> list[dict[str, Any]]:
@@ -167,6 +175,7 @@ def async_place_nodes(
     applied later by the hub and beat all three.
     """
     area_centres = {area["id"]: area["position"] for area in areas}
+    area_sizes = {area["id"]: area.get("size") or {} for area in areas}
     area_floors = {area["id"]: area["floor_id"] for area in areas}
 
     per_area: dict[str | None, list[Node]] = {}
@@ -178,19 +187,48 @@ def async_place_nodes(
 
     for area_id, area_nodes in per_area.items():
         centre = area_centres.get(area_id) if area_id else None
-        base_x = centre["x"] if centre else 0.5
-        base_y = centre["y"] if centre else 0.5
         count = len(area_nodes)
-        for index, node in enumerate(area_nodes):
-            if count == 1:
-                node.position = Position(x=base_x, y=base_y)
-                continue
-            angle = 2 * math.pi * index / count
+        if centre:
+            size = area_sizes.get(area_id) or {}
+            width = float(size.get("width") or 0.3) * _ROOM_FILL
+            height = float(size.get("height") or 0.3) * _ROOM_FILL
+            base_x, base_y = centre["x"], centre["y"]
+        else:
+            # No area means no spatial claim at all, so the honest place is
+            # "somewhere on this floor" -- spread out and clickable, not a
+            # pile in the middle.
+            width = height = 1.0 - 2 * _PLAN_INSET
+            base_x = base_y = 0.5
+
+        for index, (fx, fy) in enumerate(_grid_offsets(count)):
+            node = area_nodes[index]
             node.position = Position(
-                x=_clamp(base_x + _SPREAD_RADIUS * math.cos(angle)),
-                y=_clamp(base_y + _SPREAD_RADIUS * math.sin(angle)),
+                x=_clamp(base_x + fx * width),
+                y=_clamp(base_y + fy * height),
             )
-            node.metadata = {**node.metadata, "auto_position": True}
+            if count > 1 or not centre:
+                node.metadata = {**node.metadata, "auto_position": True}
+
+
+def _grid_offsets(count: int) -> list[tuple[float, float]]:
+    """Offsets in [-0.5, 0.5], one per node, laid out on a centred grid.
+
+    One node sits in the middle. Everything else gets a cell, which is the
+    only arrangement that stays legible whether there are three nodes or
+    ninety -- and it is what the user is about to drag apart anyway.
+    """
+    if count <= 1:
+        return [(0.0, 0.0)]
+    columns = math.ceil(math.sqrt(count))
+    rows = math.ceil(count / columns)
+    offsets: list[tuple[float, float]] = []
+    for index in range(count):
+        column, row = index % columns, index // columns
+        offsets.append((
+            (column + 0.5) / columns - 0.5,
+            (row + 0.5) / rows - 0.5,
+        ))
+    return offsets
 
 
 def _clamp(value: float) -> float:

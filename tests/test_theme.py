@@ -24,7 +24,13 @@ def test_every_preset_covers_the_whole_shared_vocabulary(name):
     """A preset that forgets `poor` leaves a provider looking broken."""
     resolved = theme.resolve({"theme": {"preset": name}})
 
-    assert set(resolved["state_colors"]) == {"online", "offline", "unknown"}
+    assert set(resolved["state_colors"]) == {
+        "online", "offline", "unknown",
+        # `on`/`off` are as universal in Home Assistant as online/offline
+        # and mean something different: a lamp that is off is not broken.
+        # Without them every light drew in the grey meant for "no idea".
+        "on", "off",
+    }
     assert set(resolved["quality_colors"]) == {"good", "fair", "poor", "unknown"}
     assert resolved["node_shape"] in {"circle", "rounded", "square"}
     assert resolved["labels"] in {"always", "hover", "never"}
@@ -147,3 +153,26 @@ def test_a_user_colour_still_wins_over_the_fallback():
         "the fallback was overwritten -- it is what to use when there is no "
         "colour, so it must not become a copy of the colour"
     )
+
+
+def test_a_lamp_that_is_off_is_not_the_same_as_no_idea():
+    """Found on a fresh install: the light layer drew entirely in grey.
+
+    `unknown` grey says "the hub could not find out". An `off` lamp is a
+    fact, and telling somebody the wrong one of those is worse than saying
+    nothing.
+    """
+    for preset in ("classic", "blueprint", "neon", "paper"):
+        colors = theme.resolve({"theme": {"preset": preset}})["state_colors"]
+        assert colors["off"] and colors["off"] != colors["unknown"], (
+            f"{preset}: an off lamp is drawn in the colour for 'no idea'"
+        )
+        assert colors["on"] and colors["on"] != colors["off"]
+
+
+def test_the_fallback_covers_the_new_words_too():
+    """Or a renderer outside Home Assistant is back to grey lamps."""
+    fallback = theme.resolve({})["fallback"]["state_colors"]
+
+    assert fallback["on"].startswith("#")
+    assert fallback["off"].startswith("#")

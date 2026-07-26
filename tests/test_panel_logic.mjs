@@ -28,7 +28,7 @@ globalThis.window = { addEventListener() {}, removeEventListener() {},
                       confirm: () => true };
 
 const here = dirname(fileURLToPath(import.meta.url));
-const { FloorplanHubPanel, QUALITY } = await import(
+const { FloorplanHubPanel, HA_COLOURS } = await import(
   pathToFileURL(
     join(here, "..", "custom_components", "floorplan_hub", "www",
          "floorplan-hub-panel.js"),
@@ -252,7 +252,9 @@ test("edges are laid out in the 0..1000 viewBox the svg declares", () => {
 
 test("edge colour comes from the shared quality vocabulary", () => {
   const view = panel();
-  for (const [quality, colour] of Object.entries(QUALITY)) {
+  const qualities = { good: HA_COLOURS.good, fair: HA_COLOURS.fair,
+                      poor: HA_COLOURS.poor };
+  for (const [quality, colour] of Object.entries(qualities)) {
     const html = view._edgeHtml({ ...view._visibleEdges[0], quality });
     assert.ok(html.includes(colour), `${quality} should render as ${colour}`);
   }
@@ -819,4 +821,38 @@ test("an unticked box is left out rather than stored as false", () => {
   view._saveLayer();
 
   assert.ok(!("topology" in view._written[0]));
+});
+
+test("a word Home Assistant has no opinion about uses the hub's fallback", () => {
+  // `on` and `off` are as common as online/offline and mean something
+  // else. Keeping a private table here is what made every light draw in
+  // the same colour whether it was on or not.
+  const data = model();
+  data.theme.fallback = {
+    state_colors: { on: "#fbc02d", off: "#78909c" },
+    quality_colors: {},
+  };
+  const view = panel(data);
+
+  assert.equal(view._stateColour("on"), "#fbc02d");
+  assert.equal(view._stateColour("off"), "#78909c");
+});
+
+test("the user's own colour still beats the fallback", () => {
+  const data = model();
+  data.theme.state_colors = { ...data.theme.state_colors, on: "#123456" };
+  data.theme.fallback = { state_colors: { on: "#fbc02d" }, quality_colors: {} };
+  const view = panel(data);
+
+  assert.equal(view._stateColour("on"), "#123456");
+});
+
+test("inside Home Assistant its own theme still wins over the fallback", () => {
+  // Otherwise installing the hub would start arguing with the theme the
+  // user already chose, which `auto` exists to avoid.
+  const data = model();
+  data.theme.fallback = { state_colors: { online: "#ff0000" }, quality_colors: {} };
+  const view = panel(data);
+
+  assert.equal(view._stateColour("online"), HA_COLOURS.online);
 });
