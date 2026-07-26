@@ -19,7 +19,7 @@ Plattform ein weiteres Dashboard geworden.
 | 7 | Generic Adapter | ✅ |
 | 8 | Provider-SDK | ✅ |
 | 9 | Eigene Provider migrieren | 🟡 Powerline steht |
-| 10 | Community | ⬜ |
+| 10 | Community | ✅ |
 | 11 | Austauschbare Renderer | 🟡 Fundament steht |
 | 12 | Zero-Config als Endzustand | ⬜ |
 
@@ -176,12 +176,35 @@ Also ein **Vendoring-SDK**:
 angebunden und besteht den Conformance-Vertrag ohne Sonderbehandlung.
 Weitere folgen.
 
-## ⬜ Phase 10 — Community
+## ✅ Phase 10 — Community
 
-Dokumentation, Beispiel-Provider, ein Weg für fremde Integrationen,
-mitzumachen, ohne zu fragen. Das Conformance-Kit ist dafür gebaut: Ein
-Entwickler soll prüfen können, ob er den Vertrag erfüllt, ohne den Hub zu
-installieren.
+Die Mechanik stand nach Phase 8. Was fehlte, war der Weg dorthin — und ein
+Fehler darin, der die ganze vorige Phase halbiert hat: Der Text, den ein
+Nutzer bei einer *fremden* Integration einreichen soll, gab es nur auf
+Deutsch. Integrationen werden fast durchgehend englischsprachig entwickelt.
+[`docs/ASK_FOR_SUPPORT.en.md`](docs/ASK_FOR_SUPPORT.en.md) ist jetzt die
+Fassung, die tatsächlich kopiert wird; die deutsche Seite schickt einen
+gleich dorthin.
+
+Dazu:
+
+- [`docs/PROVIDERS.md`](docs/PROVIDERS.md) — wer angebunden ist. **Reine
+  Dokumentation.** `tests/test_community.py` liest die Domains aus der
+  Tabelle und prüft, dass keine davon im Quelltext des Hubs vorkommt. Genau
+  hier kippt so ein Projekt üblicherweise: erst eine Liste zum
+  Nachschlagen, dann eine Liste mit einem Sonderfall, dann eine Liste, ohne
+  die nichts mehr geht.
+- Issue-Templates, die zuerst *vom* Issue wegführen: Wer eine fehlende
+  Integration meldet, landet beim Editor oder beim SDK. Jede Anfrage, die
+  dort endet, wird nie das Problem eines Maintainers — unseres so wenig wie
+  seines.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) mit der einen Regel und den drei
+  Tests, die sie halten. Und dem Satz, auf den es ankommt: **Du musst uns
+  nicht fragen.** Kein Allowlist-Eintrag, keine Freigabe, kein Release von
+  uns, auf das jemand wartet.
+- Ein Test, der jeden lokalen Link in jeder Markdown-Datei auflöst. Ein
+  toter Link im Onboarding-Pfad kostet den Leser, ohne dass es je jemand
+  merkt.
 
 ## 🟡 Phase 11 — Austauschbare Renderer
 

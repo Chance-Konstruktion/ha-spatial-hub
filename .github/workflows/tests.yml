@@ -18,7 +18,7 @@ jobs:
       # would mean the schemas are never checked by the real validator,
       # which is most of what there is to get wrong about them.
       - name: Install test dependencies
-        run: pip install pytest pytest-asyncio voluptuous
+        run: pip install pytest pytest-asyncio voluptuous pyyaml
       # The renderer's own test suite runs from here too, so one command
       # covers both languages. Node is present on ubuntu-latest.
       - name: Run unit tests

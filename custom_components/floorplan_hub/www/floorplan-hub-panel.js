@@ -255,8 +255,12 @@ class FloorplanHubPanel extends HTMLElement {
     const model = this._model;
     if (!model) return [];
     const floor = this._floor;
+    // Every area the hub hands over has a floor -- the ones the user never
+    // assigned get a storey of their own. Drawing a floorless area on each
+    // tab instead would drop it on top of that floor's real rooms, whose
+    // grid was measured without it.
     return model.areas.filter(
-      (area) => !floor || !area.floor_id || area.floor_id === floor.id,
+      (area) => !floor || area.floor_id === floor.id,
     );
   }
 
@@ -391,13 +395,17 @@ class FloorplanHubPanel extends HTMLElement {
       </div>`;
     }
 
-    const banner = model.providers.length
+    const floor = this._floor;
+    const banner = floor && floor.unassigned
+      ? `<p class="banner">Diese Bereiche sind in Home Assistant keiner Etage
+         zugeordnet. Sobald du das dort nachträgst, wandern sie von selbst auf
+         die richtige Etage — hier ist nichts einzustellen.</p>`
+      : model.providers.length
       ? ""
       : `<p class="banner">Dein Haus, direkt aus Home Assistant. Sobald eine
          Integration räumliche Daten liefert, erscheint sie hier von selbst —
          einzurichten ist dafür nichts.</p>`;
 
-    const floor = this._floor;
     const aspect = (floor && floor.aspect) || 1.6;
     const background = floor && floor.background;
     const nodes = this._visibleNodes;

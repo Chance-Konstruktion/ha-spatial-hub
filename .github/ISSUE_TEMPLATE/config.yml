@@ -1,0 +1,14 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "Meine Integration fehlt auf dem Grundriss"
+    url: https://github.com/Chance-Konstruktion/ha-floorplan-hub/blob/main/docs/ASK_FOR_SUPPORT.md
+    about: >
+      Das ist meistens kein Fehler hier, sondern eine Ebene, die du dir in
+      zwei Minuten selbst baust (Bearbeiten → + Ebene). Und wenn du wirklich
+      einen Adapter brauchst, steht dort der Text dafür — für das Repo der
+      Integration, nicht für dieses.
+  - name: "Ich maintaine eine Integration und will sie anbinden"
+    url: https://github.com/Chance-Konstruktion/ha-floorplan-hub/blob/main/sdk/README.md
+    about: >
+      Zwei Dateien kopieren, eine Funktion aufrufen. Du brauchst dafür weder
+      ein Issue hier noch eine Freigabe von uns.

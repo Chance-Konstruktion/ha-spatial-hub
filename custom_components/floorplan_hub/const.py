@@ -36,6 +36,14 @@ API_VERSION: Final = 1
 # point is that its author finds out a better one exists.
 CURRENT_SDK_VERSION: Final = 1
 
+# Floors arrived in Home Assistant long after areas, so most houses have
+# areas that belong to no floor at all. They still have to be somewhere:
+# drawn on every floor they would collide with that floor's own rooms, and
+# dropped they would vanish from a plan that promises to show the house.
+# So they get a storey of their own, last in the list.
+UNASSIGNED_FLOOR_ID: Final = "_unassigned"
+UNASSIGNED_FLOOR_NAME: Final = "Ohne Etage"
+
 # ── Internal hass.data keys ───────────────────────────────────────────
 DATA_HUB: Final = f"{DOMAIN}_hub"
 DATA_STORE: Final = f"{DOMAIN}_store"

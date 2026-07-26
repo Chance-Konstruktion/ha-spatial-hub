@@ -4,6 +4,11 @@ Du benutzt eine Integration, die auf deinem Grundriss fehlt. Diese Seite
 ist der Text, den du in deren Repository einreichst — und ein paar Bitten
 dazu, wie.
 
+> **Die meisten Integrationen werden auf Englisch entwickelt.** Schreib
+> nicht auf Deutsch in ein englischsprachiges Repo — nimm
+> [ASK_FOR_SUPPORT.en.md](ASK_FOR_SUPPORT.en.md), da steht derselbe Text
+> zum Kopieren.
+
 ## Zuerst: Musst du überhaupt fragen?
 
 Wahrscheinlich nicht. Im Hub, Bearbeiten-Modus → **+ Ebene**, beschreibst du

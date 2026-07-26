@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from custom_components.floorplan_hub.const import UNASSIGNED_FLOOR_ID
 from custom_components.floorplan_hub.hub import FloorplanHub
 from custom_components.floorplan_hub.storage import LayoutStore
 
@@ -266,3 +267,94 @@ async def test_nodes_still_get_placed_when_areas_are_unplaced(hass, hub):
 
     node = (await hub.async_model())["nodes"][0]
     assert node["position"] is not None
+
+
+# ── Areas that belong to no floor ─────────────────────────
+
+
+def _house(hass, floors, areas):
+    from homeassistant.helpers import area_registry as ar, floor_registry as fr
+
+    fr.async_get(hass).floors = floors
+    ar.async_get(hass).areas = areas
+
+
+@pytest.mark.asyncio
+async def test_an_area_without_a_floor_gets_a_storey_of_its_own(hass):
+    """Found by running the panel, not by reading the code.
+
+    Floors arrived in Home Assistant years after areas, so most houses
+    have some of each. Drawn on every floor, an unassigned area lands on
+    top of that floor's real rooms -- whose grid was measured without it.
+    """
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0)],
+        [FakeArea("bad", "Bad", floor_id="eg"), FakeArea("kueche", "Küche")],
+    )
+
+    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+
+    assert [floor["id"] for floor in model["floors"]] == ["eg", UNASSIGNED_FLOOR_ID], (
+        "the storey for the homeless areas is missing, or is not sorted last"
+    )
+    by_id = {area["id"]: area for area in model["areas"]}
+    assert by_id["kueche"]["floor_id"] == UNASSIGNED_FLOOR_ID
+    assert by_id["bad"]["floor_id"] == "eg"
+    assert by_id["kueche"]["size"] == by_id["bad"]["size"], (
+        "each is the only room on its own storey, so each gets the full box; "
+        "sharing a tab, one of them would have been drawn over the other"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_house_without_any_floors_gets_no_unassigned_tab(hass):
+    """Then *everything* is unassigned, which tells the user nothing."""
+    _house(hass, [], [FakeArea("kueche", "Küche"), FakeArea("bad", "Bad")])
+
+    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+
+    assert [floor["id"] for floor in model["floors"]] == ["default"]
+    assert all(not area["floor_id"] for area in model["areas"]), (
+        "areas were pushed onto an unassigned storey that does not exist"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_node_follows_its_area_onto_the_unassigned_storey(hass):
+    """Otherwise the node draws on a floor its room is not on."""
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0)],
+        [FakeArea("bad", "Bad", floor_id="eg"), FakeArea("kueche", "Küche")],
+    )
+    hass.data["floorplan_hub_providers"] = {
+        "p": {
+            "provider_id": "p",
+            "name": "P",
+            "data": lambda: {
+                "nodes": [{"id": "toaster", "label": "Toaster", "area_id": "kueche"}]
+            },
+        }
+    }
+
+    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+
+    assert model["nodes"][0]["floor_id"] == UNASSIGNED_FLOOR_ID
+
+
+@pytest.mark.asyncio
+async def test_the_unassigned_storey_says_that_it_is_one(hass):
+    """A renderer must be able to explain the tab rather than invent a room."""
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0)],
+        [FakeArea("kueche", "Küche")],
+    )
+
+    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+
+    assert model["floors"][-1]["unassigned"] is True
+    assert all(
+        not floor.get("unassigned") for floor in model["floors"][:-1]
+    ), "a real storey was marked as the unassigned one"

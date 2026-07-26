@@ -14,7 +14,7 @@ einzige Zeile geändert wird.
 
 ## Status
 
-**Phase 1–8 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
+**Phase 1–8 und 10 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
 Event-System, Storage, Config-Flow, die komplette Websocket-API, ein
 Renderer in der Seitenleiste, ein Grundriss, der dem Haus von selbst folgt,
 ein Edit-Modus für alles, was die Automatik falsch geraten hat, Themes — und
@@ -174,7 +174,14 @@ Code. Sie kann also nicht stillschweigend verrotten.
 
 Und wenn du Nutzer einer Integration bist, die noch fehlt:
 **[docs/ASK_FOR_SUPPORT.md](docs/ASK_FOR_SUPPORT.md)** ist der Text, den du
-dort einreichst — samt der Bitte, es einmal zu tun und freundlich.
+dort einreichst — samt der Bitte, es einmal zu tun und freundlich. Weil die
+meisten Integrationen englischsprachig entwickelt werden, liegt derselbe
+Text auch als [ASK_FOR_SUPPORT.en.md](docs/ASK_FOR_SUPPORT.en.md) bereit.
+
+Wer schon angebunden ist, steht in
+**[docs/PROVIDERS.md](docs/PROVIDERS.md)**. Diese Liste ist reine
+Dokumentation — kein Modul liest sie, und ein Test hält fest, dass keine
+Domain daraus im Quelltext des Hubs vorkommt.
 
 Provider-Code gilt dem Hub als nicht vertrauenswürdig: Wer eine Exception
 wirft, ins Timeout läuft oder Unsinn liefert, verliert seinen eigenen Layer
