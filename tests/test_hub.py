@@ -423,3 +423,156 @@ async def test_nodes_in_a_room_stay_inside_it(hass):
     for node in model["nodes"]:
         assert abs(node["position"]["x"] - area["position"]["x"]) <= half_w
         assert abs(node["position"]["y"] - area["position"]["y"]) <= half_h
+
+
+# ── The garden is not a storey ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_an_outdoor_area_joins_the_ground_floor(hass, hub):
+    """A garden surrounds the ground floor rather than becoming a storey."""
+    from homeassistant.helpers import area_registry as ar
+
+    ar.async_get(hass).areas.append(FakeArea("garten", "Garten", floor_id="og"))
+    model = await hub.async_model()
+
+    garden = next(area for area in model["areas"] if area["id"] == "garten")
+    assert garden["kind"] == "outdoor"
+    assert garden["floor_id"] == "eg", "the ground floor, not the one upstairs"
+    assert garden["outdoor"] is True
+
+    ground = next(floor for floor in model["floors"] if floor["id"] == "eg")
+    assert ground["has_outdoor"] is True
+    assert ground["outdoor_margin"] > 0
+
+
+@pytest.mark.asyncio
+async def test_an_outdoor_area_is_arranged_outside_the_house(hass, hub):
+    from homeassistant.helpers import area_registry as ar
+
+    ar.async_get(hass).areas.append(FakeArea("terrasse", "Terrasse", floor_id="eg"))
+    model = await hub.async_model()
+
+    terrace = next(area for area in model["areas"] if area["id"] == "terrasse")
+    x, y = terrace["position"]["x"], terrace["position"]["y"]
+    assert not (0 <= x <= 1 and 0 <= y <= 1), "the apron is outside 0..1"
+
+
+@pytest.mark.asyncio
+async def test_several_outdoor_areas_all_fit_around_one_floor(hass, hub):
+    from homeassistant.helpers import area_registry as ar
+
+    for name in ("Vorgarten", "Hintergarten", "Einfahrt", "Carport", "Pool"):
+        ar.async_get(hass).areas.append(
+            FakeArea(name.lower(), name, floor_id="eg")
+        )
+    model = await hub.async_model()
+
+    outdoor = [area for area in model["areas"] if area.get("outdoor")]
+    assert len(outdoor) == 5
+    assert all(area["floor_id"] == "eg" for area in outdoor)
+    # No two of them landed in the same spot -- five gardens, one ring.
+    spots = {(area["position"]["x"], area["position"]["y"]) for area in outdoor}
+    assert len(spots) == 5
+    assert [floor["id"] for floor in model["floors"]] == ["eg", "og"]
+
+
+@pytest.mark.asyncio
+async def test_a_storey_that_held_only_the_garden_goes_with_it(hass, hub):
+    from homeassistant.helpers import area_registry as ar, floor_registry as fr
+
+    fr.async_get(hass).floors.append(FakeFloor("aussen", "Außen", level=-2))
+    ar.async_get(hass).areas.append(FakeArea("garten", "Garten", floor_id="aussen"))
+    model = await hub.async_model()
+
+    assert [floor["id"] for floor in model["floors"]] == ["eg", "og"]
+
+
+@pytest.mark.asyncio
+async def test_the_user_overrules_the_guess(hass, hub):
+    """"Gartenzimmer" is a room. The guess is cheap to be wrong about."""
+    from homeassistant.helpers import area_registry as ar
+
+    ar.async_get(hass).areas.append(
+        FakeArea("gartenzimmer", "Gartenzimmer", floor_id="og")
+    )
+    hub.store.update("areas", "gartenzimmer", {"kind": "indoor"})
+    model = await hub.async_model()
+
+    room = next(area for area in model["areas"] if area["id"] == "gartenzimmer")
+    assert room["kind"] == "indoor"
+    assert room["floor_id"] == "og", "it stayed where the user put it"
+    assert 0 <= room["position"]["x"] <= 1
+
+
+@pytest.mark.asyncio
+async def test_a_virtual_area_gets_a_plane_of_its_own(hass, hub):
+    from custom_components.floorplan_hub.const import VIRTUAL_FLOOR_ID
+    from homeassistant.helpers import area_registry as ar
+
+    ar.async_get(hass).areas.append(FakeArea("cloud", "Cloud", floor_id="eg"))
+    hub.store.update("areas", "cloud", {"kind": "virtual"})
+    model = await hub.async_model()
+
+    cloud = next(area for area in model["areas"] if area["id"] == "cloud")
+    assert cloud["floor_id"] == VIRTUAL_FLOOR_ID
+    virtual = next(
+        floor for floor in model["floors"] if floor["id"] == VIRTUAL_FLOOR_ID
+    )
+    assert virtual["virtual"] is True
+    # Above everything else, so it never reads as a room in the building.
+    assert model["floors"][-1]["id"] == VIRTUAL_FLOOR_ID
+
+
+# ── Sandwich settings ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_an_area_can_be_kept_out_of_the_sandwich(hass, hub):
+    hub.store.update("areas", "kueche", {"in_sandwich": False})
+    model = await hub.async_model()
+
+    kitchen = next(area for area in model["areas"] if area["id"] == "kueche")
+    assert kitchen["in_sandwich"] is False
+    assert kitchen["position"], "still drawn on its own floor"
+
+
+@pytest.mark.asyncio
+async def test_only_in_the_single_view_means_out_of_the_sandwich(hass, hub):
+    hub.store.update("areas", "kueche", {"single_only": True})
+    model = await hub.async_model()
+
+    kitchen = next(area for area in model["areas"] if area["id"] == "kueche")
+    assert kitchen["single_only"] is True
+    assert kitchen["in_sandwich"] is False, "saying one implies the other"
+
+
+@pytest.mark.asyncio
+async def test_areas_are_in_the_sandwich_unless_told_otherwise(hass, hub):
+    model = await hub.async_model()
+    assert all(area["in_sandwich"] for area in model["areas"])
+
+
+# ── Icons and the way back into Home Assistant ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_node_without_an_icon_gets_one_that_says_what_it_is(hass, hub):
+    hass.states.set("light.kitchen", "on", friendly_name="Kitchen")
+    _register(hass, data=lambda: ["light.kitchen"])
+    model = await hub.async_model()
+
+    assert model["nodes"][0]["icon"] == "mdi:lightbulb"
+
+
+@pytest.mark.asyncio
+async def test_the_provider_keeps_the_icon_it_chose(hass, hub):
+    hass.states.set("light.kitchen", "on", friendly_name="Kitchen")
+    _register(
+        hass,
+        data=lambda: [{"id": "k", "entity_id": "light.kitchen",
+                       "icon": "mdi:ceiling-light"}],
+    )
+    model = await hub.async_model()
+
+    assert model["nodes"][0]["icon"] == "mdi:ceiling-light"

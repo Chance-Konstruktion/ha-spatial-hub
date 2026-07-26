@@ -16,6 +16,7 @@ Registration shape (see ``docs/PROVIDER_API.md`` for the full contract)::
         "version": "1.0.0",
         "capabilities": {"nodes": True, "edges": True, ...},
         "layers": [{"id": "network_powerline", "name": ..., "icon": ...}],
+        "panel_url": "/powerline",         # optional own view to link to
         "data": callable,                 # -> {"nodes": [...], "edges": [...]}
         "history": callable,              # optional, (kind, id, hours) -> series
         "action": callable,               # optional, (kind, id, action, data)
@@ -44,6 +45,20 @@ _LOGGER = logging.getLogger(__name__)
 DATA_TIMEOUT = 10.0
 
 
+def _safe_url(value: Any) -> str:
+    """A provider's own view, or nothing.
+
+    Only a path inside this Home Assistant is accepted. A registration is
+    third-party data, and a renderer turns this into a link the user
+    clicks -- an off-site or `javascript:` URL is not something the hub
+    should be handing them.
+    """
+    url = str(value or "").strip()
+    if not url.startswith("/") or url.startswith("//") or len(url) > 256:
+        return ""
+    return url
+
+
 class ProviderError(Exception):
     """A provider registration is unusable."""
 
@@ -62,6 +77,7 @@ _KNOWN_REGISTRATION_KEYS = frozenset(
         "capabilities",
         "layers",
         "icon_set",
+        "panel_url",
         "data",
         "history",
         "action",
@@ -101,6 +117,10 @@ class Provider:
     capabilities: Capabilities = field(default_factory=Capabilities)
     layers: list[Layer] = field(default_factory=list)
     icon_set: dict[str, Any] = field(default_factory=dict)
+    # Where the provider's own view lives, if it has one. The hub links to
+    # it from a node's popup and never asks what is on the other side --
+    # that is the integration's own identity, and none of the hub's business.
+    panel_url: str = ""
     data_fn: Callable[[], Any] | None = None
     history_fn: Callable[..., Any] | None = None
     action_fn: Callable[..., Any] | None = None
@@ -170,6 +190,7 @@ class Provider:
             capabilities=Capabilities.from_dict(raw.get("capabilities")),
             layers=layers,
             icon_set=dict(raw.get("icon_set") or {}),
+            panel_url=_safe_url(raw.get("panel_url")),
             data_fn=data_fn,
             history_fn=raw.get("history") if callable(raw.get("history")) else None,
             action_fn=raw.get("action") if callable(raw.get("action")) else None,
@@ -190,6 +211,7 @@ class Provider:
             "capabilities": self.capabilities.as_dict(),
             "layers": [layer.as_dict() for layer in self.layers],
             "icon_set": self.icon_set,
+            "panel_url": self.panel_url,
         }
 
     async def async_fetch(self) -> FetchResult:

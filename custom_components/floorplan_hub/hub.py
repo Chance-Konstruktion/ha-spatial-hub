@@ -17,13 +17,20 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from . import discovery
 from .const import (
     API_VERSION,
+    AREA_KIND_INDOOR,
+    AREA_KIND_OUTDOOR,
+    AREA_KIND_VIRTUAL,
+    AREA_KINDS,
     CURRENT_SDK_VERSION,
+    OUTDOOR_MARGIN,
     SIGNAL_DATA_UPDATED,
     SIGNAL_PROVIDER_REGISTERED,
     SIGNAL_PROVIDER_REMOVED,
     STATE_UNKNOWN,
     UNASSIGNED_FLOOR_ID,
     UNASSIGNED_FLOOR_NAME,
+    VIRTUAL_FLOOR_ID,
+    VIRTUAL_FLOOR_NAME,
 )
 from .generic import effective_layers
 from .models import Edge, Node, Position
@@ -144,6 +151,14 @@ class FloorplanHub:
         # Before nodes are placed: a node inherits its area's floor, so the
         # areas have to know where they live first.
         floors.extend(self._floor_for_the_unassigned(floors, areas))
+        # And before *that* is worth anything, the garden has to stop being
+        # a storey: the user's own settings win over the guessed kind,
+        # outdoor areas move onto the ground floor, virtual ones onto a
+        # plane of their own, and only then is there something to arrange.
+        self._merge_area_overrides(areas)
+        floors = self._resolve_area_kinds(floors, areas)
+        if self.auto_areas:
+            discovery.async_arrange_areas(areas)
 
         nodes: list[Node] = []
         edges: list[Edge] = []
@@ -174,6 +189,14 @@ class FloorplanHub:
         discovery.async_place_nodes(self.hass, nodes, areas)
 
         laid_out = [self._apply_node_layout(node) for node in nodes]
+        # What the device behind a node is made of. A popup that can only
+        # show one entity of a ten-entity device sends the user off to
+        # Home Assistant to find the other nine.
+        for data in laid_out:
+            if data.get("device_id"):
+                data["entities"] = discovery.async_device_entities(
+                    self.hass, data["device_id"]
+                )
         node_dicts = [n for n in laid_out if not n["_hidden"]]
         # Hidden items are reported separately rather than simply dropped:
         # an editor needs somewhere to un-hide them from, and a plain
@@ -239,6 +262,8 @@ class FloorplanHub:
                 node.area_id = defaults.get("area_id")
             if not node.icon:
                 node.icon = defaults.get("icon", "")
+            if not node.device_id and defaults.get("device_id"):
+                node.device_id = defaults["device_id"]
             if node.state == STATE_UNKNOWN and "state" in defaults:
                 node.state = defaults["state"]
             # Entity attributes go underneath the provider's own metadata:
@@ -301,6 +326,73 @@ class FloorplanHub:
             "unassigned": True,
         }]
 
+    def _resolve_area_kinds(
+        self, floors: list[dict[str, Any]], areas: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Put outdoor areas around the ground floor, virtual ones above it.
+
+        A garden is not a storey. Given its own floor it lands between the
+        cellar and the ground floor as if you could walk down into it, and
+        a house with a front garden, a back garden and a terrace suddenly
+        has three of them. So every outdoor area joins the ground floor and
+        is arranged in the apron *around* it, which is where it actually is.
+
+        Returns the floors that are left: a storey that existed only to
+        hold the garden goes with it.
+        """
+        outdoor = [area for area in areas if area.get("kind") == AREA_KIND_OUTDOOR]
+        virtual = [area for area in areas if area.get("kind") == AREA_KIND_VIRTUAL]
+        if not outdoor and not virtual:
+            return floors
+
+        emptied = {
+            area["floor_id"] for area in outdoor + virtual if area.get("floor_id")
+        }
+
+        ground = self._ground_floor(floors)
+        if ground is not None:
+            for area in outdoor:
+                area["floor_id"] = ground["id"]
+                area["outdoor"] = True
+            ground["has_outdoor"] = True
+            ground["outdoor_margin"] = OUTDOOR_MARGIN
+
+        if virtual:
+            for area in virtual:
+                area["floor_id"] = VIRTUAL_FLOOR_ID
+                area["virtual"] = True
+            floors = [*floors, {
+                "id": VIRTUAL_FLOOR_ID,
+                "name": VIRTUAL_FLOOR_NAME,
+                # Above the roof, where nobody mistakes it for a room.
+                "level": 900,
+                "icon": "mdi:cloud-outline",
+                "virtual": True,
+            }]
+
+        # A storey whose every area has just moved outside was never a
+        # storey -- it was the user's way of saying "outside" before the
+        # hub had a word for it. Keeping it would leave an empty tab.
+        still_used = {area.get("floor_id") for area in areas}
+        return [
+            floor
+            for floor in floors
+            if floor["id"] not in emptied or floor["id"] in still_used
+        ]
+
+    def _ground_floor(self, floors: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """The storey a garden belongs to: level 0, or the lowest above it."""
+        candidates = [
+            floor
+            for floor in floors
+            if not floor.get("unassigned") and not floor.get("virtual")
+        ]
+        if not candidates:
+            return None
+        at_ground = [floor for floor in candidates if (floor.get("level") or 0) >= 0]
+        pool = at_ground or candidates
+        return min(pool, key=lambda floor: abs(floor.get("level") or 0))
+
     def _apply_floor_layout(
         self, floors: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
@@ -322,6 +414,33 @@ class FloorplanHub:
             ),
         )
 
+    def _merge_area_overrides(self, areas: list[dict[str, Any]]) -> None:
+        """Fold the user's stored decisions into each area, in place.
+
+        Everything downstream -- which storey an area belongs to, where it
+        is arranged, whether the sandwich shows it -- depends on the answers
+        the user gave, so they have to be in the dict before any of it runs.
+        """
+        for area in areas:
+            override = self.store.get("areas", area["id"])
+            kind = override.get("kind")
+            if kind in AREA_KINDS:
+                area["kind"] = kind
+            area.setdefault("kind", AREA_KIND_INDOOR)
+            for key in ("position", "size", "color", "name", "in_sandwich",
+                        "single_only"):
+                if key in override and override[key] is not None:
+                    area[key] = override[key]
+                    if key == "position":
+                        area["auto"] = False
+            area["hidden"] = bool(override.get("hidden"))
+            # An area kept out of the sandwich is a *choice*, and "only in
+            # the single view" is the same choice said the other way round.
+            if area.get("single_only"):
+                area["in_sandwich"] = False
+            area.setdefault("in_sandwich", True)
+            area.setdefault("single_only", False)
+
     def _apply_area_layout(
         self, areas: list[dict[str, Any]]
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -329,13 +448,12 @@ class FloorplanHub:
         merged: list[dict[str, Any]] = []
         hidden: list[dict[str, Any]] = []
         for area in areas:
-            override = self.store.get("areas", area["id"])
-            if override.get("hidden"):
+            if area.get("hidden"):
                 hidden.append({"id": area["id"], "name": area["name"]})
                 continue
-            area = {**area, **{k: v for k, v in override.items() if k != "hidden"}}
-            if "position" in override:
-                area["auto"] = False
+            area = {key: value for key, value in area.items() if key != "hidden"}
+            if area.get("auto") is False:
+                pass
             elif not self.auto_areas:
                 # Hand-arrangement mode: no grid guess, but the area is
                 # still reported -- a user who has placed nothing must not

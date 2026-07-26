@@ -212,7 +212,32 @@ icon_set={
 ```
 
 Im `icon`-Feld eines Nodes per Schlüsselname referenzieren. Renderer, die
-kein Inline-SVG können, fallen auf MDI zurück.
+kein Inline-SVG können, fallen auf MDI zurück — deshalb ist ein MDI-Name
+als Schlüssel (`"mdi:lan-connect"`) die bequemste Wahl: derselbe Node sieht
+dann überall richtig aus, mit deinem Icon, wo es geht.
+
+Die Reihenfolge, in der ein Renderer ein Icon sucht:
+
+1. dein `icon_set` — deine Integration behält ihr Gesicht,
+2. das Icon, das der Node nennt (bei Entity-Nodes das aus Home Assistant),
+3. dein Provider-Icon.
+
+Ein Punkt ist nie die Antwort: er sagt nichts darüber, was das Ding ist.
+
+## Optional: deine eigene Ansicht
+
+```python
+panel_url="/powerline"
+```
+
+Hat deine Integration ein eigenes Panel, verlinkt der Hub es im Popup jedes
+Nodes, den du geliefert hast. Er fragt nicht, was dahinter liegt. Nur Pfade
+innerhalb dieser Home-Assistant-Instanz werden akzeptiert.
+
+Das ist die Arbeitsteilung, in einem Feld: **du lieferst die Daten und
+optional deine visuelle Identität (Icons, Farben, Animationen), der Hub
+entscheidet über Darstellung und Interaktion, Home Assistant bleibt die
+Datenquelle.**
 
 ## Capabilities
 
@@ -230,6 +255,11 @@ mitgibst, `custom_icons` an, wenn du ein `icon_set` mitschickst.
 | `popup` | deine Metadaten lohnen ein Detail-Popup |
 | `actions` | dein `action`-Callable ist aufrufbar |
 | `custom_icons` | du lieferst ein `icon_set` |
+
+Zusätzlich, außerhalb der Capabilities: `panel_url` (deine eigene Ansicht,
+siehe oben) und `device_id` an einem Node. Letzteres füllt der Hub bei
+Entity-Nodes selbst aus der Registry — das Popup verlinkt damit auf das
+Gerät, seine Entitäten und seine Einstellungen, ohne dass du etwas tust.
 
 ## IDs
 

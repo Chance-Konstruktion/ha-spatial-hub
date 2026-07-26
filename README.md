@@ -40,19 +40,29 @@ Dashboard anlegen, keine Karte konfigurieren, kein YAML:
 - **Etagen** als Reiter, direkt aus der Floor-Registry — zum Anordnen und
   für Details
 - **Bereiche** als Räume, automatisch angeordnet
-- **Ebenen** einzeln ein-/ausschaltbar — die Auswahl wird gespeichert
-- **Nodes** mit Zustandsfarbe, Provider-Icon oder eigenem Inline-SVG
+- **Garten und Außenbereich** legen sich als Ring um das Erdgeschoss statt
+  eine eigene Etage zu erfinden — Vorgarten, Terrasse, Garage, Einfahrt,
+  Carport und Pool passen alle darauf
+- **Ebenen** einzeln ein-/ausschaltbar, nach Provider gruppiert, unter dem
+  Grundriss statt daneben — die Auswahl wird gespeichert
+- **Zoom und Pan** überall gleich: Mausrad, zwei Finger, Ziehen, „alles zeigen"
+- **Suche** über alle Geräte — sie blendet nichts aus, sie stellt zurück
+- **Nodes** mit dem Icon aus Home Assistant, dem Icon-Set ihres Providers
+  oder eigenem Inline-SVG — nie als namenloser Punkt
 - **Edges** mit Qualitätsfarbe, gestrichelt für Schätzungen, animiert für Fluss
-- **Popup** mit allen Metadaten, Verlauf und Actions (Actions nur für Admins)
+- **Popup** mittig über dem Grundriss, mit allen Metadaten, Verlauf, Actions
+  (nur für Admins) und jeder Tür zurück nach Home Assistant: More-Info,
+  Gerät, Entitäten, Einstellungen und die eigene Ansicht des Providers
 - **Diagnose** direkt im Panel: was jeder Provider geliefert hat, und was daran
   beanstandet wurde
 - **Themes**: fünf Presets, freie Farben, Formen, Beschriftungsmodus,
   gerade oder gebogene Verbindungen — voreingestellt ist `auto`, das dem
   Theme folgt, das der Nutzer in Home Assistant ohnehin schon hat
-- **Bearbeiten** (nur Admins): Nodes und Bereiche ziehen, Bereiche in der
-  Größe ändern, Nodes skalieren und drehen, ausblenden und zurückholen,
-  Grundriss-Bild pro Etage, Ebenen sortieren und abdunkeln — alles mit
-  Rasterfang, `Shift` hält das Raster aus
+- **Bearbeiten** (nur Admins): Nodes und Bereiche ziehen, Räume an jeder Wand
+  und jeder Ecke in der Größe ändern, Nodes skalieren und drehen, ausblenden
+  und zurückholen, pro Bereich Art und Sandwich-Verhalten festlegen,
+  Grundriss-Bild pro Etage, Ebenen sortieren und abdunkeln, Undo/Redo —
+  alles mit Rasterfang, `Shift` hält das Raster aus
 
 Der Renderer ist ein reines ES-Modul: kein Build, kein npm, kein Bundle.
 Was im Repository liegt, führt der Browser aus. Er kennt **keine einzige

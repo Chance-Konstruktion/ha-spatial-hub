@@ -29,8 +29,11 @@ from .const import STORAGE_KEY, STORAGE_VERSION
 _NODE_KEYS = {"position", "icon", "color", "scale", "rotation", "label_offset",
               "hidden"}
 _LAYER_KEYS = {"visible", "z_index", "opacity"}
-_FLOOR_KEYS = {"background", "aspect", "name", "order"}
-_AREA_KEYS = {"position", "size", "color", "hidden"}
+_FLOOR_KEYS = {"background", "aspect", "name", "order", "in_sandwich"}
+# `kind` is what an area *is* (room, garden, cloud); the two sandwich
+# flags are where it may be drawn. Both are the user's to decide.
+_AREA_KEYS = {"position", "size", "color", "hidden", "kind", "in_sandwich",
+              "single_only"}
 # View-wide settings rather than one item's arrangement. One key, "view".
 _SETTINGS_KEYS = {"theme", "custom_layers"}
 

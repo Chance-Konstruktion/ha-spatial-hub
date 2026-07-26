@@ -34,7 +34,7 @@ API_VERSION: Final = 1
 # provider that stamped an older one gets a note in diagnostics -- never a
 # warning in the log, and never a refusal. An old copy still works; the
 # point is that its author finds out a better one exists.
-CURRENT_SDK_VERSION: Final = 3
+CURRENT_SDK_VERSION: Final = 4
 
 # Floors arrived in Home Assistant long after areas, so most houses have
 # areas that belong to no floor at all. They still have to be somewhere:
@@ -43,6 +43,30 @@ CURRENT_SDK_VERSION: Final = 3
 # So they get a storey of their own, last in the list.
 UNASSIGNED_FLOOR_ID: Final = "_unassigned"
 UNASSIGNED_FLOOR_NAME: Final = "Ohne Etage"
+
+# ── What an area *is* ─────────────────────────────────────────────────
+#
+# A garden is not a storey. Treating it as one puts a floor between the
+# cellar and the ground floor that no house has, and forces the user to
+# choose which of "Vorgarten" and "Terrasse" gets to be the outside. So an
+# area declares a kind instead, and the outdoor ones surround the ground
+# floor rather than stacking above it.
+AREA_KIND_INDOOR: Final = "indoor"
+AREA_KIND_OUTDOOR: Final = "outdoor"
+# Cloud, Internet, VPN: real enough to show, nowhere in the building.
+AREA_KIND_VIRTUAL: Final = "virtual"
+AREA_KINDS: Final = (AREA_KIND_INDOOR, AREA_KIND_OUTDOOR, AREA_KIND_VIRTUAL)
+
+# How far outside the house the outdoor ring reaches, in floor coordinates.
+# The whole apron is therefore -OUTDOOR_MARGIN .. 1 + OUTDOOR_MARGIN, and a
+# renderer that ignores all of this still draws the house right.
+OUTDOOR_MARGIN: Final = 0.28
+
+# Where the virtual areas live: not a storey either, but they need a plane
+# to be drawn on, and above the roof is the one place nobody confuses with
+# a room.
+VIRTUAL_FLOOR_ID: Final = "_virtual"
+VIRTUAL_FLOOR_NAME: Final = "Virtuell"
 
 # ── Internal hass.data keys ───────────────────────────────────────────
 DATA_HUB: Final = f"{DOMAIN}_hub"

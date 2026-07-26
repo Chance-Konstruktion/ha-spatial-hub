@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import (
     API_VERSION,
+    AREA_KINDS,
     CURRENT_SDK_VERSION,
     DATA_HUB,
     DOMAIN,
@@ -153,6 +154,10 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
             ),
             vol.Optional("name"): vol.Any(None, str),
             vol.Optional("order"): vol.Any(None, vol.Coerce(int)),
+            # What an area is, and where it may be drawn.
+            vol.Optional("kind"): vol.Any(None, vol.In(list(AREA_KINDS))),
+            vol.Optional("in_sandwich"): vol.Any(None, bool),
+            vol.Optional("single_only"): vol.Any(None, bool),
         },
     }
 )
