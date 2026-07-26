@@ -34,7 +34,7 @@ API_VERSION: Final = 1
 # provider that stamped an older one gets a note in diagnostics -- never a
 # warning in the log, and never a refusal. An old copy still works; the
 # point is that its author finds out a better one exists.
-CURRENT_SDK_VERSION: Final = 2
+CURRENT_SDK_VERSION: Final = 3
 
 # Floors arrived in Home Assistant long after areas, so most houses have
 # areas that belong to no floor at all. They still have to be somewhere:

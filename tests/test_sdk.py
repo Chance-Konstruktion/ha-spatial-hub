@@ -396,3 +396,31 @@ async def test_signals_alongside_a_foreign_coordinator_is_not_a_warning(hass, ca
                             signals=["fine"])
 
     assert "async_add_listener" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_signal_carrying_a_payload_does_not_explode(hass):
+    """Nearly shipped: dispatcher signals hand their payload to listeners.
+
+    ESPEasy P2P sends a unit number with every one of its signals, and
+    `async_notify()` takes no arguments. Connected directly it raises
+    TypeError on the first packet -- in production, not in a test.
+    """
+    shim = _shim()
+    shim.floorplan_provider(hass, FakeEntry(), name="Push",
+                            data=lambda: ["light.a"], signals=["with_payload"])
+
+    from homeassistant.helpers.dispatcher import (
+        async_dispatcher_connect,
+        async_dispatcher_send,
+    )
+
+    told: list[str] = []
+    async_dispatcher_connect(hass, "floorplan_hub_data_updated", told.append)
+
+    async_dispatcher_send(hass, "with_payload", 42, {"anything": True})
+
+    assert told == [FakeEntry.domain], (
+        "the hub re-fetches anyway, so whatever the signal carried is none "
+        "of its business -- but it must not throw"
+    )

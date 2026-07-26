@@ -55,7 +55,7 @@ API_VERSION = 1
 #
 # Bumped only when the shim gains something worth going back for. The
 # contract above is frozen; this is not part of it.
-SDK_VERSION = 2
+SDK_VERSION = 3
 
 
 @callback
@@ -136,7 +136,14 @@ def floorplan_provider(
             signals = [signals]
         for signal in signals:
             provider.async_on_unregister(
-                async_dispatcher_connect(hass, signal, provider.async_notify)
+                # Swallow the payload. Dispatcher signals carry whatever
+                # their sender felt like sending -- a unit number, a node
+                # object, nothing at all -- and the hub does not want to
+                # know: it re-fetches. Connecting async_notify directly
+                # raises TypeError on any signal that carries something.
+                async_dispatcher_connect(
+                    hass, signal, lambda *_args: provider.async_notify()
+                )
             )
 
     return provider
