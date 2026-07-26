@@ -146,8 +146,14 @@ class FakeEntity:
 
 
 class FakeDevice:
-    def __init__(self, device_id, area_id=None) -> None:
+    def __init__(self, device_id, area_id=None, via_device_id=None,
+                 name="", manufacturer="", model="") -> None:
         self.id, self.area_id = device_id, area_id
+        # Home Assistant's own topology: "this device is reached through
+        # that one". Every integration that has a controller writes it.
+        self.via_device_id = via_device_id
+        self.name, self.name_by_user = name, None
+        self.manufacturer, self.model = manufacturer, model
 
 
 class FakeState:

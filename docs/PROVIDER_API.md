@@ -253,6 +253,11 @@ zurück.
 | `floorplan_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
 | `floorplan_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
 
+Eigene Ebenen können zusätzlich `topology: true` setzen. Dann zeichnet der
+Hub die `via_device`-Beziehungen aus der Device-Registry als Kanten — die
+einzige echte Topologie, die Home Assistant selbst führt und die keiner
+Integration gehört.
+
 Das Modell enthält unter `theme` die fertig aufgelösten Farben für die
 Zustands- und Qualitätswörter, unter `hidden` die vom Nutzer ausgeblendeten
 Objekte. Beides ist für Renderer gedacht; als Provider musst du dich um

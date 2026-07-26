@@ -122,6 +122,19 @@ Eine **Regel, keine Liste**: „alle Lichter" stimmt auch noch, wenn nächsten
 Monat eine Lampe dazukommt — aus demselben Grund, aus dem Stockwerke und
 Bereiche aus den Registries kommen und nicht aus einem Zeichenprogramm.
 
+Und Home Assistant weiß bei vielen Geräten selbst, **worüber** sie erreicht
+werden — jedes Gerät hinter einer Bridge, einem Controller oder einem Hub
+trägt dessen ID. Diese Verbindungen lassen sich pro Ebene einschalten. Das
+ist echte Topologie, ohne dass der Hub eine einzige Integration beim Namen
+nennt: Wer `via_device` schreibt, ist ihm egal, und wie *gut* die Verbindung
+ist, behauptet er nicht — das misst niemand.
+
+Was er dafür bewusst **nicht** tut: in die eigene Websocket-API irgendeiner
+Integration greifen, um Routen, Nachbartabellen oder Signalstärken zu holen.
+Die gibt es je genau einmal, für je genau eine Integration — und die erste,
+die der Hub beim Namen fragt, wäre der letzte Tag, an dem er eine Plattform
+ist.
+
 Und der entscheidende Teil: Diese Ebenen registrieren sich über **denselben
 öffentlichen Provider-Vertrag** wie jeder Fremde. Kein Sonderweg in den Hub,
 dieselbe Validierung, dieselbe Fehler-Isolierung. Ein Test hält das fest —

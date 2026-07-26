@@ -793,3 +793,30 @@ test("the dialog offers the facets the house actually has", () => {
   assert.match(html, /chip on" data-facet="domains"\s+data-value="light"/,
                "what is already selected shows as selected");
 });
+
+test("the topology checkbox survives a round trip through the dialog", () => {
+  // The rule is stored, not a list -- so an option that quietly fails to
+  // save reads as "the feature does not work".
+  const view = panel();
+  view._layerDialog = { id: "l", name: "Lichter", _isNew: true };
+  view._writeCustomLayers = (layers) => (view._written = layers);
+
+  view._onInput({
+    target: { dataset: { layerToggle: "topology" }, checked: true,
+              getAttribute: (name) =>
+                name === "data-layer-toggle" ? "topology" : null },
+  }, true);
+  view._saveLayer();
+
+  assert.equal(view._written[0].topology, true);
+});
+
+test("an unticked box is left out rather than stored as false", () => {
+  const view = panel();
+  view._layerDialog = { id: "l", name: "Lichter", _isNew: true };
+  view._writeCustomLayers = (layers) => (view._written = layers);
+
+  view._saveLayer();
+
+  assert.ok(!("topology" in view._written[0]));
+});

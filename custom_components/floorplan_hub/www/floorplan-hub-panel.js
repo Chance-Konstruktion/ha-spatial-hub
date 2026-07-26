@@ -721,6 +721,18 @@ class FloorplanHubPanel extends HTMLElement {
                  data-layer-field="exclude">
         </label>
 
+        <label class="field">
+          <span>Verbindungen zeichnen</span>
+          <label class="inline">
+            <input type="checkbox" data-layer-toggle="topology"
+                   ${layer.topology ? "checked" : ""}>
+            Geräte mit ihrer Bridge, ihrem Controller oder ihrem Hub verbinden
+          </label>
+          <i class="muted">Home Assistant weiß bei vielen Geräten, worüber sie
+          erreicht werden. Diese Verbindung wird gezeichnet — ohne Aussage
+          darüber, wie gut sie ist, denn das misst niemand.</i>
+        </label>
+
         <div class="edit-buttons">
           <button class="action" data-save-layer="1">Speichern</button>
           ${
@@ -773,6 +785,7 @@ class FloorplanHubPanel extends HTMLElement {
                        "entities", "exclude"]) {
       if (!layer[key] || !layer[key].length) delete layer[key];
     }
+    if (!layer.topology) delete layer.topology;
     const others = this._customLayers.filter(
       (candidate) => candidate.id !== layer.id,
     );
@@ -1241,6 +1254,12 @@ class FloorplanHubPanel extends HTMLElement {
       const label = this._root.querySelector("[data-size-value]");
       if (label) label.textContent = `${Number(input.value).toFixed(2)}×`;
       if (committed) this._setTheme({ node_size: Number(input.value) });
+      return;
+    }
+
+    const layerToggle = attribute("data-layer-toggle");
+    if (layerToggle !== null && this._layerDialog) {
+      this._layerDialog[layerToggle] = input.checked;
       return;
     }
 
