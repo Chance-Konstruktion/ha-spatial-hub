@@ -85,6 +85,34 @@ wollen, der schon neun Zehntel des Plans füllte; das korrekte Clamping am
 Rand sah dann aus wie ein kaputtes Resize. Ein Werkzeug, das still das
 kaputtmacht, was es prüft, ist schlimmer als keins.
 
+## Ob der Plan dem Haus folgt
+
+```bash
+python3 tools/live_follow.py --password <passwort>
+```
+
+Phase 4 verspricht nicht „es rendert einmal", sondern dass ein Plan, der am
+Montag stimmt, auch am Freitag stimmt: Bereich umbenennen, Etage anlegen,
+Gerät umziehen — der Plan zieht nach, ohne dass jemand neu lädt. Genau das
+lässt sich mit keinem Stub zeigen.
+
+Also legt dieses Skript eine Etage und einen Bereich über die Websocket-API
+an, während das Panel offen bleibt, und schaut zu. **Es lädt nie neu** — ein
+Reload wäre genau die Antwort, die diese Zusage vermeiden soll.
+
+```
+ok    Eine neue Etage erscheint ohne Reload
+ok    Ein neuer Bereich erscheint ohne Reload
+ok    Ein umbenannter Bereich heißt sofort anders
+aufgeräumt
+```
+
+Es **räumt hinter sich auf**: Was es anlegt, löscht es wieder. Bricht es
+mittendrin ab, heißen die Reste `Floorplan-Hub Test…` und sind damit
+auffindbar. Nach der Erfahrung mit `live_edit.py` — das beim ersten Versuch
+still einen Provider dauerhaft abgeschaltet hat — ist das keine Höflichkeit,
+sondern Pflicht.
+
 ## Warum das nicht in der CI läuft
 
 Eine echte Home-Assistant-Installation plus Browser in jedem PR wäre teuer

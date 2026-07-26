@@ -14,7 +14,7 @@ einzige Zeile geändert wird.
 
 ## Status
 
-**Phase 1–8, 10 und 11 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
+**Phase 1–8 und 10–12 der Roadmap sind fertig:** Datenmodell, Provider-Registry,
 Event-System, Storage, Config-Flow, die komplette Websocket-API, ein
 Renderer in der Seitenleiste, ein Grundriss, der dem Haus von selbst folgt,
 ein Edit-Modus für alles, was die Automatik falsch geraten hat, Themes — und
