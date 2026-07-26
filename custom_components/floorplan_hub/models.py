@@ -111,6 +111,10 @@ class Node:
     icon: str = ""
     color: str = ""
     entity_id: str | None = None
+    # The Home Assistant device behind this node, when there is one. The
+    # hub fills it in from the entity; a provider that knows better may
+    # state it itself. Renderers use it to open the device page.
+    device_id: str | None = None
     actions: list[Action] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -134,6 +138,7 @@ class Node:
             icon=_str(data.get("icon")),
             color=_str(data.get("color")),
             entity_id=_str(data.get("entity_id")) or None,
+            device_id=_str(data.get("device_id")) or None,
             actions=actions,
             metadata=dict(data.get("metadata") or {}),
         )
@@ -149,6 +154,7 @@ class Node:
             "icon": self.icon,
             "color": self.color,
             "entity_id": self.entity_id,
+            "device_id": self.device_id,
             "actions": [action.as_dict() for action in self.actions],
             "metadata": self.metadata,
         }

@@ -22,7 +22,11 @@ from homeassistant.helpers import (
     floor_registry as fr,
 )
 
-from .const import STATE_UNKNOWN
+from .const import (
+    OUTDOOR_MARGIN,
+    STATE_UNKNOWN,
+    AreaKind,
+)
 from .models import Node, Position
 
 # Nodes sharing a spot are spread over a grid so they do not stack into one
@@ -36,6 +40,111 @@ from .models import Node, Position
 # sits on the edge; inside a real room it is that room's own box.
 _PLAN_INSET = 0.08
 _ROOM_FILL = 0.7
+
+# Names that mean "this is outside". A guess, and a cheap one to be wrong
+# about: the user flips the kind in the editor and the choice is stored.
+# Guessing beats asking, because a house full of gardens on their own
+# storey is what the alternative looks like on first run.
+_OUTDOOR_WORDS = frozenset(
+    {
+        "garten", "vorgarten", "hintergarten", "garden", "frontyard",
+        "backyard", "yard", "terrasse", "terrace", "patio", "balkon",
+        "balcony", "garage", "carport", "einfahrt", "driveway", "hof",
+        "innenhof", "courtyard", "pool", "schwimmbad", "gartenhaus",
+        "schuppen", "shed", "gewachshaus", "greenhouse", "aussen",
+        "draussen", "outdoor", "outside", "veranda", "loggia", "dachterrasse",
+        "grundstuck", "wintergarten",
+    }
+)
+
+# Icons Home Assistant itself uses for these domains, so a node without an
+# icon of its own still looks like the thing it is. A dot is the one answer
+# that tells the user nothing.
+_DOMAIN_ICONS = {
+    "light": "mdi:lightbulb",
+    "switch": "mdi:toggle-switch-outline",
+    "sensor": "mdi:eye-outline",
+    "binary_sensor": "mdi:radiobox-blank",
+    "climate": "mdi:thermostat",
+    "cover": "mdi:window-shutter",
+    "lock": "mdi:lock",
+    "media_player": "mdi:speaker",
+    "camera": "mdi:video",
+    "fan": "mdi:fan",
+    "vacuum": "mdi:robot-vacuum",
+    "person": "mdi:account",
+    "device_tracker": "mdi:account-arrow-right",
+    "water_heater": "mdi:water-boiler",
+    "humidifier": "mdi:air-humidifier",
+    "valve": "mdi:pipe-valve",
+    "siren": "mdi:bullhorn",
+    "button": "mdi:gesture-tap-button",
+    "number": "mdi:ray-vertex",
+    "select": "mdi:format-list-bulleted",
+    "update": "mdi:package-up",
+    "weather": "mdi:weather-partly-cloudy",
+    "scene": "mdi:palette",
+    "script": "mdi:script-text",
+    "automation": "mdi:robot",
+    "zone": "mdi:map-marker-radius",
+}
+
+# Device classes worth being more specific than the domain about.
+_DEVICE_CLASS_ICONS = {
+    "temperature": "mdi:thermometer",
+    "humidity": "mdi:water-percent",
+    "pressure": "mdi:gauge",
+    "power": "mdi:flash",
+    "energy": "mdi:lightning-bolt",
+    "current": "mdi:current-ac",
+    "voltage": "mdi:sine-wave",
+    "battery": "mdi:battery",
+    "illuminance": "mdi:brightness-5",
+    "motion": "mdi:motion-sensor",
+    "occupancy": "mdi:home-account",
+    "door": "mdi:door",
+    "window": "mdi:window-closed-variant",
+    "garage": "mdi:garage",
+    "garage_door": "mdi:garage",
+    "smoke": "mdi:smoke-detector",
+    "gas": "mdi:gas-cylinder",
+    "moisture": "mdi:water-alert",
+    "connectivity": "mdi:lan-connect",
+    "signal_strength": "mdi:wifi",
+    "carbon_dioxide": "mdi:molecule-co2",
+    "shutter": "mdi:window-shutter",
+    "awning": "mdi:awning-outline",
+    "curtain": "mdi:curtains",
+    "speaker": "mdi:speaker",
+    "tv": "mdi:television",
+    "receiver": "mdi:audio-video",
+    "router": "mdi:router-network",
+}
+
+
+def area_kind(name: str, icon: str = "") -> AreaKind:
+    """Guess whether an area is indoors, from what the user called it."""
+    haystack = _fold(name) + " " + _fold(icon)
+    for word in _OUTDOOR_WORDS:
+        if word in haystack:
+            return AreaKind.OUTDOOR
+    return AreaKind.INDOOR
+
+
+def _fold(value: str) -> str:
+    """Lower-case, umlaut-flattened, punctuation-free -- for matching only."""
+    folded = str(value or "").lower()
+    for source, target in (("ä", "a"), ("ö", "o"), ("ü", "u"), ("ß", "ss")):
+        folded = folded.replace(source, target)
+    return "".join(char if char.isalnum() else " " for char in folded)
+
+
+def fallback_icon(entity_id: str, device_class: str = "") -> str:
+    """An icon for an entity that never got one, from what it is."""
+    if device_class and device_class in _DEVICE_CLASS_ICONS:
+        return _DEVICE_CLASS_ICONS[device_class]
+    domain = str(entity_id or "").split(".", 1)[0]
+    return _DOMAIN_ICONS.get(domain, "mdi:shape-outline")
 
 
 def async_floors(hass: HomeAssistant) -> list[dict[str, Any]]:
@@ -60,32 +169,47 @@ def async_floors(hass: HomeAssistant) -> list[dict[str, Any]]:
 
 
 def async_areas(hass: HomeAssistant) -> list[dict[str, Any]]:
-    """Areas from the area registry, each with an auto-assigned box."""
+    """Areas from the area registry, with a guess at what each one is.
+
+    Positions come later, from :func:`async_arrange_areas`: whether an area
+    is a room or a garden decides where it goes, and the user is allowed to
+    overrule that guess, so the arranging cannot happen until the hub has
+    merged the stored overrides in.
+    """
     registry = ar.async_get(hass)
     areas = sorted(registry.async_list_areas(), key=lambda area: area.name)
+    return [
+        {
+            "id": area.id,
+            "name": area.name,
+            "floor_id": getattr(area, "floor_id", None),
+            "icon": getattr(area, "icon", "") or "",
+            "kind": area_kind(area.name, getattr(area, "icon", "") or "").value,
+            "auto": True,
+        }
+        for area in areas
+    ]
 
-    # Group per floor first: the grid must be per floor, or a house with
-    # three floors ends up with one enormous mosaic.
-    by_floor: dict[str | None, list[Any]] = {}
+
+def async_arrange_areas(areas: list[dict[str, Any]]) -> None:
+    """Give every area without a position an automatic one, in place.
+
+    Rooms get the squarest grid that fits the storey. Outdoor areas get the
+    apron *around* that grid, because that is where a garden is: a ring
+    around the ground floor, not a floor of its own. Virtual areas get
+    their own plane and a plain grid on it.
+    """
+    by_plane: dict[tuple[str | None, bool], list[dict[str, Any]]] = {}
     for area in areas:
-        by_floor.setdefault(getattr(area, "floor_id", None), []).append(area)
+        outdoor = AreaKind.parse(area.get("kind")) is AreaKind.OUTDOOR
+        by_plane.setdefault((area.get("floor_id"), outdoor), []).append(area)
 
-    result: list[dict[str, Any]] = []
-    for floor_id, floor_areas in by_floor.items():
-        for index, area in enumerate(floor_areas):
-            position, size = _grid_cell(index, len(floor_areas))
-            result.append(
-                {
-                    "id": area.id,
-                    "name": area.name,
-                    "floor_id": floor_id,
-                    "icon": getattr(area, "icon", "") or "",
-                    "position": position.as_dict(),
-                    "size": size,
-                    "auto": True,
-                }
-            )
-    return result
+    for (_floor_id, outdoor), plane_areas in by_plane.items():
+        placer = _apron_cell if outdoor else _grid_cell
+        for index, area in enumerate(plane_areas):
+            position, size = placer(index, len(plane_areas))
+            area.setdefault("position", position.as_dict())
+            area.setdefault("size", size)
 
 
 def async_entity_defaults(hass: HomeAssistant, entity_id: str) -> dict[str, Any]:
@@ -107,15 +231,20 @@ def async_entity_defaults(hass: HomeAssistant, entity_id: str) -> dict[str, Any]
         entry = None
 
     area_id = getattr(entry, "area_id", None) if entry else None
-    if entry is not None and not area_id and entry.device_id:
+    device_id = getattr(entry, "device_id", None) if entry else None
+    if entry is not None and not area_id and device_id:
         # The entity inherits its device's area unless it overrides it.
         try:
-            device = dr.async_get(hass).async_get(entry.device_id)
+            device = dr.async_get(hass).async_get(device_id)
             area_id = getattr(device, "area_id", None) if device else None
         except (AttributeError, KeyError):  # pragma: no cover
             area_id = None
     if area_id:
         defaults["area_id"] = area_id
+    # The device behind the entity, so a renderer can offer "open the
+    # device in Home Assistant" without guessing a URL from a name.
+    if device_id:
+        defaults["device_id"] = device_id
 
     if entry is not None:
         label = entry.name or entry.original_name
@@ -136,7 +265,50 @@ def async_entity_defaults(hass: HomeAssistant, entity_id: str) -> dict[str, Any]
         defaults["metadata"] = dict(state.attributes)
 
     defaults.setdefault("label", entity_id)
+    # Last resort, and the reason devices stopped being anonymous dots: an
+    # entity nobody gave an icon still *is* a light, a door or a router.
+    defaults.setdefault(
+        "icon",
+        fallback_icon(
+            entity_id,
+            str(
+                (state.attributes.get("device_class") if state is not None else "")
+                or getattr(entry, "device_class", None)
+                or getattr(entry, "original_device_class", None)
+                or ""
+            ),
+        ),
+    )
     return defaults
+
+
+def async_device_entities(
+    hass: HomeAssistant, device_id: str, limit: int = 30
+) -> list[dict[str, str]]:
+    """The entities of one device, for a renderer's "show entities" list."""
+    try:
+        registry = er.async_get(hass)
+        entries = er.async_entries_for_device(
+            registry, device_id, include_disabled_entities=False
+        )
+    except (AttributeError, KeyError, TypeError):  # pragma: no cover
+        return []
+    listed = []
+    for entry in entries[:limit]:
+        state = hass.states.get(entry.entity_id) if hasattr(hass, "states") else None
+        listed.append(
+            {
+                "entity_id": entry.entity_id,
+                "name": (
+                    entry.name
+                    or entry.original_name
+                    or (state.attributes.get("friendly_name") if state else "")
+                    or entry.entity_id
+                ),
+                "state": state.state if state is not None else "",
+            }
+        )
+    return listed
 
 
 def _entity_state(state: str) -> str:
@@ -163,6 +335,42 @@ def _grid_cell(index: int, total: int) -> tuple[Position, dict[str, float]]:
     return centre, {"width": width * 0.9, "height": height * 0.9}
 
 
+def _apron_cell(index: int, total: int) -> tuple[Position, dict[str, float]]:
+    """Lay an outdoor area out in the ring around the ground floor.
+
+    Four sides, filled in the order somebody would name them: front, back,
+    then the two flanks. Everything sits outside 0..1, which is exactly
+    what makes it read as *around* the house instead of inside it.
+    """
+    margin = OUTDOOR_MARGIN
+    span = 1.0 + 2 * margin
+    sides = ["top", "bottom", "left", "right"]
+    counts = [total // 4 + (1 if position < total % 4 else 0) for position in range(4)]
+
+    seen = 0
+    for side, count in zip(sides, counts):
+        if not count:
+            continue
+        if index < seen + count:
+            slot = index - seen
+            if side in ("top", "bottom"):
+                width = span / count
+                centre = Position(
+                    x=-margin + (slot + 0.5) * width,
+                    y=-margin / 2 if side == "top" else 1 + margin / 2,
+                )
+                return centre, {"width": width * 0.9, "height": margin * 0.8}
+            height = 1.0 / count
+            centre = Position(
+                x=-margin / 2 if side == "left" else 1 + margin / 2,
+                y=(slot + 0.5) * height,
+            )
+            return centre, {"width": margin * 0.8, "height": height * 0.9}
+        seen += count
+
+    return Position(x=0.5, y=1 + margin / 2), {"width": 0.3, "height": margin * 0.8}
+
+
 def async_place_nodes(
     hass: HomeAssistant,
     nodes: list[Node],
@@ -174,7 +382,7 @@ def async_place_nodes(
     node's area, then the middle of the floor plan. User overrides are
     applied later by the hub and beat all three.
     """
-    area_centres = {area["id"]: area["position"] for area in areas}
+    area_centres = {area["id"]: area["position"] for area in areas if area.get("position")}
     area_sizes = {area["id"]: area.get("size") or {} for area in areas}
     area_floors = {area["id"]: area["floor_id"] for area in areas}
 
@@ -200,11 +408,21 @@ def async_place_nodes(
             width = height = 1.0 - 2 * _PLAN_INSET
             base_x = base_y = 0.5
 
+        # A node in the garden may sit outside the house rectangle -- that
+        # is the whole point of the apron, so it must not be clamped back in.
+        outdoor = any(
+            area["id"] == area_id
+            and AreaKind.parse(area.get("kind")) is AreaKind.OUTDOOR
+            for area in areas
+        )
+        low = -OUTDOOR_MARGIN if outdoor else 0.0
+        high = 1.0 + OUTDOOR_MARGIN if outdoor else 1.0
+
         for index, (fx, fy) in enumerate(_grid_offsets(count)):
             node = area_nodes[index]
             node.position = Position(
-                x=_clamp(base_x + fx * width),
-                y=_clamp(base_y + fy * height),
+                x=_clamp(base_x + fx * width, low, high),
+                y=_clamp(base_y + fy * height, low, high),
             )
             if count > 1 or not centre:
                 node.metadata = {**node.metadata, "auto_position": True}
@@ -231,5 +449,5 @@ def _grid_offsets(count: int) -> list[tuple[float, float]]:
     return offsets
 
 
-def _clamp(value: float) -> float:
-    return min(1.0, max(0.0, value))
+def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
+    return min(high, max(low, value))

@@ -22,6 +22,8 @@ Plattform ein weiteres Dashboard geworden.
 | 10 | Community | ✅ |
 | 11 | Austauschbare Renderer | ✅ |
 | 12 | Zero-Config als Endzustand | ✅ |
+| 13 | Feedback aus der ersten Version | ✅ |
+| 14 | Spezifikation 1.0 | ✅ |
 
 ---
 
@@ -276,3 +278,71 @@ Nachgeprüft auf einer frisch aufgesetzten Instanz, nicht behauptet:
   sich auf.
 
 
+
+## ✅ Phase 13 — Das erste Feedback
+
+Die erste Version lief, und die Rückmeldung dazu war präziser als jede
+Planung: sieben Punkte, alle über *Darstellung und Interaktion* — also
+genau die Hälfte, die dem Hub gehört. Nichts davon hat einen Provider
+angefasst, und kein Provider musste etwas nachziehen.
+
+- **Geräte-Icons statt Punkte.** Ein Node wird mit dem Icon gezeichnet, das
+  in Home Assistant konfiguriert ist; hat die Entität keins, leitet der Hub
+  eins aus Domain und Geräteklasse ab. Registriert ein Provider ein
+  `icon_set`, gewinnt das — die Integration behält ihr Gesicht, auch in der
+  Hausansicht, die vorher nur Punkte kannte.
+- **Ebenen und Provider unter der Karte.** Die Seitenspalte ist weg; der
+  Grundriss bekommt die Breite. Ebenen sind dabei nach Provider gruppiert,
+  mit einem Schalter für den ganzen Provider.
+- **Der Garten ist keine Etage.** Außenbereiche legen sich als Ring um das
+  Erdgeschoss — ein Koordinatenfenster von −0.28 bis 1.28 statt 0..1.
+  Vorgarten, Hintergarten, Terrasse, Garage, Einfahrt, Carport, Gartenhaus
+  und Pool passen alle darauf. Ob ein Bereich draußen liegt, rät der Hub aus
+  seinem Namen; die Vermutung ist ein Klick weit von der Korrektur entfernt.
+- **Zentrales Popup.** Modal über dem Grundriss statt am Rand, mit allen
+  Türen zurück nach Home Assistant: More-Info, Gerät, Entitäten,
+  Einstellungen — und, wenn der Provider eins nennt, sein eigenes Panel.
+- **Räume vollständig editierbar.** Acht Griffe: jede Wand und jede Ecke
+  lässt sich ziehen, die gegenüberliegende Wand bleibt stehen. Dazu
+  Undo/Redo für alles, was der Editor schreibt.
+- **Zoom überall gleich.** Mausrad, Pinch, Ziehen und „alles zeigen" —
+  dieselbe Kamera in der Hausansicht wie auf einer einzelnen Etage.
+- **Sandwich konfigurierbar.** Pro Bereich: Art (Raum, Außenbereich,
+  virtuell), *in der Hausansicht zeigen*, *nur Einzelansicht*. Virtuelle
+  Bereiche — Cloud, Internet, VPN — bekommen eine Ebene über dem Dach, weil
+  sie irgendwo hin müssen, aber in keinem Stockwerk liegen.
+
+Dazu aus der Ideenliste: Suche (blendet nicht aus, sondern stellt zurück),
+Provider-Untergruppen, Drag & Drop und Snap-to-Grid waren schon da.
+
+### Was aus der Liste noch offen ist
+
+- Mehrfachauswahl und das gemeinsame Verschieben mehrerer Geräte
+- Favoriten
+- Eigene Icons hochladen (Provider-Icon-Sets gibt es, Nutzer-Uploads nicht)
+- Labels frei verschieben (`label_offset` wird gespeichert, aber noch von
+  keinem Griff gesetzt)
+
+## ✅ Phase 14 — Aus einer API wird ein Standard
+
+[`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) — **Spatial Provider
+Specification 1.0**. Kein README, sondern ein Format, das mehrere
+Implementierungen erfüllen können; der eingebaute Renderer ist nur die erste.
+Kapitel: Node, Edge, Layer, Position, Popup, Action, Theme, Icon, Camera,
+Area Type. Dazu Rollen, Fehlerverhalten und eine eigene Versionierung.
+
+Normativ heißt getestet: [`tests/test_specification.py`](tests/test_specification.py)
+hält Dokument und Code an den Stellen zusammen, an denen sie still
+auseinanderlaufen können — die Vokabulare, die Versionsnummern und die
+Feldnamen, die einem Provider zugesagt werden. Ein Dokument, das eine ältere
+Version beschreibt, ist schlimmer als keins: es ist ein Versprechen, das der
+Code nicht hält.
+
+**AreaKind ist ein Enum**, kein String. Auf allen drei Seiten: `AreaKind` im
+Hub, `AREA_KIND` (frozen) im Renderer, `AreaKind`/`NodeState`/`EdgeQuality`
+im kopierten Shim. Ein unbekannter Wert am Websocket wird abgelehnt und die
+Fehlermeldung nennt die gültigen; ein unbekannter Wert in bereits
+gespeicherten Daten wird repariert, wenn er eindeutig ist (`outside`,
+`garden`, `außen`, `cloud`), und sonst mit Warnung auf `indoor` gesetzt. Ein
+Grundriss verschwindet nicht wegen eines Tippfehlers — aber niemand rätselt
+still.

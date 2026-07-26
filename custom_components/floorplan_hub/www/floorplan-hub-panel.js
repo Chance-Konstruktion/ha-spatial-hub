@@ -38,6 +38,41 @@ const ALL_FLOORS = "__all__";
 // keeps them recognisable as the same rooms from the detail view.
 const STACK = { pad: 40, width: 620, depth: 300, skew: 260, top: 50, gap: 230 };
 
+// How far the camera may be pushed in either direction. Beyond this a plan
+// is either a single icon or a smear, and the way back is not obvious.
+const ZOOM = { min: 0.4, max: 6, step: 1.15 };
+
+/** The house occupies 0..1; a garden lives outside it.
+ *
+ *  Everything drawn shares one coordinate system, and a floor that carries
+ *  outdoor areas simply shows more of it: -margin .. 1+margin in both
+ *  directions. That is what makes the garden surround the ground floor
+ *  instead of becoming a storey underneath it.
+ */
+const frameOf = (floor) => {
+  const margin = floor && floor.has_outdoor ? floor.outdoor_margin || 0.28 : 0;
+  return { min: margin ? -margin : 0, span: 1 + 2 * margin };
+};
+
+const inFrame = (value, frame) => ((value - frame.min) / frame.span) * 100;
+
+/** The three area kinds, frozen. Specification § Area Type.
+ *
+ *  A renderer that compares against a literal is a renderer that quietly
+ *  draws a garden as a living room the day somebody writes "outside". The
+ *  hub normalises what it stores; this is the same promise on this side. */
+const AREA_KIND = Object.freeze({
+  INDOOR: "indoor",
+  OUTDOOR: "outdoor",
+  VIRTUAL: "virtual",
+});
+
+/** The kind of an area, or INDOOR when it says nothing recognisable. */
+const kindOf = (area) =>
+  Object.values(AREA_KIND).includes(area && area.kind)
+    ? area.kind
+    : AREA_KIND.INDOOR;
+
 const escapeHtml = (value) =>
   String(value ?? "").replace(
     /[&<>"']/g,
@@ -80,7 +115,20 @@ class FloorplanHubPanel extends HTMLElement {
     this._floorDialog = false;
     this._themeDialog = false;
     this._layerDialog = null; // the custom layer being written
+    this._areaDialog = null; // the area whose kind is being set
+    this._showEntities = false; // the device's entity list, in the popup
     this._facets = null;
+    // The camera. One per view, shared by the stacked and the single
+    // floor: zooming in, switching tabs and finding the same magnification
+    // is what "the behaviour is identical everywhere" means.
+    this._view = { zoom: 1, x: 0, y: 0 };
+    this._pan = null;
+    this._pinch = null;
+    this._search = "";
+    // Every layout write, with the value it replaced. That pair is all an
+    // undo needs, and it makes redo the same operation the other way round.
+    this._undo = [];
+    this._redo = [];
   }
 
   get _canEdit() {
@@ -155,7 +203,20 @@ class FloorplanHubPanel extends HTMLElement {
     }
   }
 
-  async _setLayout(section, key, values) {
+  /** Persist one piece of the arrangement.
+   *
+   *  `previous` is what the values were before, and passing it is what
+   *  makes the change undoable: the pair is a complete description of the
+   *  step in both directions, so undo and redo are the same call.
+   */
+  async _setLayout(section, key, values, previous) {
+    if (previous !== undefined) {
+      this._undo.push({ section, key, values, previous });
+      // A new change makes the abandoned future unreachable, which is what
+      // every editor does and what users expect when they carry on.
+      this._redo = [];
+      if (this._undo.length > 50) this._undo.shift();
+    }
     try {
       await this._hass.callWS({
         type: `${DOMAIN}/layout/set`,
@@ -169,6 +230,22 @@ class FloorplanHubPanel extends HTMLElement {
     }
   }
 
+  async _undoStep() {
+    const step = this._undo.pop();
+    if (!step) return;
+    this._redo.push(step);
+    await this._setLayout(step.section, step.key, step.previous);
+    this._render();
+  }
+
+  async _redoStep() {
+    const step = this._redo.pop();
+    if (!step) return;
+    this._undo.push(step);
+    await this._setLayout(step.section, step.key, step.values);
+    this._render();
+  }
+
   // ── Derived model ───────────────────────────────────────
 
   get _floors() {
@@ -177,6 +254,46 @@ class FloorplanHubPanel extends HTMLElement {
 
   get _stacked() {
     return this._floorId === ALL_FLOORS && this._floors.length > 1;
+  }
+
+  /** The coordinate window of the floor being drawn.
+   *
+   *  A floor with a garden shows the apron around the house as well, so
+   *  everything on it is drawn through the same widened window -- rooms,
+   *  nodes and the pointer arithmetic that drags them.
+   */
+  get _frame() {
+    return frameOf(this._stacked ? this._widestFloor : this._floor);
+  }
+
+  /** In the stack every storey shares one window, or they would not line
+   *  up: a ground floor with a garden would be drawn smaller than the one
+   *  above it and the house would look like a wedding cake. */
+  get _widestFloor() {
+    return this._floors.find((floor) => floor.has_outdoor) || null;
+  }
+
+  /** Does this area appear in the stacked house view? */
+  _inSandwich(item) {
+    return item.in_sandwich !== false && !item.single_only;
+  }
+
+  /** Nodes matching the search box, or null when nobody is searching. */
+  get _matches() {
+    const needle = this._search.trim().toLowerCase();
+    if (!needle) return null;
+    const hit = (value) => String(value || "").toLowerCase().includes(needle);
+    return new Set(
+      (this._model.nodes || [])
+        .filter(
+          (node) =>
+            hit(node.label) ||
+            hit(node.entity_id) ||
+            hit(node.state) ||
+            hit(this._providerOf(node.id)),
+        )
+        .map((node) => node.id),
+    );
   }
 
   get _floor() {
@@ -194,20 +311,28 @@ class FloorplanHubPanel extends HTMLElement {
    *  else" belongs.
    */
   get _stackFloors() {
-    const floors = this._floors;
+    const floors = this._floors.filter((floor) => this._inSandwich(floor));
     const real = floors.filter((floor) => !floor.unassigned).reverse();
     return [...real, ...floors.filter((floor) => floor.unassigned)];
   }
 
-  /** Where a point on a given floor lands in the stacked drawing. */
+  /** Where a point on a given floor lands in the stacked drawing.
+   *
+   *  Coordinates outside 0..1 are not an error -- that is the garden --
+   *  so the whole window is mapped rather than the house alone.
+   */
   _project(floorIndex, x, y) {
+    const frame = this._frame;
+    const nx = (x - frame.min) / frame.span;
+    const ny = (y - frame.min) / frame.span;
     const gap = Math.min(
       STACK.gap,
-      (1000 - STACK.top - STACK.depth) / Math.max(1, this._floors.length - 1),
+      (1000 - STACK.top - STACK.depth) /
+        Math.max(1, this._stackFloors.length - 1),
     );
     return {
-      x: STACK.pad + x * STACK.width + (1 - y) * STACK.skew,
-      y: STACK.top + floorIndex * gap + y * STACK.depth,
+      x: STACK.pad + nx * STACK.width + (1 - ny) * STACK.skew,
+      y: STACK.top + floorIndex * gap + ny * STACK.depth,
     };
   }
 
@@ -288,12 +413,17 @@ class FloorplanHubPanel extends HTMLElement {
     if (!model) return [];
     const floor = this._floor;
     const hidden = this._hiddenProviders;
+    const stackable = new Set(this._stackFloors.map((entry) => entry.id));
     return model.nodes.filter((node) => {
       if (hidden.has(this._providerOf(node.id))) return false;
       if (!node.position) return false;
       // A node with no floor belongs to no storey and would otherwise be
       // invisible everywhere. Better shown on each with a marker than lost.
-      if (!node.floor_id || !floor) return true;
+      if (!node.floor_id) return true;
+      // In the house view, a storey the user kept out of the sandwich
+      // takes its nodes with it -- otherwise they float over the storey
+      // below and read as belonging to it.
+      if (!floor) return stackable.has(node.floor_id);
       return node.floor_id === floor.id;
     });
   }
@@ -319,9 +449,10 @@ class FloorplanHubPanel extends HTMLElement {
     // assigned get a storey of their own. Drawing a floorless area on each
     // tab instead would drop it on top of that floor's real rooms, whose
     // grid was measured without it.
-    return model.areas.filter(
-      (area) => !floor || area.floor_id === floor.id,
-    );
+    return model.areas.filter((area) => {
+      if (!floor) return this._inSandwich(area);
+      return area.floor_id === floor.id;
+    });
   }
 
   _node(nodeId) {
@@ -360,6 +491,14 @@ class FloorplanHubPanel extends HTMLElement {
     root.addEventListener("pointerdown", (event) => this._onPointerDown(event));
     root.addEventListener("input", (event) => this._onInput(event, false));
     root.addEventListener("change", (event) => this._onInput(event, true));
+    root.addEventListener("wheel", (event) => {
+      if (this._inViewport(event)) this._onWheel(event);
+    }, { passive: false });
+    root.addEventListener("touchstart", (event) => this._onTouchStart(event),
+                          { passive: true });
+    root.addEventListener("touchmove", (event) => this._onTouchMove(event),
+                          { passive: false });
+    root.addEventListener("touchend", () => this._onTouchEnd());
     root.innerHTML = `<div class="loading">Grundriss wird geladen …</div>`;
   }
 
@@ -380,14 +519,139 @@ class FloorplanHubPanel extends HTMLElement {
       ${this._headerHtml()}
       <div class="body">
         <main>${this._stageHtml()}</main>
-        <aside>${this._sidebarHtml()}</aside>
+        <section class="dock">${this._sidebarHtml()}</section>
       </div>
       ${this._showDiagnostics ? this._diagnosticsHtml() : ""}
       ${this._floorDialog ? this._floorDialogHtml() : ""}
       ${this._themeDialog ? this._themeDialogHtml() : ""}
       ${this._layerDialog ? this._layerDialogHtml() : ""}
+      ${this._areaDialog ? this._areaDialogHtml() : ""}
       ${this._popupHtml()}
     `;
+    this._applyCamera();
+  }
+
+  // ── Camera: zoom, pan, fit ──────────────────────────────
+
+  /** The camera is CSS, not markup: panning must not rebuild the plan.
+   *
+   *  Same transform for the stacked view and a single floor, which is the
+   *  whole point -- the wheel, two fingers and the fit button behave
+   *  identically wherever the user happens to be.
+   */
+  _applyCamera() {
+    const canvas = this._root.querySelector(".canvas");
+    if (!canvas) return;
+    const { zoom, x, y } = this._view;
+    canvas.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+    const readout = this._root.querySelector("[data-zoom-value]");
+    if (readout) readout.textContent = `${Math.round(zoom * 100)} %`;
+  }
+
+  /** Zoom about a point, so what is under the cursor stays under it. */
+  _zoomBy(factor, anchor) {
+    const view = this._view;
+    const next = Math.min(ZOOM.max, Math.max(ZOOM.min, view.zoom * factor));
+    const applied = next / view.zoom;
+    if (applied === 1) return;
+    const viewport = this._root.querySelector(".viewport");
+    const box = viewport ? viewport.getBoundingClientRect() : null;
+    const point = anchor
+      ? { x: anchor.x - (box ? box.left : 0), y: anchor.y - (box ? box.top : 0) }
+      : { x: box ? box.width / 2 : 0, y: box ? box.height / 2 : 0 };
+    view.x = point.x - (point.x - view.x) * applied;
+    view.y = point.y - (point.y - view.y) * applied;
+    view.zoom = next;
+    this._applyCamera();
+  }
+
+  /** Back to the whole plan, centred. The way out of any lost zoom. */
+  _fitToScreen() {
+    this._view = { zoom: 1, x: 0, y: 0 };
+    this._applyCamera();
+  }
+
+  _onWheel(event) {
+    if (!event.deltaY) return;
+    event.preventDefault();
+    this._zoomBy(event.deltaY < 0 ? ZOOM.step : 1 / ZOOM.step, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }
+
+  _startPan(event) {
+    const view = this._view;
+    this._pan = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: view.x,
+      originY: view.y,
+    };
+    const move = (moveEvent) => {
+      if (!this._pan) return;
+      moveEvent.preventDefault();
+      this._view.x = this._pan.originX + (moveEvent.clientX - this._pan.startX);
+      this._view.y = this._pan.originY + (moveEvent.clientY - this._pan.startY);
+      // Any real movement means this was a pan, not a click on the plan.
+      if (
+        Math.abs(moveEvent.clientX - this._pan.startX) > 3 ||
+        Math.abs(moveEvent.clientY - this._pan.startY) > 3
+      ) {
+        this._dragged = true;
+      }
+      this._applyCamera();
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      this._pan = null;
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  /** Two fingers: the same zoom, driven by the distance between them. */
+  _onTouchStart(event) {
+    if (!event.touches || event.touches.length !== 2) return;
+    this._pinch = {
+      distance: this._touchSpan(event.touches),
+      zoom: this._view.zoom,
+    };
+  }
+
+  _onTouchMove(event) {
+    if (!this._pinch || !event.touches || event.touches.length !== 2) return;
+    event.preventDefault();
+    const span = this._touchSpan(event.touches);
+    if (!this._pinch.distance) return;
+    const target = this._pinch.zoom * (span / this._pinch.distance);
+    const midpoint = {
+      x: (event.touches[0].clientX + event.touches[1].clientX) / 2,
+      y: (event.touches[0].clientY + event.touches[1].clientY) / 2,
+    };
+    this._zoomBy(
+      Math.min(ZOOM.max, Math.max(ZOOM.min, target)) / this._view.zoom,
+      midpoint,
+    );
+  }
+
+  _onTouchEnd() {
+    this._pinch = null;
+  }
+
+  _touchSpan(touches) {
+    return Math.hypot(
+      touches[0].clientX - touches[1].clientX,
+      touches[0].clientY - touches[1].clientY,
+    );
+  }
+
+  _inViewport(event) {
+    return (event.composedPath() || []).some(
+      (element) => element.classList && element.classList.contains("viewport"),
+    );
   }
 
   _headerHtml() {
@@ -413,9 +677,34 @@ class FloorplanHubPanel extends HTMLElement {
       <header>
         <div class="tabs">${stackTab}${tabs}</div>
         <div class="spacer"></div>
+        <label class="search" title="Gerät suchen">
+          <ha-icon icon="mdi:magnify"></ha-icon>
+          <input type="search" data-search="1" placeholder="Suchen"
+                 value="${escapeHtml(this._search)}">
+        </label>
+        <div class="zoom">
+          <button class="icon-btn" data-zoom="out" title="Verkleinern">
+            <ha-icon icon="mdi:magnify-minus-outline"></ha-icon>
+          </button>
+          <span data-zoom-value>100 %</span>
+          <button class="icon-btn" data-zoom="in" title="Vergrößern">
+            <ha-icon icon="mdi:magnify-plus-outline"></ha-icon>
+          </button>
+          <button class="icon-btn" data-zoom="fit" title="Alles zeigen">
+            <ha-icon icon="mdi:fit-to-screen-outline"></ha-icon>
+          </button>
+        </div>
         ${
           this._edit
-            ? `<button class="icon-btn" data-theme-dialog="1" title="Aussehen">
+            ? `<button class="icon-btn" data-undo="1" title="Rückgängig"
+                       ${this._undo.length ? "" : "disabled"}>
+                 <ha-icon icon="mdi:undo"></ha-icon>
+               </button>
+               <button class="icon-btn" data-redo="1" title="Wiederholen"
+                       ${this._redo.length ? "" : "disabled"}>
+                 <ha-icon icon="mdi:redo"></ha-icon>
+               </button>
+               <button class="icon-btn" data-theme-dialog="1" title="Aussehen">
                  <ha-icon icon="mdi:palette-outline"></ha-icon>
                </button>
                <button class="icon-btn" data-floor-dialog="1" title="Etage einrichten">
@@ -462,18 +751,33 @@ class FloorplanHubPanel extends HTMLElement {
       ]),
     );
 
-    const plans = floors.map((floor, at) => {
-      const corners = [[0, 0], [1, 0], [1, 1], [0, 1]]
+    const outline = (at, from, to) =>
+      [[from, from], [to, from], [to, to], [from, to]]
         .map(([x, y]) => this._project(at, x, y))
         .map((point) => `${point.x},${point.y}`)
         .join(" ");
+
+    const plans = floors.map((floor, at) => {
+      const frame = this._frame;
+      // The garden is drawn as what it is: the ground floor's apron, one
+      // ring around the house, on the same plane. No extra storey, and
+      // Vorgarten, Terrasse and Einfahrt all fit on it at once.
+      const apron = floor.has_outdoor
+        ? `<polygon class="apron" points="${outline(
+            at, frame.min, frame.min + frame.span,
+          )}"/>`
+        : "";
       const label = this._project(at, 0, 0);
       const rooms = this._model.areas
-        .filter((area) => area.floor_id === floor.id && area.position)
+        .filter(
+          (area) =>
+            area.floor_id === floor.id && area.position && this._inSandwich(area),
+        )
         .map((area) => this._roomPolygon(at, area))
         .join("");
-      return `<g class="plane">
-        <polygon class="storey" points="${corners}"/>
+      return `<g class="plane ${floor.virtual ? "virtual" : ""}">
+        ${apron}
+        <polygon class="storey" points="${outline(at, 0, 1)}"/>
         ${rooms}
         <text class="storey-name" x="${label.x - 34}" y="${label.y - 6}"
           >${escapeHtml(floor.name)}</text>
@@ -496,6 +800,7 @@ class FloorplanHubPanel extends HTMLElement {
       })
       .join("");
 
+    const matches = this._matches;
     const nodes = this._visibleNodes
       .map((node) => {
         const at = spots.get(node.id);
@@ -505,27 +810,54 @@ class FloorplanHubPanel extends HTMLElement {
         const crowded = this._visibleNodes.filter(
           (other) => planeOf(other) === planeOf(node),
         ).length > 8;
+        const dimmed = matches && !matches.has(node.id);
         return `<g class="stack-node ${selected ? "on" : ""}
-                   ${crowded ? "crowded" : ""}
+                   ${crowded ? "crowded" : ""} ${dimmed ? "dimmed" : ""}
+                   ${matches && !dimmed ? "found" : ""}
                    ${node.floor_id ? "" : "floorless"}"
                    data-node="${escapeHtml(node.id)}"
                    transform="translate(${at.x},${at.y})">
-          <circle r="11" fill="${this._stateColour(node.state)}"/>
-          <text class="stack-label" y="26">${escapeHtml(node.label)}</text>
+          <circle r="14" fill="${this._nodeColour(node)}"/>
+          ${this._stackIconHtml(node)}
+          <text class="stack-label" y="30">${escapeHtml(node.label)}</text>
         </g>`;
       })
       .join("");
 
-    return `<div class="stack">
+    return `${this._viewportHtml(`<div class="stack">
       <svg viewBox="0 0 1000 1000">
         ${plans.join("")}
         ${edges}
         ${nodes}
       </svg>
-    </div>
+    </div>`)}
     <p class="hint">Alle Etagen auf einmal — die einzige Ansicht, in der eine
     Verbindung zwischen zwei Stockwerken überhaupt zu sehen ist. Zum
     Anordnen und für Details eine einzelne Etage wählen.</p>`;
+  }
+
+  /** The icon in the stack, in the same shape as on a single floor.
+   *
+   *  `foreignObject` so this is literally the same `ha-icon` element: the
+   *  house view must not be the one place where a device looks different
+   *  from everywhere else.
+   */
+  _stackIconHtml(node) {
+    const custom = this._customIcon(node);
+    if (custom) {
+      return `<g class="stack-icon" transform="translate(-9,-9) scale(0.75)"
+        >${custom.svg}</g>`;
+    }
+    const icon = node.icon || this._genericIcon(node);
+    return `<foreignObject x="-11" y="-11" width="22" height="22"
+              class="stack-icon">
+        <ha-icon icon="${escapeHtml(icon)}"></ha-icon>
+      </foreignObject>`;
+  }
+
+  /** The camera lives here: one wrapper, both views, identical behaviour. */
+  _viewportHtml(inner) {
+    return `<div class="viewport"><div class="canvas">${inner}</div></div>`;
   }
 
   _roomPolygon(plane, area) {
@@ -578,11 +910,11 @@ class FloorplanHubPanel extends HTMLElement {
     const nodes = this._visibleNodes;
     const edges = this._visibleEdges;
 
-    return `
-      ${banner}
+    const stage = `
       <div class="stage ${this._placing ? "placing" : ""} ${
         this._edit ? "editing" : ""
-      } shape-${escapeHtml(this._theme.node_shape || "circle")}
+      } ${floor && floor.has_outdoor ? "with-apron" : ""}
+        shape-${escapeHtml(this._theme.node_shape || "circle")}
         labels-${escapeHtml(this._theme.labels || "always")}
         rooms-${escapeHtml(this._theme.room_style || "outline")}"
            style="aspect-ratio:${aspect};${
@@ -601,11 +933,16 @@ class FloorplanHubPanel extends HTMLElement {
           ${edges.map((edge) => this._edgeHtml(edge)).join("")}
         </svg>
         ${nodes.map((node) => this._nodeHtml(node)).join("")}
-      </div>
+      </div>`;
+
+    return `
+      ${banner}
+      ${this._viewportHtml(stage)}
       ${
         this._edit && !this._placing
-          ? `<p class="hint">Ziehen ordnet an, die Ecke eines Bereichs
-             ändert seine Größe. <b>Shift</b> hält gedrückt das Raster aus.</p>`
+          ? `<p class="hint">Ziehen ordnet an; an den Wänden und Ecken eines
+             Bereichs ändert sich seine Größe. <b>Shift</b> hält gedrückt das
+             Raster aus.</p>`
           : ""
       }
       ${
@@ -617,23 +954,49 @@ class FloorplanHubPanel extends HTMLElement {
       }`;
   }
 
+  /** The eight handles that make a room properly editable.
+   *
+   *  Dragging a wall moves that wall and leaves the opposite one where it
+   *  is, which is what "make this room wider" means to anybody who has
+   *  ever drawn a floor plan. A corner moves two walls at once.
+   */
+  _areaHandlesHtml(areaId) {
+    const id = escapeHtml(areaId);
+    return ["n", "s", "e", "w", "nw", "ne", "sw", "se"]
+      .map(
+        (edge) => `<span class="handle handle-${edge}"
+            data-resize-area="${id}" data-resize-edge="${edge}"
+            title="Größe ändern"></span>`,
+      )
+      .join("");
+  }
+
   _areasHtml() {
+    const frame = this._frame;
     return this._visibleAreas
       .filter((area) => area.position)
       .map((area) => {
         const size = area.size || { width: 0.3, height: 0.3 };
         return `
-        <div class="area" data-area="${escapeHtml(area.id)}" style="
-              left:${area.position.x * 100}%; top:${area.position.y * 100}%;
-              width:${size.width * 100}%; height:${size.height * 100}%;">
+        <div class="area ${
+          kindOf(area) === AREA_KIND.OUTDOOR ? "outdoor" : ""
+        } ${kindOf(area) === AREA_KIND.VIRTUAL ? "virtual" : ""}" data-area="${escapeHtml(area.id)}" style="
+              left:${inFrame(area.position.x, frame)}%;
+              top:${inFrame(area.position.y, frame)}%;
+              width:${(size.width / frame.span) * 100}%;
+              height:${(size.height / frame.span) * 100}%;">
           <span class="area-name">
             ${area.icon ? `<ha-icon icon="${escapeHtml(area.icon)}"></ha-icon>` : ""}
             ${escapeHtml(area.name)}
           </span>
           ${
             this._edit
-              ? `<span class="grip" data-resize-area="${escapeHtml(area.id)}"
-                       title="Größe ändern"></span>
+              ? `${this._areaHandlesHtml(area.id)}
+                 <button class="area-config" data-area-dialog="${escapeHtml(
+                   area.id,
+                 )}" title="Bereich einstellen">
+                   <ha-icon icon="mdi:tune-variant"></ha-icon>
+                 </button>
                  <button class="area-hide" data-hide-area="${escapeHtml(area.id)}"
                          title="Bereich ausblenden">
                    <ha-icon icon="mdi:eye-off-outline"></ha-icon>
@@ -665,8 +1028,15 @@ class FloorplanHubPanel extends HTMLElement {
         ${edge.dashed ? 'stroke-dasharray="6 5"' : ""}
         ${edge.directed ? 'marker-end="url(#arrow)"' : ""}`;
     const title = `<title>${escapeHtml(edge.label || edge.id)}</title>`;
-    const [x1, y1] = [edge.from.x * 1000, edge.from.y * 1000];
-    const [x2, y2] = [edge.to.x * 1000, edge.to.y * 1000];
+    const frame = this._frame;
+    const [x1, y1] = [
+      inFrame(edge.from.x, frame) * 10,
+      inFrame(edge.from.y, frame) * 10,
+    ];
+    const [x2, y2] = [
+      inFrame(edge.to.x, frame) * 10,
+      inFrame(edge.to.y, frame) * 10,
+    ];
 
     if (this._theme.edge_style === "curved") {
       // Bow the line out perpendicular to itself, so two edges between the
@@ -686,10 +1056,33 @@ class FloorplanHubPanel extends HTMLElement {
       >${title}</line>`;
   }
 
+  /** The colour of a node's icon plate: its own, its provider's, its state. */
+  _nodeColour(node) {
+    const custom = this._customIcon(node);
+    return (
+      node.color ||
+      (custom && custom.default_color) ||
+      this._stateColour(node.state)
+    );
+  }
+
+  /** What to draw when nobody said anything.
+   *
+   *  Home Assistant's icon comes with the node, and a provider's own icon
+   *  set beats even that -- an integration keeps its face on the plan. This
+   *  is only the last step of the chain, and it is deliberately still an
+   *  icon rather than a dot: a dot says nothing about what the thing is.
+   */
+  _genericIcon(node) {
+    const provider = ((this._model && this._model.providers) || []).find(
+      (candidate) => candidate.id === this._providerOf(node.id),
+    );
+    return (provider && provider.icon) || "mdi:shape-outline";
+  }
+
   _nodeHtml(node) {
     const custom = this._customIcon(node);
-    const colour =
-      node.color || (custom && custom.default_color) || this._stateColour(node.state);
+    const colour = this._nodeColour(node);
     const selected =
       this._selected &&
       this._selected.kind === "node" &&
@@ -697,12 +1090,19 @@ class FloorplanHubPanel extends HTMLElement {
     const scale = (node.scale || 1) * (this._theme.node_size || 1);
     const icon = custom
       ? `<span class="custom-icon">${custom.svg}</span>`
-      : `<ha-icon icon="${escapeHtml(node.icon || "mdi:circle-medium")}"></ha-icon>`;
+      : `<ha-icon icon="${escapeHtml(
+          node.icon || this._genericIcon(node),
+        )}"></ha-icon>`;
+    const matches = this._matches;
+    const frame = this._frame;
     return `
-      <button class="node ${selected ? "on" : ""} ${node.floor_id ? "" : "floorless"}"
+      <button class="node ${selected ? "on" : ""} ${node.floor_id ? "" : "floorless"}
+        ${matches && !matches.has(node.id) ? "dimmed" : ""}
+        ${matches && matches.has(node.id) ? "found" : ""}"
         data-node="${escapeHtml(node.id)}"
         title="${escapeHtml(node.label)}${node.floor_id ? "" : " (keiner Etage zugeordnet)"}"
-        style="left:${node.position.x * 100}%; top:${node.position.y * 100}%;
+        style="left:${inFrame(node.position.x, frame)}%;
+               top:${inFrame(node.position.y, frame)}%;
                --node-color:${escapeHtml(colour)}; --node-scale:${scale};
                ${node.rotation ? `--node-rotation:${node.rotation}deg;` : ""}">
         <span class="dot">${icon}</span>
@@ -765,25 +1165,125 @@ class FloorplanHubPanel extends HTMLElement {
       </div>`
       : "";
 
-    const providers = (this._model.providers || [])
+    // Grouped by provider, because "that integration → its access points,
+    // its switches, its clients" is how somebody thinks about their house
+    // -- and because a flat list of thirty layers from four integrations
+    // is not a list, it is a wall.
+    const byProvider = new Map();
+    for (const provider of this._model.providers || []) {
+      byProvider.set(provider.id, { provider, layers: [] });
+    }
+    for (const layer of this._model.layers || []) {
+      const group = byProvider.get(layer.provider_id);
+      if (group) group.layers.push(layer);
+    }
+
+    const providers = [...byProvider.values()]
       .map(
-        (provider) => `
-        <li>
-          ${provider.icon ? `<ha-icon icon="${escapeHtml(provider.icon)}"></ha-icon>` : ""}
-          <span>${escapeHtml(provider.name || provider.id)}</span>
-          <span class="muted">${escapeHtml(provider.version || "")}</span>
-        </li>`,
+        ({ provider, layers: own }) => `
+        <div class="provider-group">
+          <div class="provider-head">
+            ${
+              provider.icon
+                ? `<ha-icon icon="${escapeHtml(provider.icon)}"></ha-icon>`
+                : ""
+            }
+            <b>${escapeHtml(provider.name || provider.id)}</b>
+            <span class="muted">${escapeHtml(provider.version || "")}</span>
+            <button class="icon-btn small"
+                    data-toggle-provider="${escapeHtml(provider.id)}"
+                    title="Alle Ebenen dieses Providers umschalten">
+              <ha-icon icon="${
+                this._hiddenProviders.has(provider.id)
+                  ? "mdi:eye-off-outline"
+                  : "mdi:eye-outline"
+              }"></ha-icon>
+            </button>
+          </div>
+          <div class="chips">
+            ${own
+              .map(
+                (layer) => `
+              <button class="chip ${layer.visible === false ? "" : "on"}"
+                      data-layer="${escapeHtml(layer.id)}">
+                ${
+                  layer.icon
+                    ? `<ha-icon icon="${escapeHtml(layer.icon)}"></ha-icon>`
+                    : ""
+                }
+                ${escapeHtml(layer.name || layer.id)}
+              </button>`,
+              )
+              .join("") || '<span class="note">Keine Ebene.</span>'}
+          </div>
+        </div>`,
       )
       .join("");
 
     return `
-      <h3>Ebenen</h3>
-      <div class="rows">${layers || '<p class="note">Keine Ebenen.</p>'}</div>
-      ${tray}
-      ${this._customLayersHtml()}
-      ${this._hiddenTrayHtml()}
-      <h3>Provider</h3>
-      <ul class="providers">${providers}</ul>`;
+      <div class="dock-col">
+        <h3>Ebenen</h3>
+        <div class="rows">${layers || '<p class="note">Keine Ebenen.</p>'}</div>
+        ${this._customLayersHtml()}
+      </div>
+      <div class="dock-col">
+        <h3>Provider</h3>
+        ${providers || '<p class="note">Keine Integration liefert Daten.</p>'}
+      </div>
+      ${
+        tray || this._hiddenTrayHtml()
+          ? `<div class="dock-col">${tray}${this._hiddenTrayHtml()}</div>`
+          : ""
+      }`;
+  }
+
+  /** What an area *is*, and where it may appear. */
+  _areaDialogHtml() {
+    const area = (this._model.areas || []).find(
+      (candidate) => candidate.id === this._areaDialog,
+    );
+    if (!area) return "";
+    const kind = kindOf(area);
+    const kinds = [
+      [AREA_KIND.INDOOR, "Raum", "mdi:home-outline"],
+      [AREA_KIND.OUTDOOR, "Garten / Außenbereich", "mdi:tree-outline"],
+      [AREA_KIND.VIRTUAL, "Virtuell (Cloud, Internet, VPN)", "mdi:cloud-outline"],
+    ];
+    return `
+      <div class="scrim" data-close-area="1"></div>
+      <div class="popup centred">
+        <div class="popup-head">
+          <h2>${escapeHtml(area.name)}</h2>
+          <button class="icon-btn" data-close-area="1">
+            <ha-icon icon="mdi:close"></ha-icon>
+          </button>
+        </div>
+        <p class="note">Ein Garten ist keine Etage. Außenbereiche legen sich
+        als Ring um das Erdgeschoss — Vorgarten, Terrasse, Einfahrt und
+        Garage passen alle darauf, ohne ein Stockwerk zu erfinden.</p>
+        <div class="chips">
+          ${kinds
+            .map(
+              ([value, label, icon]) => `
+            <button class="chip ${kind === value ? "on" : ""}"
+                    data-area-kind="${value}">
+              <ha-icon icon="${icon}"></ha-icon> ${label}
+            </button>`,
+            )
+            .join("")}
+        </div>
+        <h3>Sandwich</h3>
+        <label class="inline">
+          <input type="checkbox" data-area-flag="in_sandwich"
+                 ${area.in_sandwich === false ? "" : "checked"}>
+          In der Hausansicht zeigen
+        </label>
+        <label class="inline">
+          <input type="checkbox" data-area-flag="single_only"
+                 ${area.single_only ? "checked" : ""}>
+          Nur in der Einzelansicht
+        </label>
+      </div>`;
   }
 
   get _customLayers() {
@@ -1205,11 +1705,24 @@ class FloorplanHubPanel extends HTMLElement {
       .join("");
 
     const canAct = this._hass.user && this._hass.user.is_admin;
+    const custom = kind === "node" ? this._customIcon(item) : null;
+    const badge = kind === "node"
+      ? `<span class="popup-icon" style="--node-color:${escapeHtml(
+          this._nodeColour(item),
+        )}">${
+          custom
+            ? `<span class="custom-icon">${custom.svg}</span>`
+            : `<ha-icon icon="${escapeHtml(
+                item.icon || this._genericIcon(item),
+              )}"></ha-icon>`
+        }</span>`
+      : "";
 
     return `
       <div class="scrim" data-close="1"></div>
-      <div class="popup" role="dialog">
+      <div class="popup centred" role="dialog" aria-modal="true">
         <div class="popup-head">
+          ${badge}
           <h2>${escapeHtml(item.label || id)}</h2>
           <button class="icon-btn" data-close="1">
             <ha-icon icon="mdi:close"></ha-icon>
@@ -1220,13 +1733,7 @@ class FloorplanHubPanel extends HTMLElement {
           ${item.value != null ? ` · ${escapeHtml(item.value)}` : ""}
           · <span class="muted">${escapeHtml(this._providerOf(id))}</span>
         </p>
-        ${
-          item.entity_id
-            ? `<button class="link" data-more-info="${escapeHtml(
-                item.entity_id,
-              )}">Entität öffnen</button>`
-            : ""
-        }
+        ${this._popupLinksHtml(kind, id, item)}
         ${this._edit ? this._editPanelHtml(kind, id, item) : ""}
         <table>${rows}</table>
         ${
@@ -1248,6 +1755,71 @@ class FloorplanHubPanel extends HTMLElement {
             : ""
         }
       </div>`;
+  }
+
+  /** Every way out of the popup that leads somewhere useful.
+   *
+   *  The point is that the user never has to leave the floor plan to find
+   *  out more, and when they do leave, it is by a door they chose: the
+   *  more-info dialog, the device, its entities, its settings, or the
+   *  provider's own view. Home Assistant stays the source of the data;
+   *  the hub only knows where its doors are.
+   */
+  _popupLinksHtml(kind, id, item) {
+    if (kind !== "node") return "";
+    const provider = ((this._model && this._model.providers) || []).find(
+      (candidate) => candidate.id === this._providerOf(id),
+    );
+    const entities = item.entities || [];
+    const links = [];
+
+    if (item.entity_id) {
+      links.push(`<button class="chip" data-more-info="${escapeHtml(
+        item.entity_id,
+      )}"><ha-icon icon="mdi:information-outline"></ha-icon> More-Info</button>`);
+    }
+    if (item.device_id) {
+      links.push(`<button class="chip" data-navigate="/config/devices/device/${escapeHtml(
+        item.device_id,
+      )}"><ha-icon icon="mdi:devices"></ha-icon> Gerät öffnen</button>`);
+    }
+    if (entities.length) {
+      links.push(`<button class="chip" data-toggle-entities="1">
+        <ha-icon icon="mdi:format-list-bulleted"></ha-icon>
+        Entitäten (${entities.length})</button>`);
+    }
+    if (item.entity_id) {
+      links.push(`<button class="chip" data-settings="${escapeHtml(
+        item.entity_id,
+      )}"><ha-icon icon="mdi:cog-outline"></ha-icon> Einstellungen</button>`);
+    }
+    if (provider && provider.panel_url) {
+      links.push(`<button class="chip" data-navigate="${escapeHtml(
+        provider.panel_url,
+      )}">${
+        provider.icon
+          ? `<ha-icon icon="${escapeHtml(provider.icon)}"></ha-icon>`
+          : ""
+      } ${escapeHtml(provider.name || provider.id)}</button>`);
+    }
+
+    const list = this._showEntities && entities.length
+      ? `<ul class="entities">
+          ${entities
+            .map(
+              (entity) => `
+            <li>
+              <button class="link" data-more-info="${escapeHtml(
+                entity.entity_id,
+              )}">${escapeHtml(entity.name || entity.entity_id)}</button>
+              <span class="muted">${escapeHtml(entity.state || "")}</span>
+            </li>`,
+            )
+            .join("")}
+        </ul>`
+      : "";
+
+    return links.length ? `<div class="links">${links.join("")}</div>${list}` : "";
   }
 
   _sparklineHtml(series) {
@@ -1288,14 +1860,22 @@ class FloorplanHubPanel extends HTMLElement {
 
   // ── Dragging ────────────────────────────────────────────
 
-  /** Snap to a 2 % grid so rooms line up; Shift is the escape hatch. */
-  _snap(value, event) {
-    if (event.shiftKey) return Math.min(1, Math.max(0, value));
-    return Math.min(1, Math.max(0, Math.round(value / 0.02) * 0.02));
+  /** Snap to a 2 % grid so rooms line up; Shift is the escape hatch.
+   *
+   *  Clamped to the window being drawn, which on a floor with a garden is
+   *  wider than the house -- dragging a bench onto the terrace must not
+   *  snap it back inside the walls.
+   */
+  _snap(value, event, frame = { min: 0, span: 1 }) {
+    const low = frame.min;
+    const high = frame.min + frame.span;
+    const clamped = Math.min(high, Math.max(low, value));
+    if (event.shiftKey) return clamped;
+    return Math.min(high, Math.max(low, Math.round(clamped / 0.02) * 0.02));
   }
 
   _onPointerDown(event) {
-    if (!this._edit || event.button !== 0) return;
+    if (event.button !== 0 && event.button !== 1) return;
     const path = event.composedPath();
     const find = (attribute) =>
       path.find(
@@ -1304,21 +1884,37 @@ class FloorplanHubPanel extends HTMLElement {
       );
 
     const stage = path.find(
-      (element) => element.classList && element.classList.contains("stage"),
+      (element) =>
+        element.classList &&
+        (element.classList.contains("stage") ||
+          element.classList.contains("stack")),
     );
-    if (!stage) return;
 
     const grip = find("data-resize-area");
     const areaElement = find("data-area");
     const nodeElement = find("data-node");
-    if (!grip && !areaElement && !nodeElement) return;
+    const draggable =
+      this._edit && stage && (grip || areaElement || nodeElement) &&
+      // Buttons drawn on top of a draggable thing keep working.
+      (grip || !(find("data-hide-area") || find("data-area-dialog")));
 
-    // Buttons drawn on top of a draggable thing keep working.
-    if (!grip && find("data-hide-area")) return;
+    if (!draggable) {
+      // Everything that is not being arranged pans the view, in every
+      // view: the plan is a map, and a map is dragged.
+      if (this._inViewport(event) && !find("data-node") && !find("data-edge")) {
+        this._startPan(event);
+      }
+      return;
+    }
 
     const target = grip
-      ? { mode: "resize", section: "areas", key: grip.getAttribute("data-resize-area"),
-          element: areaElement }
+      ? {
+          mode: "resize",
+          section: "areas",
+          key: grip.getAttribute("data-resize-area"),
+          edge: grip.getAttribute("data-resize-edge") || "se",
+          element: areaElement,
+        }
       : nodeElement
         ? { mode: "move", section: "nodes", key: nodeElement.getAttribute("data-node"),
             element: nodeElement }
@@ -1327,7 +1923,14 @@ class FloorplanHubPanel extends HTMLElement {
 
     event.preventDefault();
     this._dragged = false;
-    this._drag = { ...target, stage, box: stage.getBoundingClientRect() };
+    this._drag = {
+      ...target,
+      stage,
+      frame: this._frame,
+      before: this._layoutOf(target.section, target.key),
+      start: this._rectOf(target.section, target.key),
+      box: stage.getBoundingClientRect(),
+    };
 
     const move = (moveEvent) => this._onPointerMove(moveEvent);
     const up = (upEvent) => {
@@ -1339,51 +1942,120 @@ class FloorplanHubPanel extends HTMLElement {
     window.addEventListener("pointerup", up);
   }
 
+  /** What is stored for an item right now -- the far end of an undo. */
+  _layoutOf(section, key) {
+    const item = section === "nodes"
+      ? this._node(key)
+      : (this._model.areas || []).find((area) => area.id === key);
+    if (!item) return {};
+    return section === "nodes"
+      ? { position: item.position ? { ...item.position } : null }
+      : {
+          position: item.position ? { ...item.position } : null,
+          size: item.size ? { ...item.size } : null,
+        };
+  }
+
+  /** An area's walls, in floor coordinates. */
+  _rectOf(section, key) {
+    if (section !== "areas") return null;
+    const area = (this._model.areas || []).find(
+      (candidate) => candidate.id === key,
+    );
+    if (!area || !area.position) return null;
+    const size = area.size || { width: 0.3, height: 0.3 };
+    return {
+      left: area.position.x - size.width / 2,
+      right: area.position.x + size.width / 2,
+      top: area.position.y - size.height / 2,
+      bottom: area.position.y + size.height / 2,
+    };
+  }
+
+  /** Pointer position in floor coordinates, apron included. */
+  _toFloor(event, drag) {
+    const frame = drag.frame;
+    return {
+      x: frame.min + ((event.clientX - drag.box.left) / drag.box.width) * frame.span,
+      y: frame.min + ((event.clientY - drag.box.top) / drag.box.height) * frame.span,
+    };
+  }
+
   _onPointerMove(event) {
     const drag = this._drag;
     if (!drag) return;
     this._dragged = true;
-    const x = (event.clientX - drag.box.left) / drag.box.width;
-    const y = (event.clientY - drag.box.top) / drag.box.height;
+    const frame = drag.frame;
+    const { x, y } = this._toFloor(event, drag);
 
-    if (drag.mode === "resize") {
-      // The grip sits at the bottom-right; the area is centred on its
-      // position, so half the delta on each side keeps the centre still.
-      const centreX = drag.element.offsetLeft / drag.box.width;
-      const centreY = drag.element.offsetTop / drag.box.height;
+    if (drag.mode === "resize" && drag.start) {
+      // Each handle moves the wall it sits on and leaves the opposite one
+      // alone -- so a room is widened rather than scaled around its middle,
+      // and its position changes as a consequence, which is what dragging
+      // a wall does in a real plan.
+      const rect = { ...drag.start };
+      const minimum = 0.04;
+      if (drag.edge.includes("w")) {
+        rect.left = Math.min(this._snap(x, event, frame), rect.right - minimum);
+      }
+      if (drag.edge.includes("e")) {
+        rect.right = Math.max(this._snap(x, event, frame), rect.left + minimum);
+      }
+      if (drag.edge.includes("n")) {
+        rect.top = Math.min(this._snap(y, event, frame), rect.bottom - minimum);
+      }
+      if (drag.edge.includes("s")) {
+        rect.bottom = Math.max(this._snap(y, event, frame), rect.top + minimum);
+      }
       drag.value = {
-        width: Math.min(1, Math.max(0.04, (x - centreX) * 2)),
-        height: Math.min(1, Math.max(0.04, (y - centreY) * 2)),
+        position: { x: (rect.left + rect.right) / 2,
+                    y: (rect.top + rect.bottom) / 2 },
+        size: { width: rect.right - rect.left, height: rect.bottom - rect.top },
       };
-      drag.element.style.width = `${drag.value.width * 100}%`;
-      drag.element.style.height = `${drag.value.height * 100}%`;
+      drag.element.style.left = `${inFrame(drag.value.position.x, frame)}%`;
+      drag.element.style.top = `${inFrame(drag.value.position.y, frame)}%`;
+      drag.element.style.width = `${(drag.value.size.width / frame.span) * 100}%`;
+      drag.element.style.height = `${(drag.value.size.height / frame.span) * 100}%`;
       return;
     }
 
-    drag.value = { x: this._snap(x, event), y: this._snap(y, event) };
-    drag.element.style.left = `${drag.value.x * 100}%`;
-    drag.element.style.top = `${drag.value.y * 100}%`;
+    drag.value = {
+      x: this._snap(x, event, frame),
+      y: this._snap(y, event, frame),
+    };
+    drag.element.style.left = `${inFrame(drag.value.x, frame)}%`;
+    drag.element.style.top = `${inFrame(drag.value.y, frame)}%`;
   }
 
   _onPointerUp() {
     const drag = this._drag;
     this._drag = null;
     if (!drag || !drag.value) return;
+    const round = (value) => Number(value.toFixed(4));
     if (drag.mode === "resize") {
-      this._setLayout("areas", drag.key, {
-        size: {
-          width: Number(drag.value.width.toFixed(4)),
-          height: Number(drag.value.height.toFixed(4)),
+      this._setLayout(
+        "areas",
+        drag.key,
+        {
+          position: {
+            x: round(drag.value.position.x),
+            y: round(drag.value.position.y),
+          },
+          size: {
+            width: round(drag.value.size.width),
+            height: round(drag.value.size.height),
+          },
         },
-      });
+        drag.before,
+      );
       return;
     }
-    this._setLayout(drag.section, drag.key, {
-      position: {
-        x: Number(drag.value.x.toFixed(4)),
-        y: Number(drag.value.y.toFixed(4)),
-      },
-    });
+    this._setLayout(
+      drag.section,
+      drag.key,
+      { position: { x: round(drag.value.x), y: round(drag.value.y) } },
+      drag.before,
+    );
   }
 
   // ── Sliders and file pickers ────────────────────────────
@@ -1392,6 +2064,35 @@ class FloorplanHubPanel extends HTMLElement {
     const input = event.target;
     if (!input || !input.getAttribute) return;
     const attribute = (name) => input.getAttribute(name);
+
+    if (attribute("data-search") !== null) {
+      // Re-rendering per keystroke keeps the plan and the box in step; the
+      // model is already in memory, so nothing is fetched to do it.
+      this._search = input.value;
+      this._render();
+      const box = this._root.querySelector("[data-search]");
+      if (box && box.focus) {
+        box.focus();
+        if (box.setSelectionRange) {
+          box.setSelectionRange(box.value.length, box.value.length);
+        }
+      }
+      return;
+    }
+
+    const areaFlag = attribute("data-area-flag");
+    if (areaFlag !== null && this._areaDialog) {
+      const area = (this._model.areas || []).find(
+        (candidate) => candidate.id === this._areaDialog,
+      );
+      this._setLayout(
+        "areas",
+        this._areaDialog,
+        { [areaFlag]: input.checked },
+        { [areaFlag]: Boolean(area && area[areaFlag]) },
+      );
+      return;
+    }
 
     const nodeScale = attribute("data-node-scale");
     if (nodeScale !== null) {
@@ -1563,6 +2264,101 @@ class FloorplanHubPanel extends HTMLElement {
     const stage = path.find(
       (element) => element.classList && element.classList.contains("stage"),
     );
+
+    const zoom = hit("data-zoom");
+    if (zoom) {
+      const how = zoom.getAttribute("data-zoom");
+      if (how === "fit") this._fitToScreen();
+      else this._zoomBy(how === "in" ? ZOOM.step : 1 / ZOOM.step);
+      return;
+    }
+
+    if (hit("data-undo")) {
+      this._undoStep();
+      return;
+    }
+    if (hit("data-redo")) {
+      this._redoStep();
+      return;
+    }
+
+    const areaDialog = hit("data-area-dialog");
+    if (areaDialog) {
+      this._areaDialog = areaDialog.getAttribute("data-area-dialog");
+      this._render();
+      return;
+    }
+
+    if (hit("data-close-area")) {
+      this._areaDialog = null;
+      this._render();
+      return;
+    }
+
+    const areaKind = hit("data-area-kind");
+    if (areaKind && this._areaDialog) {
+      const area = (this._model.areas || []).find(
+        (candidate) => candidate.id === this._areaDialog,
+      );
+      this._setLayout(
+        "areas",
+        this._areaDialog,
+        { kind: areaKind.getAttribute("data-area-kind") },
+        { kind: area ? kindOf(area) : AREA_KIND.INDOOR },
+      );
+      return;
+    }
+
+    const navigate = hit("data-navigate");
+    if (navigate) {
+      // Home Assistant's own navigation event: it keeps the app state, so
+      // the user's way back to the floor plan is the browser's back button.
+      this.dispatchEvent(
+        new CustomEvent("hass-navigate", {
+          detail: { path: navigate.getAttribute("data-navigate") },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      if (window.history && window.history.pushState) {
+        window.history.pushState(null, "", navigate.getAttribute("data-navigate"));
+        window.dispatchEvent(new CustomEvent("location-changed"));
+      }
+      return;
+    }
+
+    const settings = hit("data-settings");
+    if (settings) {
+      // The more-info dialog is the door to an entity's settings, and it
+      // opens over the floor plan instead of navigating away from it.
+      this.dispatchEvent(
+        new CustomEvent("hass-more-info", {
+          detail: { entityId: settings.getAttribute("data-settings"),
+                    view: "settings" },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      return;
+    }
+
+    if (hit("data-toggle-entities")) {
+      this._showEntities = !this._showEntities;
+      this._render();
+      return;
+    }
+
+    const toggleProvider = hit("data-toggle-provider");
+    if (toggleProvider) {
+      const providerId = toggleProvider.getAttribute("data-toggle-provider");
+      const off = this._hiddenProviders.has(providerId);
+      for (const layer of this._model.layers || []) {
+        if (layer.provider_id === providerId) {
+          this._setLayout("layers", layer.id, { visible: off });
+        }
+      }
+      return;
+    }
 
     const floorButton = hit("data-floor");
     if (floorButton) {
@@ -1775,8 +2571,14 @@ class FloorplanHubPanel extends HTMLElement {
     // Placement wins over selection: the user asked to put something down.
     if (this._placing && stage) {
       const box = stage.getBoundingClientRect();
-      const x = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
-      const y = Math.min(1, Math.max(0, (event.clientY - box.top) / box.height));
+      const frame = this._frame;
+      const place = (offset, size) =>
+        Math.min(
+          frame.min + frame.span,
+          Math.max(frame.min, frame.min + (offset / size) * frame.span),
+        );
+      const x = place(event.clientX - box.left, box.width);
+      const y = place(event.clientY - box.top, box.height);
       const { section, key } = this._placing;
       this._placing = null;
       this._setLayout(section, key, {
@@ -1833,6 +2635,7 @@ class FloorplanHubPanel extends HTMLElement {
   _select(kind, id) {
     this._selected = { kind, id };
     this._history = null;
+    this._showEntities = false;
     this._render();
   }
 
@@ -1887,11 +2690,32 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
 .icon-btn { border:0; background:transparent; color:inherit; cursor:pointer;
             border-radius:50%; padding:6px; display:flex; }
 .icon-btn.on { background:rgba(255,255,255,.25); }
-.body { flex:1; display:flex; gap:16px; padding:16px; overflow:auto; align-items:flex-start; }
+/* Ebenen und Provider stehen unter dem Grundriss, nicht daneben: der Plan
+   ist das Einzige, was Breite wirklich braucht. */
+.body { flex:1; display:flex; flex-direction:column; gap:16px; padding:16px; overflow:auto; }
 main { flex:1; min-width:0; }
-aside { width:260px; flex:0 0 auto; background:var(--card-background-color,#fff);
-        border-radius:12px; padding:12px 16px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
-@media (max-width:800px) { .body { flex-direction:column; } aside { width:auto; align-self:stretch; } }
+.dock { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start;
+        background:var(--card-background-color,#fff); border-radius:12px;
+        padding:4px 16px 14px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
+.dock-col { flex:1 1 240px; min-width:0; }
+.provider-group { margin:6px 0 10px; }
+.provider-head { display:flex; align-items:center; gap:6px; font-size:13px; }
+.entities { list-style:none; margin:8px 0 0; padding:0; max-height:200px; overflow:auto; }
+.entities li { display:flex; justify-content:space-between; gap:8px; padding:3px 0;
+               font-size:13px; border-top:1px solid var(--divider-color,#e0e0e0); }
+.links { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 4px; }
+.links .chip { display:flex; align-items:center; gap:4px; font-size:13px; }
+.search { display:flex; align-items:center; gap:4px; background:rgba(255,255,255,.18);
+          border-radius:16px; padding:2px 10px; }
+.search input { border:0; background:transparent; color:inherit; font:inherit;
+                width:120px; outline:none; }
+.search input::placeholder { color:inherit; opacity:.7; }
+.zoom { display:flex; align-items:center; gap:2px; font-size:12px; }
+.icon-btn[disabled] { opacity:.4; cursor:default; }
+
+/* The camera. Transform only, so panning never rebuilds the plan. */
+.viewport { overflow:hidden; touch-action:none; border-radius:12px; }
+.canvas { transform-origin:0 0; will-change:transform; }
 
 .stack { background:var(--fp-surface, var(--card-background-color,#fff));
          border-radius:12px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12));
@@ -1916,6 +2740,18 @@ aside { width:260px; flex:0 0 auto; background:var(--card-background-color,#fff)
 .stack-node.crowded .stack-label { opacity:0; transition:opacity .12s; }
 .stack-node.crowded:hover .stack-label,
 .stack-node.crowded.on .stack-label { opacity:1; }
+.stack-icon { color:#fff; pointer-events:none; }
+.stack-icon ha-icon { --mdc-icon-size:22px; color:#fff; }
+.stack-icon svg { width:22px; height:22px; fill:#fff; }
+/* Der Garten ist der Ring ums Erdgeschoss, keine eigene Etage. */
+.apron { fill:var(--fp-outdoor, rgba(76,175,80,.10));
+         stroke:var(--fp-outdoor-line, rgba(76,175,80,.45));
+         stroke-width:2; stroke-dasharray:12 8; }
+.plane.virtual .storey { stroke-dasharray:14 10; opacity:.7; }
+/* Die Suche blendet nicht aus, sie stellt zurück: der Rest bleibt sichtbar. */
+.stack-node.dimmed { opacity:.25; }
+.stack-node.found circle { stroke:var(--fp-accent, var(--primary-color,#03a9f4));
+                           stroke-width:4; }
 
 .stage { position:relative; width:100%;
          background:var(--fp-surface, var(--card-background-color,#fff));
@@ -1993,9 +2829,27 @@ select { font:inherit; padding:6px; border-radius:8px;
     linear-gradient(to right, rgba(127,127,127,.14) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(127,127,127,.14) 1px, transparent 1px);
   background-size:4% 4%; }
-.grip { position:absolute; right:-6px; bottom:-6px; width:14px; height:14px;
-        border-radius:50%; background:var(--primary-color,#03a9f4);
-        border:2px solid var(--card-background-color,#fff); cursor:nwse-resize; }
+/* Acht Griffe: jede Wand und jede Ecke lässt sich ziehen. */
+.handle { position:absolute; background:var(--primary-color,#03a9f4);
+          border:2px solid var(--card-background-color,#fff); border-radius:50%;
+          width:13px; height:13px; opacity:.9; }
+.handle-n { top:-7px; left:50%; margin-left:-6px; cursor:ns-resize; }
+.handle-s { bottom:-7px; left:50%; margin-left:-6px; cursor:ns-resize; }
+.handle-w { left:-7px; top:50%; margin-top:-6px; cursor:ew-resize; }
+.handle-e { right:-7px; top:50%; margin-top:-6px; cursor:ew-resize; }
+.handle-nw { top:-7px; left:-7px; cursor:nwse-resize; }
+.handle-se { bottom:-7px; right:-7px; cursor:nwse-resize; }
+.handle-ne { top:-7px; right:-7px; cursor:nesw-resize; }
+.handle-sw { bottom:-7px; left:-7px; cursor:nesw-resize; }
+.area-config { position:absolute; top:2px; right:26px; border:0; background:transparent;
+               color:var(--secondary-text-color,#727272); cursor:pointer; padding:2px;
+               display:flex; border-radius:50%; }
+.area.outdoor { border-style:solid; border-color:var(--fp-outdoor-line, rgba(76,175,80,.6));
+                background:var(--fp-outdoor, rgba(76,175,80,.10)); }
+.area.virtual { border-style:dotted; }
+.stage.with-apron { outline:none; }
+.node.dimmed { opacity:.25; }
+.node.found .dot { box-shadow:0 0 0 4px var(--fp-accent, var(--primary-color,#03a9f4)); }
 .area-hide { position:absolute; top:2px; right:2px; border:0; background:transparent;
              color:var(--secondary-text-color,#727272); cursor:pointer; padding:2px;
              display:flex; border-radius:50%; }
@@ -2038,9 +2892,17 @@ select { font:inherit; padding:6px; border-radius:8px;
 .ok { color:var(--success-color,#4caf50); font-size:13px; margin:4px 0; }
 
 .scrim { position:fixed; inset:0; background:rgba(0,0,0,.4); }
-.popup { position:fixed; right:16px; bottom:16px; width:min(380px,calc(100vw - 32px));
-         max-height:70vh; overflow:auto; background:var(--card-background-color,#fff);
-         border-radius:14px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.3); }
+/* Mittig über dem Grundriss, nicht am Rand: ein Modal, das man auch auf
+   einem großen Bildschirm sofort findet. */
+.popup { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+         width:min(460px,calc(100vw - 32px));
+         max-height:80vh; overflow:auto; background:var(--card-background-color,#fff);
+         border-radius:16px; padding:20px; box-shadow:0 16px 48px rgba(0,0,0,.35); }
+.popup-icon { display:flex; align-items:center; justify-content:center;
+              width:36px; height:36px; border-radius:50%; color:#fff;
+              background:var(--node-color, var(--primary-color,#03a9f4)); flex:0 0 auto; }
+.popup-icon svg { width:22px; height:22px; fill:currentColor; }
+.inline { display:flex; align-items:center; gap:8px; font-size:13px; margin:6px 0; }
 .popup-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
 .popup h2 { margin:0; font-size:18px; }
 .popup .sub { margin:2px 0 10px; color:var(--secondary-text-color,#727272); font-size:13px; }
@@ -2060,4 +2922,4 @@ customElements.define("floorplan-hub-panel", FloorplanHubPanel);
 // Exported so the test suite can drive the rendering logic without a
 // browser. Home Assistant loads this file as a module and only ever uses
 // the custom element above.
-export { FloorplanHubPanel, HA_COLOURS };
+export { FloorplanHubPanel, HA_COLOURS, AREA_KIND, kindOf };

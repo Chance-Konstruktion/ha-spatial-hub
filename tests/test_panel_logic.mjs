@@ -369,7 +369,7 @@ test("a constant series does not divide by zero", () => {
 test("the house is drawn before any provider exists", () => {
   const view = panel(model({ providers: [], nodes: [], edges: [] }));
   const html = view._stageHtml();
-  assert.match(html, /class="area"/, "the areas alone are already your home");
+  assert.match(html, /class="area/, "the areas alone are already your home");
   assert.match(html, /erscheint sie hier von selbst/, "and it says what comes next");
 });
 
@@ -455,18 +455,41 @@ test("a drag never leaves the floor plan", () => {
   assert.deepEqual(view._written[0][2].position, { x: 0, y: 1 });
 });
 
-test("the grip resizes the area around its centre", () => {
+test("dragging a wall moves that wall and leaves the opposite one alone", () => {
   const view = panel(model(), { edit: true });
   const area = element({ "data-area": "wohnzimmer" }, { left: 250, top: 500 });
-  const grip = element({ "data-resize-area": "wohnzimmer" });
+  // The south-east corner: the north and west walls must not move.
+  const grip = element({ "data-resize-area": "wohnzimmer",
+                         "data-resize-edge": "se" });
   view._onPointerDown(pointer(0, 0, { target: [grip, area, stage()] }));
 
-  view._onPointerMove(pointer(450, 700));
+  view._onPointerMove(pointer(600, 800));
   view._onPointerUp();
 
-  assert.deepEqual(view._written, [
-    ["areas", "wohnzimmer", { size: { width: 0.4, height: 0.4 } }],
-  ]);
+  const [[section, key, values]] = view._written;
+  const wall = (value) => Number(value.toFixed(4));
+  assert.equal(section, "areas");
+  assert.equal(key, "wohnzimmer");
+  // Started as 0.4 x 0.4 centred on (0.25, 0.5): left 0.05, top 0.3.
+  assert.equal(wall(values.position.x - values.size.width / 2), 0.05, "west wall stayed");
+  assert.equal(wall(values.position.y - values.size.height / 2), 0.3, "north wall stayed");
+  assert.equal(wall(values.position.x + values.size.width / 2), 0.6, "east wall followed");
+  assert.equal(wall(values.position.y + values.size.height / 2), 0.8, "south wall followed");
+});
+
+test("a west handle widens the room to the left", () => {
+  const view = panel(model(), { edit: true });
+  const area = element({ "data-area": "wohnzimmer" }, { left: 250, top: 500 });
+  const grip = element({ "data-resize-area": "wohnzimmer",
+                         "data-resize-edge": "w" });
+  view._onPointerDown(pointer(0, 0, { target: [grip, area, stage()] }));
+  view._onPointerMove(pointer(0, 500));
+  view._onPointerUp();
+
+  const values = view._written[0][2];
+  assert.equal(Number((values.position.x + values.size.width / 2).toFixed(4)), 0.45,
+               "east wall stayed");
+  assert.ok(values.size.width > 0.4, "and the room got wider");
 });
 
 test("an area cannot be resized into nothing", () => {
@@ -957,4 +980,210 @@ test("a storey with a handful of nodes keeps its labels", () => {
   const view = panel(data, { floor: null });
 
   assert.ok(!/crowded/.test(view._stackHtml()));
+});
+
+// ── Icons: what a device looks like ────────────────────────
+
+test("a device is drawn with the icon Home Assistant gave it", () => {
+  const view = panel(model({ nodes: [node("a:lamp", { icon: "mdi:lightbulb" })] }));
+  const html = view._nodeHtml(view._visibleNodes[0]);
+  assert.match(html, /icon="mdi:lightbulb"/);
+  assert.doesNotMatch(html, /circle-medium/, "never an anonymous dot");
+});
+
+test("a provider's own icon set wins over Home Assistant's icon", () => {
+  const data = model({
+    nodes: [node("a:one", { icon: "mdi:lightbulb" })],
+    icon_sets: { a: { "mdi:lightbulb": { svg: "<svg id='own'></svg>" } } },
+  });
+  assert.match(panel(data)._nodeHtml(data.nodes[0]), /id='own'/);
+});
+
+test("a node with no icon anywhere falls back to its provider's", () => {
+  const data = model({ nodes: [node("a:mystery")] });
+  data.providers[0].icon = "mdi:lan";
+  assert.match(panel(data)._nodeHtml(data.nodes[0]), /icon="mdi:lan"/);
+});
+
+test("the house view draws the same icons as a single floor", () => {
+  const view = panel(model({ nodes: [node("a:lamp", { icon: "mdi:lightbulb" })] }),
+                     { floor: null });
+  assert.match(view._stackHtml(), /icon="mdi:lightbulb"/);
+});
+
+// ── The garden is not a storey ─────────────────────────────
+
+const withGarden = () =>
+  model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "",
+        has_outdoor: true, outdoor_margin: 0.28 },
+      { id: "og", name: "Obergeschoss", level: 1, icon: "" },
+    ],
+    areas: [
+      { id: "wohnzimmer", name: "Wohnzimmer", floor_id: "eg", kind: "indoor",
+        position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 } },
+      { id: "garten", name: "Garten", floor_id: "eg", kind: "outdoor",
+        outdoor: true, position: at(0.5, 1.14), size: { width: 0.9, height: 0.22 } },
+    ],
+    nodes: [],
+    edges: [],
+  });
+
+test("a floor with a garden is drawn through a wider window", () => {
+  const view = panel(withGarden());
+  const frame = view._frame;
+  assert.equal(frame.min, -0.28);
+  assert.equal(Number(frame.span.toFixed(4)), 1.56);
+});
+
+test("the garden sits outside the house but on the same floor", () => {
+  const html = panel(withGarden())._areasHtml();
+  const garden = html.match(/<div class="area[\s\S]*?data-area="garten"[\s\S]*?">/)[0];
+  // 1.14 in a -0.28..1.28 window is beyond the 0..1 house, which is the
+  // whole point: it surrounds the ground floor rather than stacking on it.
+  assert.match(garden, /top:9[0-9.]+%/);
+  assert.match(garden, /class="area outdoor /);
+});
+
+test("a floor without a garden is drawn exactly as before", () => {
+  const view = panel();
+  assert.deepEqual(view._frame, { min: 0, span: 1 });
+  assert.match(view._areasHtml(), /left:25%/);
+});
+
+test("dragging in the garden keeps the coordinates outside the house", () => {
+  const view = panel(withGarden(), { edit: true });
+  const area = element({ "data-area": "garten" });
+  view._onPointerDown(pointer(0, 0, { target: [area, stage()] }));
+  // The very bottom of a 1000px stage, in a -0.28..1.28 window.
+  view._onPointerMove(pointer(500, 1000, { shift: true }));
+  view._onPointerUp();
+  assert.equal(view._written[0][2].position.y, 1.28);
+});
+
+// ── The sandwich, and what may appear in it ────────────────
+
+test("an area kept out of the sandwich still shows on its own floor", () => {
+  const data = withGarden();
+  data.areas[1].in_sandwich = false;
+  const view = panel(data, { floor: null });
+  assert.deepEqual(view._visibleAreas.map((area) => area.id), ["wohnzimmer"]);
+
+  view._floorId = "eg";
+  assert.deepEqual(view._visibleAreas.map((area) => area.id),
+                   ["wohnzimmer", "garten"]);
+});
+
+test("a floor kept out of the sandwich takes its nodes with it", () => {
+  const data = model({ nodes: [node("a:up", { floor_id: "og" })] });
+  data.floors[1].in_sandwich = false;
+  const view = panel(data, { floor: null });
+  assert.deepEqual(view._stackFloors.map((floor) => floor.id), ["eg"]);
+  assert.deepEqual(view._visibleNodes, []);
+});
+
+// ── The camera ─────────────────────────────────────────────
+
+test("zooming keeps the point under the cursor where it was", () => {
+  const view = panel();
+  view._root = { querySelector: () => null };
+  view._zoomBy(2, { x: 100, y: 100 });
+  assert.equal(view._view.zoom, 2);
+  assert.equal(view._view.x, -100, "the anchor did not slide away");
+});
+
+test("zoom stops at the ends instead of vanishing", () => {
+  const view = panel();
+  view._root = { querySelector: () => null };
+  for (let step = 0; step < 40; step += 1) view._zoomBy(2);
+  assert.ok(view._view.zoom <= 6);
+  for (let step = 0; step < 80; step += 1) view._zoomBy(0.5);
+  assert.ok(view._view.zoom >= 0.4);
+});
+
+test("fit-to-screen is always the way back", () => {
+  const view = panel();
+  view._root = { querySelector: () => null };
+  view._view = { zoom: 4, x: -800, y: 300 };
+  view._fitToScreen();
+  assert.deepEqual(view._view, { zoom: 1, x: 0, y: 0 });
+});
+
+// ── Search ─────────────────────────────────────────────────
+
+test("searching dims what does not match instead of hiding it", () => {
+  const view = panel();
+  view._search = "one";
+  assert.deepEqual([...view._matches], ["a:one"]);
+  assert.match(view._nodeHtml(view._model.nodes[0]), /found/);
+  assert.match(view._nodeHtml(view._model.nodes[1]), /dimmed/);
+  assert.equal(view._visibleNodes.length, 2, "and everything is still drawn");
+});
+
+test("no search means no opinion", () => {
+  assert.equal(panel()._matches, null);
+});
+
+// ── Undo ───────────────────────────────────────────────────
+
+test("a drag can be taken back", async () => {
+  const view = panel(model(), { edit: true });
+  const written = [];
+  view._setLayout = FloorplanHubPanel.prototype._setLayout;
+  view._hass.callWS = async (message) => {
+    written.push([message.section, message.key, message.values]);
+    return {};
+  };
+  view._render = () => {};
+
+  const target = element({ "data-node": "a:one" });
+  view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
+  view._onPointerMove(pointer(320, 480, { shift: true }));
+  view._onPointerUp();
+  await Promise.resolve();
+  await view._undoStep();
+
+  assert.deepEqual(written[0][2].position, { x: 0.32, y: 0.48 });
+  assert.deepEqual(written[1][2].position, { x: 0.5, y: 0.5, z: 0 },
+                   "back where it was");
+
+  await view._redoStep();
+  assert.deepEqual(written[2][2].position, { x: 0.32, y: 0.48 });
+});
+
+// ── The popup ──────────────────────────────────────────────
+
+test("the popup opens in the middle, over the plan", () => {
+  const view = panel();
+  view._selected = { kind: "node", id: "a:one" };
+  assert.match(view._popupHtml(), /class="popup centred"/);
+});
+
+test("the popup offers every door back into Home Assistant", () => {
+  const data = model({
+    nodes: [node("a:one", {
+      entity_id: "light.kitchen",
+      device_id: "dev1",
+      entities: [{ entity_id: "light.kitchen", name: "Kitchen", state: "on" }],
+    })],
+    edges: [],
+  });
+  data.providers[0].panel_url = "/powerline";
+  const view = panel(data);
+  view._selected = { kind: "node", id: "a:one" };
+  const html = view._popupHtml();
+  assert.match(html, /data-more-info="light.kitchen"/, "more-info");
+  assert.match(html, /\/config\/devices\/device\/dev1/, "the device page");
+  assert.match(html, /data-toggle-entities/, "its entities");
+  assert.match(html, /data-settings="light.kitchen"/, "settings");
+  assert.match(html, /data-navigate="\/powerline"/, "the provider's own view");
+});
+
+test("a node with nothing behind it gets no dead links", () => {
+  const view = panel();
+  view._selected = { kind: "node", id: "a:one" };
+  const html = view._popupHtml();
+  assert.doesNotMatch(html, /data-navigate/);
+  assert.doesNotMatch(html, /data-toggle-entities/);
 });
