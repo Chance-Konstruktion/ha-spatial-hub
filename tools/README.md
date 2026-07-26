@@ -53,6 +53,38 @@ richtig ist — du siehst dir die Zahlen und die Bilder an. Ein Skript, das
 selbst entscheidet, was gut aussieht, hätte den Fehler oben auch nicht
 gefunden.
 
+## Den Edit-Modus durchgehen
+
+```bash
+python3 tools/live_edit.py --password <passwort>
+```
+
+`live_check.py` schaut nur; dieses hier **fasst an**. Es zieht einen Node
+mit echten Mausbewegungen, lädt neu und prüft, ob die Position hält, ändert
+einen Bereich in der Größe, blendet etwas aus und holt es zurück, ruft eine
+Provider-Action auf und setzt die Etage zurück. Jeder Schritt ist eine
+Zusage, die das Projekt schriftlich gemacht hat — hier hat es also eine
+Meinung, anders als `live_check.py`.
+
+```
+ok    Ein Node lässt sich ziehen  — 641 → 759
+ok    Die Position überlebt einen Reload  — 759 → 759
+ok    Ein Bereich lässt sich in der Größe ändern  — 762 → 552
+ok    Ausblenden blendet aus
+ok    Ausgeblendetes kommt zurück  — über „Adapter Dachboden“
+ok    Zurücksetzen stellt die Automatik wieder her  — 552 → 762
+```
+
+Es **schreibt** in den Layout-Speicher. Nur gegen eine Wegwerf-Instanz.
+
+Zwei Fallen, in die die erste Fassung selbst getappt ist, beide jetzt im
+Code kommentiert: Sie hat „irgendeinen Knopf in der Seitenleiste" gesucht,
+um etwas zurückzuholen — und dabei den Ebenen-Schalter erwischt und den
+Provider dauerhaft abgeschaltet. Und sie hat einen Bereich *vergrößern*
+wollen, der schon neun Zehntel des Plans füllte; das korrekte Clamping am
+Rand sah dann aus wie ein kaputtes Resize. Ein Werkzeug, das still das
+kaputtmacht, was es prüft, ist schlimmer als keins.
+
 ## Warum das nicht in der CI läuft
 
 Eine echte Home-Assistant-Installation plus Browser in jedem PR wäre teuer
