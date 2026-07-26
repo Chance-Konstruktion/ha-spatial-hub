@@ -104,3 +104,46 @@ def test_the_store_keeps_settings_apart_from_arrangement(hass):
     assert store.get("settings", "view") == {"theme": {"preset": "paper"}}, (
         "a key that means nothing for this section is dropped, not stored"
     )
+
+
+# ── Colours for a renderer with nothing to inherit from ───
+
+
+def test_every_theme_carries_real_colours_as_well():
+    """Found by opening the second renderer from a desktop: all grey.
+
+    `auto` resolves to "" for every colour, meaning "inherit the host's".
+    Inside Home Assistant that is exactly right. Outside it there is no
+    host theme, and a renderer that has to invent colours is a renderer
+    reimplementing the presets -- the thing resolving in the hub was
+    supposed to prevent.
+    """
+    resolved = theme.resolve({"theme": {"preset": "auto"}})
+
+    assert resolved["state_colors"]["online"] == "", "auto must still inherit"
+    for word in ("online", "offline", "unknown"):
+        assert resolved["fallback"]["state_colors"][word].startswith("#")
+    for word in ("good", "fair", "poor", "unknown"):
+        assert resolved["fallback"]["quality_colors"][word].startswith("#")
+
+
+def test_the_fallback_is_there_even_when_the_preset_states_its_own():
+    """A renderer must not have to ask which case it is in."""
+    for preset in ("auto", "classic", "neon", "paper", "blueprint"):
+        resolved = theme.resolve({"theme": {"preset": preset}})
+        assert resolved["fallback"]["state_colors"]["offline"], (
+            f"{preset} carries no fallback, so a renderer has to branch"
+        )
+
+
+def test_a_user_colour_still_wins_over_the_fallback():
+    """The fallback is a floor, never a ceiling."""
+    resolved = theme.resolve(
+        {"theme": {"preset": "auto", "state_colors": {"online": "#123456"}}}
+    )
+
+    assert resolved["state_colors"]["online"] == "#123456"
+    assert resolved["fallback"]["state_colors"]["online"] != "#123456", (
+        "the fallback was overwritten -- it is what to use when there is no "
+        "colour, so it must not become a copy of the colour"
+    )

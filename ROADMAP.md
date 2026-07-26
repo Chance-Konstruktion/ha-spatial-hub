@@ -20,7 +20,7 @@ Plattform ein weiteres Dashboard geworden.
 | 8 | Provider-SDK | ✅ |
 | 9 | Eigene Provider migrieren | 🟡 Powerline steht |
 | 10 | Community | ✅ |
-| 11 | Austauschbare Renderer | 🟡 Fundament steht |
+| 11 | Austauschbare Renderer | ✅ |
 | 12 | Zero-Config als Endzustand | ⬜ |
 
 ---
@@ -206,7 +206,7 @@ Dazu:
   toter Link im Onboarding-Pfad kostet den Leser, ohne dass es je jemand
   merkt.
 
-## 🟡 Phase 11 — Austauschbare Renderer
+## ✅ Phase 11 — Austauschbare Renderer
 
 Zwischendurch wurde das Panel zum ersten Mal in einem echten Home Assistant
 gerendert — und lieferte sofort den ersten echten Fehler des Projekts:
@@ -214,9 +214,21 @@ Bereiche ohne Etage lagen auf *jeder* Etage über deren Räumen. Behoben im
 Hub, nicht im Renderer, damit ein zweiter Renderer die Korrektur erbt.
 [`tools/`](tools/README.md) ist das, was ihn gefunden hat.
 
-Das Fundament steht: Der mitgelieferte Renderer hat keinen Sonderzugang und
-lässt sich in den Optionen abschalten. Was fehlt, ist ein zweiter Renderer,
-der beweist, dass es stimmt.
+Und dann gibt es diesen zweiten Renderer:
+[`examples/second_renderer/`](examples/second_renderer/) — **eine Datei, vom
+Desktop aus geöffnet**, nicht in Home Assistant. Alle Etagen nebeneinander
+statt eine nach der anderen, ohne Bearbeiten. Keine geteilte Zeile Code mit
+dem Hub, kein Sonderzugang, und genau **zwei** Kommandos: `model` und
+`subscribe`. Mehr braucht ein lesender Renderer nicht.
+
+Bauen belegt anders als Behaupten. Der zweite Renderer hat sofort eine
+halbe Zusage aus Phase 6 aufgedeckt: `auto` löst seine Farben zu leeren
+Strings auf — *„nimm, was Home Assistant sagt"* — und vom Desktop aus gibt
+es nichts zu erben. Das ganze Haus kam grau heraus, und der Renderer hätte
+sich Farben ausdenken müssen, also genau das Preset nachbauen, das im Hub
+aufzulösen der Sinn der Sache war. Jedes Theme trägt jetzt zusätzlich
+`theme.fallback` mit echten Farben. Leer heißt weiter „erben"; wer nichts zu
+erben hat, nimmt den Fallback, ohne zu wissen, welcher Fall vorliegt.
 
 ## ⬜ Phase 12 — Zero-Config als Endzustand
 
