@@ -215,6 +215,30 @@ test("areas of other floors stay on their floor", () => {
   assert.deepEqual(view._visibleAreas.map((a) => a.id), ["wohnzimmer"]);
 });
 
+test("an area belonging to no floor is not smeared across every floor", () => {
+  // Caught in a browser, not here: the hub gives such areas a storey of
+  // their own, and its grid was measured for that storey alone. Drawn on
+  // the real floors as well, it lands on top of their rooms.
+  const data = model();
+  data.floors.push({ id: "_unassigned", name: "Ohne Etage", level: null,
+                     unassigned: true });
+  data.areas.push({ id: "keller", name: "Keller", floor_id: "_unassigned",
+                    position: at(0.5, 0.5), size: { width: 0.9, height: 0.9 } });
+  const view = panel(data);
+  assert.deepEqual(view._visibleAreas.map((a) => a.id), ["wohnzimmer"]);
+});
+
+test("the unassigned storey shows its own areas", () => {
+  const data = model();
+  data.floors.push({ id: "_unassigned", name: "Ohne Etage", level: null,
+                     unassigned: true });
+  data.areas.push({ id: "keller", name: "Keller", floor_id: "_unassigned",
+                    position: at(0.5, 0.5), size: { width: 0.9, height: 0.9 } });
+  const view = panel(data);
+  view._floorId = "_unassigned";
+  assert.deepEqual(view._visibleAreas.map((a) => a.id), ["keller"]);
+});
+
 // ── Geometry and styling ───────────────────────────────────
 
 test("edges are laid out in the 0..1000 viewBox the svg declares", () => {

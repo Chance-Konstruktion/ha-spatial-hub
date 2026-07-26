@@ -22,6 +22,8 @@ from .const import (
     SIGNAL_PROVIDER_REGISTERED,
     SIGNAL_PROVIDER_REMOVED,
     STATE_UNKNOWN,
+    UNASSIGNED_FLOOR_ID,
+    UNASSIGNED_FLOOR_NAME,
 )
 from .models import Edge, Node, Position
 from .registry import Provider, async_load_providers
@@ -138,6 +140,9 @@ class FloorplanHub:
         providers = self.providers
         floors = discovery.async_floors(self.hass)
         areas = discovery.async_areas(self.hass)
+        # Before nodes are placed: a node inherits its area's floor, so the
+        # areas have to know where they live first.
+        floors.extend(self._floor_for_the_unassigned(floors, areas))
 
         nodes: list[Node] = []
         edges: list[Edge] = []
@@ -268,6 +273,31 @@ class FloorplanHub:
             }})
         return sorted(merged, key=lambda layer: layer["z_index"])
 
+    def _floor_for_the_unassigned(
+        self, floors: list[dict[str, Any]], areas: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Give areas without a floor a storey of their own, in place.
+
+        Only once real floors exist. A house that has none at all already
+        gets a single default storey, and everything is unassigned there --
+        putting them on an "unassigned" tab would be all of them, which
+        tells the user nothing.
+        """
+        homeless = [area for area in areas if not area.get("floor_id")]
+        if not floors or not homeless:
+            return []
+        for area in homeless:
+            area["floor_id"] = UNASSIGNED_FLOOR_ID
+        return [{
+            "id": UNASSIGNED_FLOOR_ID,
+            "name": UNASSIGNED_FLOOR_NAME,
+            "level": None,
+            "icon": "mdi:help-circle-outline",
+            # Sorted last whatever its level, and marked so a renderer can
+            # say what it is instead of pretending it is a real storey.
+            "unassigned": True,
+        }]
+
     def _apply_floor_layout(
         self, floors: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
@@ -283,8 +313,9 @@ class FloorplanHub:
         return sorted(
             merged,
             key=lambda floor: (
+                bool(floor.get("unassigned")),
                 floor.get("order") if floor.get("order") is not None
-                else (floor.get("level") or 0)
+                else (floor.get("level") or 0),
             ),
         )
 
