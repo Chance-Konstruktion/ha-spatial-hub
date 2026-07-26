@@ -29,6 +29,22 @@ floorplan_provider(
 That is the integration. It registers, withdraws when your config entry is
 unloaded, and re-notifies the hub after every coordinator refresh.
 
+## No coordinator? Name your signals
+
+Plenty of integrations have no `DataUpdateCoordinator` -- a UDP listener,
+an MQTT subscription, anything push-shaped fires its own dispatcher signals
+instead. Name them and the hub listens along:
+
+```python
+floorplan_provider(hass, entry, name="ESPEasy P2P", data=data,
+                   signals=[SIGNAL_NODE_DISCOVERED, SIGNAL_NODE_AVAILABILITY])
+```
+
+They are disconnected on unload with everything else. And if you pass a
+`coordinator` that has no `async_add_listener`, the shim now says so in the
+log instead of quietly doing nothing -- which used to mean the plan drew
+once and then never moved, with nothing anywhere explaining why.
+
 ## What this costs you
 
 **No dependency.** Not in `requirements`, not in `manifest.json`, nowhere.

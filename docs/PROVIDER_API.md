@@ -46,6 +46,27 @@ Dispatcher-Signal. Beides kostet nichts, wenn niemand zuhört. Deine
 Integration verhält sich ohne installierten Hub exakt wie vorher — und die
 Ladereihenfolge ist egal, weil beide Seiten das Dict anlegen können.
 
+## Ohne Coordinator: `signals`
+
+Nicht jede Integration hat einen `DataUpdateCoordinator`. Ein UDP-Listener,
+ein MQTT-Abo, alles Push-Förmige feuert stattdessen eigene
+Dispatcher-Signale. Nenne sie, und der Hub hört mit:
+
+```python
+floorplan_provider(
+    hass, entry, name="ESPEasy P2P",
+    data=lambda: {...},
+    signals=[SIGNAL_NODE_DISCOVERED, SIGNAL_NODE_AVAILABILITY],
+)
+```
+
+Beim Entladen werden sie mit allem anderen wieder getrennt.
+
+Übergibst du ein `coordinator`-Objekt ohne `async_add_listener` und keine
+`signals`, sagt der Shim es dir im Log. Vorher hat er es stillschweigend
+ignoriert — der Grundriss wurde einmal gezeichnet und bewegte sich nie
+wieder, ohne dass irgendwo stand, warum.
+
 ## Nodes
 
 **Eine Entity-ID ist ein vollständiger Node.** Home Assistant kennt Name,

@@ -262,3 +262,137 @@ def test_nonsense_in_the_stamp_is_ignored_rather_than_fatal():
          "data": lambda: []}
     )
     assert provider.sdk_version == 0
+
+
+# ── Integrations without a coordinator ────────────────────
+
+
+class _FakeCoordinator:
+    """The real thing, as far as the shim is concerned."""
+
+    def __init__(self) -> None:
+        self.listeners: list = []
+
+    def async_add_listener(self, callback):
+        self.listeners.append(callback)
+        return lambda: self.listeners.remove(callback)
+
+
+class _OwnLoop:
+    """A push integration's own coordinator: no listener API at all.
+
+    ESPEasy P2P is one of these -- a UDP socket and dispatcher signals.
+    So are most MQTT-shaped integrations.
+    """
+
+
+def _shim():
+    spec = importlib.util.spec_from_file_location("_shim_signals", SDK / SHIM)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.asyncio
+async def test_a_push_integration_can_name_its_own_signals(hass):
+    """No DataUpdateCoordinator, and still live. That is most of them."""
+    shim = _shim()
+    entry = FakeEntry()
+
+    shim.floorplan_provider(hass, entry, name="Push", data=lambda: ["light.a"],
+                            signals=["my_thing_node_seen", "my_thing_gone"])
+
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+    told: list[str] = []
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+
+    async_dispatcher_connect(hass, "floorplan_hub_data_updated", told.append)
+
+    async_dispatcher_send(hass, "my_thing_node_seen")
+    async_dispatcher_send(hass, "my_thing_gone")
+
+    assert told == [FakeEntry.domain, FakeEntry.domain], (
+        "a signal the integration already fires must reach the hub, or a "
+        "push integration draws once and then never moves"
+    )
+
+
+@pytest.mark.asyncio
+async def test_one_signal_may_be_given_without_a_list(hass):
+    shim = _shim()
+    shim.floorplan_provider(hass, FakeEntry(), name="Push",
+                            data=lambda: ["light.a"], signals="just_the_one")
+
+    from homeassistant.helpers.dispatcher import (
+        async_dispatcher_connect,
+        async_dispatcher_send,
+    )
+
+    told: list[str] = []
+    async_dispatcher_connect(hass, "floorplan_hub_data_updated", told.append)
+    async_dispatcher_send(hass, "just_the_one")
+
+    assert told == [FakeEntry.domain]
+
+
+@pytest.mark.asyncio
+async def test_the_signals_are_dropped_when_the_provider_withdraws(hass):
+    """Otherwise an unloaded integration keeps waking the hub forever."""
+    shim = _shim()
+    provider = shim.floorplan_provider(hass, FakeEntry(), name="Push",
+                                       data=lambda: ["light.a"],
+                                       signals=["something_happened"])
+
+    from homeassistant.helpers.dispatcher import (
+        async_dispatcher_connect,
+        async_dispatcher_send,
+    )
+
+    told: list[str] = []
+    async_dispatcher_connect(hass, "floorplan_hub_data_updated", told.append)
+    provider.async_unregister()
+    async_dispatcher_send(hass, "something_happened")
+
+    assert told == []
+
+
+@pytest.mark.asyncio
+async def test_a_coordinator_that_cannot_be_listened_to_says_so(hass, caplog):
+    """The cruellest outcome would be silence: draws once, never moves.
+
+    Found by connecting the second integration, whose coordinator is a UDP
+    listener rather than a DataUpdateCoordinator. The old shim took it,
+    ignored it, and said nothing.
+    """
+    shim = _shim()
+
+    shim.floorplan_provider(hass, FakeEntry(), name="Push",
+                            data=lambda: ["light.a"], coordinator=_OwnLoop())
+
+    assert "async_add_listener" in caplog.text
+    assert "signals=" in caplog.text, "the warning must say what to do instead"
+
+
+@pytest.mark.asyncio
+async def test_a_real_coordinator_is_still_just_passed_in(hass, caplog):
+    shim = _shim()
+    coordinator = _FakeCoordinator()
+
+    shim.floorplan_provider(hass, FakeEntry(), name="Push",
+                            data=lambda: ["light.a"], coordinator=coordinator)
+
+    assert len(coordinator.listeners) == 1
+    assert "async_add_listener" not in caplog.text, "warned about a fine setup"
+
+
+@pytest.mark.asyncio
+async def test_signals_alongside_a_foreign_coordinator_is_not_a_warning(hass, caplog):
+    """Saying `signals=` *is* the answer, so it must not be nagged at."""
+    shim = _shim()
+
+    shim.floorplan_provider(hass, FakeEntry(), name="Push",
+                            data=lambda: ["light.a"], coordinator=_OwnLoop(),
+                            signals=["fine"])
+
+    assert "async_add_listener" not in caplog.text
