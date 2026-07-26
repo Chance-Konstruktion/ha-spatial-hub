@@ -1,5 +1,11 @@
 # Provider API (v1)
 
+> Dies ist die **Anleitung**: wie du in einem Aufruf zum Provider wirst.
+> Das **normative Format** — Node, Edge, Layer, Position, Popup, Action,
+> Theme, Icon, Camera, Area Type — steht in der
+> [Spatial Provider Specification 1.0](SPECIFICATION.md). Wo die beiden sich
+> widersprechen, gilt die Spezifikation.
+
 Wie eine Integration auf den Grundriss kommt. Lesezeit: zwei Minuten.
 
 ## Die Kurzfassung

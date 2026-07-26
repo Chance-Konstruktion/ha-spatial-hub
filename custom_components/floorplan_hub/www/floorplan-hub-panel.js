@@ -56,6 +56,23 @@ const frameOf = (floor) => {
 
 const inFrame = (value, frame) => ((value - frame.min) / frame.span) * 100;
 
+/** The three area kinds, frozen. Specification § Area Type.
+ *
+ *  A renderer that compares against a literal is a renderer that quietly
+ *  draws a garden as a living room the day somebody writes "outside". The
+ *  hub normalises what it stores; this is the same promise on this side. */
+const AREA_KIND = Object.freeze({
+  INDOOR: "indoor",
+  OUTDOOR: "outdoor",
+  VIRTUAL: "virtual",
+});
+
+/** The kind of an area, or INDOOR when it says nothing recognisable. */
+const kindOf = (area) =>
+  Object.values(AREA_KIND).includes(area && area.kind)
+    ? area.kind
+    : AREA_KIND.INDOOR;
+
 const escapeHtml = (value) =>
   String(value ?? "").replace(
     /[&<>"']/g,
@@ -961,9 +978,9 @@ class FloorplanHubPanel extends HTMLElement {
       .map((area) => {
         const size = area.size || { width: 0.3, height: 0.3 };
         return `
-        <div class="area ${area.outdoor ? "outdoor" : ""} ${
-          area.virtual ? "virtual" : ""
-        }" data-area="${escapeHtml(area.id)}" style="
+        <div class="area ${
+          kindOf(area) === AREA_KIND.OUTDOOR ? "outdoor" : ""
+        } ${kindOf(area) === AREA_KIND.VIRTUAL ? "virtual" : ""}" data-area="${escapeHtml(area.id)}" style="
               left:${inFrame(area.position.x, frame)}%;
               top:${inFrame(area.position.y, frame)}%;
               width:${(size.width / frame.span) * 100}%;
@@ -1226,11 +1243,11 @@ class FloorplanHubPanel extends HTMLElement {
       (candidate) => candidate.id === this._areaDialog,
     );
     if (!area) return "";
-    const kind = area.kind || "indoor";
+    const kind = kindOf(area);
     const kinds = [
-      ["indoor", "Raum", "mdi:home-outline"],
-      ["outdoor", "Garten / Außenbereich", "mdi:tree-outline"],
-      ["virtual", "Virtuell (Cloud, Internet, VPN)", "mdi:cloud-outline"],
+      [AREA_KIND.INDOOR, "Raum", "mdi:home-outline"],
+      [AREA_KIND.OUTDOOR, "Garten / Außenbereich", "mdi:tree-outline"],
+      [AREA_KIND.VIRTUAL, "Virtuell (Cloud, Internet, VPN)", "mdi:cloud-outline"],
     ];
     return `
       <div class="scrim" data-close-area="1"></div>
@@ -2287,7 +2304,7 @@ class FloorplanHubPanel extends HTMLElement {
         "areas",
         this._areaDialog,
         { kind: areaKind.getAttribute("data-area-kind") },
-        { kind: (area && area.kind) || "indoor" },
+        { kind: area ? kindOf(area) : AREA_KIND.INDOOR },
       );
       return;
     }
@@ -2905,4 +2922,4 @@ customElements.define("floorplan-hub-panel", FloorplanHubPanel);
 // Exported so the test suite can drive the rendering logic without a
 // browser. Home Assistant loads this file as a module and only ever uses
 // the custom element above.
-export { FloorplanHubPanel, HA_COLOURS };
+export { FloorplanHubPanel, HA_COLOURS, AREA_KIND, kindOf };

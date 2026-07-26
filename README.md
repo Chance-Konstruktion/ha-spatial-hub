@@ -27,7 +27,10 @@ ein SDK für die, die einen schreiben wollen.
 [ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p) sind
 angebunden — die zweite ohne `DataUpdateCoordinator`, was zwei Löcher im SDK
 ans Licht gebracht hat. Der vollständige Plan steht in
-**[ROADMAP.md](ROADMAP.md)**.
+**[ROADMAP.md](ROADMAP.md)**, das räumliche Format in der
+**[Spatial Provider Specification 1.0](docs/SPECIFICATION.md)** — Node, Edge,
+Layer, Position, Popup, Action, Theme, Icon, Camera, Area Type, normativ und
+mitgetestet.
 
 ## Der Renderer
 

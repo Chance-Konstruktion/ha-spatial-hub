@@ -7,6 +7,7 @@ are duplicated verbatim in every provider's adapter module. Treat them as
 frozen: changing one breaks every provider in the wild.
 """
 
+from enum import StrEnum
 from typing import Final
 
 DOMAIN: Final = "floorplan_hub"
@@ -51,11 +52,69 @@ UNASSIGNED_FLOOR_NAME: Final = "Ohne Etage"
 # choose which of "Vorgarten" and "Terrasse" gets to be the outside. So an
 # area declares a kind instead, and the outdoor ones surround the ground
 # floor rather than stacking above it.
-AREA_KIND_INDOOR: Final = "indoor"
-AREA_KIND_OUTDOOR: Final = "outdoor"
-# Cloud, Internet, VPN: real enough to show, nowhere in the building.
-AREA_KIND_VIRTUAL: Final = "virtual"
-AREA_KINDS: Final = (AREA_KIND_INDOOR, AREA_KIND_OUTDOOR, AREA_KIND_VIRTUAL)
+#
+# An enum, not three loose strings. The wire format is still the plain
+# word -- JSON has no enums and the specification names the three by value
+# -- but nothing inside this package compares against a literal, and
+# everything that comes in from outside goes through `AreaKind.parse`.
+# Somebody will write "outside" one day; this is where they find out,
+# instead of wondering why their garden is a living room.
+class AreaKind(StrEnum):
+    """What an area is. See docs/SPECIFICATION.md § Area Type."""
+
+    INDOOR = "indoor"
+    OUTDOOR = "outdoor"
+    # Cloud, Internet, VPN: real enough to show, nowhere in the building.
+    VIRTUAL = "virtual"
+
+    @classmethod
+    def parse(cls, value: object, default: "AreaKind | None" = None) -> "AreaKind | None":
+        """The kind this value means, or ``default`` if it means nothing.
+
+        Near misses are repaired rather than silently treated as a room:
+        somebody writing "outside", "garden" or "außen" clearly meant
+        outdoors, and a floor plan is not the place to be pedantic about
+        it. Anything genuinely unrecognised returns the default, and the
+        caller is expected to say so out loud.
+        """
+        if isinstance(value, cls):
+            return value
+        word = str(value or "").strip().lower()
+        for source, target in (("ä", "a"), ("ö", "o"), ("ü", "u"), ("ß", "ss")):
+            word = word.replace(source, target)
+        if not word:
+            return default
+        try:
+            return cls(word)
+        except ValueError:
+            return AREA_KIND_ALIASES.get(word, default)
+
+
+# Words that unambiguously mean one of the three. Deliberately short: an
+# alias table is a courtesy, not a second vocabulary, and every entry here
+# is one the specification does *not* promise.
+AREA_KIND_ALIASES: Final[dict[str, AreaKind]] = {
+    "inside": AreaKind.INDOOR,
+    "innen": AreaKind.INDOOR,
+    "room": AreaKind.INDOOR,
+    "raum": AreaKind.INDOOR,
+    "outside": AreaKind.OUTDOOR,
+    "aussen": AreaKind.OUTDOOR,
+    "exterior": AreaKind.OUTDOOR,
+    "garden": AreaKind.OUTDOOR,
+    "garten": AreaKind.OUTDOOR,
+    "cloud": AreaKind.VIRTUAL,
+    "internet": AreaKind.VIRTUAL,
+    "remote": AreaKind.VIRTUAL,
+
+}
+
+# Kept as plain strings for the places that need a list of literals: the
+# websocket schema and anything reading the stored layout.
+AREA_KIND_INDOOR: Final = AreaKind.INDOOR.value
+AREA_KIND_OUTDOOR: Final = AreaKind.OUTDOOR.value
+AREA_KIND_VIRTUAL: Final = AreaKind.VIRTUAL.value
+AREA_KINDS: Final = tuple(kind.value for kind in AreaKind)
 
 # How far outside the house the outdoor ring reaches, in floor coordinates.
 # The whole apron is therefore -OUTDOOR_MARGIN .. 1 + OUTDOOR_MARGIN, and a

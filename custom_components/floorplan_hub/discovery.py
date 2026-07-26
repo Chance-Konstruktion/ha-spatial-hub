@@ -23,10 +23,9 @@ from homeassistant.helpers import (
 )
 
 from .const import (
-    AREA_KIND_INDOOR,
-    AREA_KIND_OUTDOOR,
     OUTDOOR_MARGIN,
     STATE_UNKNOWN,
+    AreaKind,
 )
 from .models import Node, Position
 
@@ -123,13 +122,13 @@ _DEVICE_CLASS_ICONS = {
 }
 
 
-def area_kind(name: str, icon: str = "") -> str:
+def area_kind(name: str, icon: str = "") -> AreaKind:
     """Guess whether an area is indoors, from what the user called it."""
     haystack = _fold(name) + " " + _fold(icon)
     for word in _OUTDOOR_WORDS:
         if word in haystack:
-            return AREA_KIND_OUTDOOR
-    return AREA_KIND_INDOOR
+            return AreaKind.OUTDOOR
+    return AreaKind.INDOOR
 
 
 def _fold(value: str) -> str:
@@ -185,7 +184,7 @@ def async_areas(hass: HomeAssistant) -> list[dict[str, Any]]:
             "name": area.name,
             "floor_id": getattr(area, "floor_id", None),
             "icon": getattr(area, "icon", "") or "",
-            "kind": area_kind(area.name, getattr(area, "icon", "") or ""),
+            "kind": area_kind(area.name, getattr(area, "icon", "") or "").value,
             "auto": True,
         }
         for area in areas
@@ -202,7 +201,7 @@ def async_arrange_areas(areas: list[dict[str, Any]]) -> None:
     """
     by_plane: dict[tuple[str | None, bool], list[dict[str, Any]]] = {}
     for area in areas:
-        outdoor = area.get("kind") == AREA_KIND_OUTDOOR
+        outdoor = AreaKind.parse(area.get("kind")) is AreaKind.OUTDOOR
         by_plane.setdefault((area.get("floor_id"), outdoor), []).append(area)
 
     for (_floor_id, outdoor), plane_areas in by_plane.items():
@@ -412,7 +411,8 @@ def async_place_nodes(
         # A node in the garden may sit outside the house rectangle -- that
         # is the whole point of the apron, so it must not be clamped back in.
         outdoor = any(
-            area["id"] == area_id and area.get("kind") == AREA_KIND_OUTDOOR
+            area["id"] == area_id
+            and AreaKind.parse(area.get("kind")) is AreaKind.OUTDOOR
             for area in areas
         )
         low = -OUTDOOR_MARGIN if outdoor else 0.0

@@ -23,6 +23,7 @@ Plattform ein weiteres Dashboard geworden.
 | 11 | Austauschbare Renderer | ✅ |
 | 12 | Zero-Config als Endzustand | ✅ |
 | 13 | Feedback aus der ersten Version | ✅ |
+| 14 | Spezifikation 1.0 | ✅ |
 
 ---
 
@@ -321,3 +322,27 @@ Provider-Untergruppen, Drag & Drop und Snap-to-Grid waren schon da.
 - Eigene Icons hochladen (Provider-Icon-Sets gibt es, Nutzer-Uploads nicht)
 - Labels frei verschieben (`label_offset` wird gespeichert, aber noch von
   keinem Griff gesetzt)
+
+## ✅ Phase 14 — Aus einer API wird ein Standard
+
+[`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) — **Spatial Provider
+Specification 1.0**. Kein README, sondern ein Format, das mehrere
+Implementierungen erfüllen können; der eingebaute Renderer ist nur die erste.
+Kapitel: Node, Edge, Layer, Position, Popup, Action, Theme, Icon, Camera,
+Area Type. Dazu Rollen, Fehlerverhalten und eine eigene Versionierung.
+
+Normativ heißt getestet: [`tests/test_specification.py`](tests/test_specification.py)
+hält Dokument und Code an den Stellen zusammen, an denen sie still
+auseinanderlaufen können — die Vokabulare, die Versionsnummern und die
+Feldnamen, die einem Provider zugesagt werden. Ein Dokument, das eine ältere
+Version beschreibt, ist schlimmer als keins: es ist ein Versprechen, das der
+Code nicht hält.
+
+**AreaKind ist ein Enum**, kein String. Auf allen drei Seiten: `AreaKind` im
+Hub, `AREA_KIND` (frozen) im Renderer, `AreaKind`/`NodeState`/`EdgeQuality`
+im kopierten Shim. Ein unbekannter Wert am Websocket wird abgelehnt und die
+Fehlermeldung nennt die gültigen; ein unbekannter Wert in bereits
+gespeicherten Daten wird repariert, wenn er eindeutig ist (`outside`,
+`garden`, `außen`, `cloud`), und sonst mit Warnung auf `indoor` gesetzt. Ein
+Grundriss verschwindet nicht wegen eines Tippfehlers — aber niemand rätselt
+still.

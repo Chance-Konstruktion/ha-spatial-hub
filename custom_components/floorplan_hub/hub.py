@@ -17,10 +17,6 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from . import discovery
 from .const import (
     API_VERSION,
-    AREA_KIND_INDOOR,
-    AREA_KIND_OUTDOOR,
-    AREA_KIND_VIRTUAL,
-    AREA_KINDS,
     CURRENT_SDK_VERSION,
     OUTDOOR_MARGIN,
     SIGNAL_DATA_UPDATED,
@@ -31,6 +27,7 @@ from .const import (
     UNASSIGNED_FLOOR_NAME,
     VIRTUAL_FLOOR_ID,
     VIRTUAL_FLOOR_NAME,
+    AreaKind,
 )
 from .generic import effective_layers
 from .models import Edge, Node, Position
@@ -340,8 +337,8 @@ class FloorplanHub:
         Returns the floors that are left: a storey that existed only to
         hold the garden goes with it.
         """
-        outdoor = [area for area in areas if area.get("kind") == AREA_KIND_OUTDOOR]
-        virtual = [area for area in areas if area.get("kind") == AREA_KIND_VIRTUAL]
+        outdoor = [area for area in areas if area["kind"] is AreaKind.OUTDOOR]
+        virtual = [area for area in areas if area["kind"] is AreaKind.VIRTUAL]
         if not outdoor and not virtual:
             return floors
 
@@ -423,10 +420,22 @@ class FloorplanHub:
         """
         for area in areas:
             override = self.store.get("areas", area["id"])
-            kind = override.get("kind")
-            if kind in AREA_KINDS:
-                area["kind"] = kind
-            area.setdefault("kind", AREA_KIND_INDOOR)
+            # Whatever is stored, whatever a future editor writes, and
+            # whatever the guess produced all arrive here as one of three
+            # values or as a complaint -- never as an unexamined string.
+            guessed = AreaKind.parse(area.get("kind"), AreaKind.INDOOR)
+            if "kind" in override:
+                stated = AreaKind.parse(override["kind"])
+                if stated is None:
+                    _LOGGER.warning(
+                        "Area %s has an unknown kind %r stored; using %s. "
+                        "Valid kinds are %s",
+                        area["id"], override["kind"], guessed.value,
+                        ", ".join(kind.value for kind in AreaKind),
+                    )
+                area["kind"] = stated or guessed
+            else:
+                area["kind"] = guessed
             for key in ("position", "size", "color", "name", "in_sandwich",
                         "single_only"):
                 if key in override and override[key] is not None:
@@ -452,6 +461,9 @@ class FloorplanHub:
                 hidden.append({"id": area["id"], "name": area["name"]})
                 continue
             area = {key: value for key, value in area.items() if key != "hidden"}
+            # The wire format is the plain word: JSON has no enums, and the
+            # specification names the three by value.
+            area["kind"] = AreaKind(area["kind"]).value
             if area.get("auto") is False:
                 pass
             elif not self.auto_areas:
