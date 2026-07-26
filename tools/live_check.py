@@ -48,10 +48,11 @@ if (index >= 0) root.querySelectorAll('.tab')[index].click();
 
 _REPORT = _FIND_PANEL + """
 const root = deep(document)[0].shadowRoot;
-const stage = root.querySelector('.stage');
+// The house view has no .stage: it is one svg with every storey in it.
+const stage = root.querySelector('.stage') || root.querySelector('.stack');
 const box = stage.getBoundingClientRect();
 const overlaps = [];
-const areas = [...root.querySelectorAll('.area')];
+const areas = [...root.querySelectorAll('.area, .stack .room-label')];
 for (let i = 0; i < areas.length; i++) {
   for (let j = i + 1; j < areas.length; j++) {
     const a = areas[i].getBoundingClientRect();
@@ -66,7 +67,10 @@ return {
   tab: [...root.querySelectorAll('.tab')]
         .find((t) => t.className.includes('on'))?.textContent.trim(),
   areas: areas.map((a) => a.textContent.trim()),
-  nodes: [...root.querySelectorAll('.node')].map((n) => n.textContent.trim()),
+  nodes: [...root.querySelectorAll('.node, .stack-node')]
+          .map((n) => n.textContent.trim()),
+  // The whole reason the stacked view exists.
+  edges_across_storeys: root.querySelectorAll('.stack-edge.across').length,
   // Rooms drawn on top of each other. The bug that started all this.
   overlapping_areas: overlaps,
   stage: {w: Math.round(box.width), h: Math.round(box.height)},

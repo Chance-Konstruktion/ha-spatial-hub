@@ -358,3 +358,68 @@ async def test_the_unassigned_storey_says_that_it_is_one(hass):
     assert all(
         not floor.get("unassigned") for floor in model["floors"][:-1]
     ), "a real storey was marked as the unassigned one"
+
+
+# ── Placement that stays clickable ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_many_area_less_nodes_do_not_land_on_one_another(hass):
+    """The blob. Found by switching the built-in layers on and looking.
+
+    Nineteen entities with no area all took the centre of the plan on a
+    0.035 circle: one dot, nineteen labels, nothing clickable.
+    """
+    _house(hass, [], [])
+    hass.data["floorplan_hub_providers"] = {
+        "p": {"provider_id": "p", "name": "P",
+              "data": lambda: [f"light.lamp_{i}" for i in range(19)]}
+    }
+
+    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+    spots = [(n["position"]["x"], n["position"]["y"]) for n in model["nodes"]]
+
+    assert len(set(spots)) == 19, "two nodes share a spot"
+    closest = min(
+        abs(a[0] - b[0]) + abs(a[1] - b[1])
+        for i, a in enumerate(spots) for b in spots[i + 1:]
+    )
+    assert closest > 0.05, f"nodes {closest:.3f} apart are one dot on screen"
+
+
+@pytest.mark.asyncio
+async def test_a_lone_node_still_sits_in_the_middle_of_its_room(hass):
+    """The grid must not push the simple case off-centre."""
+    _house(hass, [FakeFloor("eg", "EG")], [FakeArea("bad", "Bad", floor_id="eg")])
+    hass.data["floorplan_hub_providers"] = {
+        "p": {"provider_id": "p", "name": "P",
+              "data": lambda: [{"id": "one", "label": "One", "area_id": "bad"}]}
+    }
+
+    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+
+    assert model["nodes"][0]["position"]["x"] == 0.5
+    assert model["nodes"][0]["position"]["y"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_nodes_in_a_room_stay_inside_it(hass):
+    """A spread that leaks into the neighbouring room is worse than none."""
+    _house(hass, [FakeFloor("eg", "EG")],
+           [FakeArea("a", "A", floor_id="eg"), FakeArea("b", "B", floor_id="eg")])
+    hass.data["floorplan_hub_providers"] = {
+        "p": {"provider_id": "p", "name": "P",
+              "data": lambda: [
+                  {"id": f"n{i}", "label": f"N{i}", "area_id": "a"}
+                  for i in range(9)
+              ]}
+    }
+
+    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+    area = next(a for a in model["areas"] if a["id"] == "a")
+    half_w = area["size"]["width"] / 2
+    half_h = area["size"]["height"] / 2
+
+    for node in model["nodes"]:
+        assert abs(node["position"]["x"] - area["position"]["x"]) <= half_w
+        assert abs(node["position"]["y"] - area["position"]["y"]) <= half_h

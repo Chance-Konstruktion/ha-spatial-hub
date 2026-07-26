@@ -46,7 +46,69 @@ _LOGGER = logging.getLogger(__name__)
 # dots nobody can click. Cap it and say so, rather than melting the browser.
 MAX_ENTITIES = 250
 
+# Parent devices pulled in by `via_device`. Prefixed so they can never
+# collide with an entity id, which is what an ordinary node here is.
+VIA_PREFIX = "via:"
+
 PROVIDER_PREFIX = "custom_"
+
+# What a fresh installation shows before anybody has configured anything
+# or installed a single provider. Chosen to be useful in an ordinary house
+# and, above all, *bounded*: "all sensors" in a real home is four hundred
+# dots and no floor plan, so the sensor layer is narrowed to the classes
+# that actually mean something spatially.
+#
+# These are rules, not a list of integrations. A house with Z-Wave lights
+# and a house with ESPHome lights get the same four layers, and neither is
+# named anywhere. `topology` is on for the light layer because that is
+# where bridges and controllers actually appear -- which is the structure
+# a new user has never been shown before.
+DEFAULT_LAYERS: list[dict[str, Any]] = [
+    {
+        "id": "licht",
+        "name": "Licht",
+        "icon": "mdi:lightbulb-outline",
+        "domains": ["light"],
+        "topology": True,
+        "z_index": 12,
+    },
+    {
+        "id": "klima",
+        "name": "Klima",
+        "icon": "mdi:thermostat",
+        "domains": ["climate", "fan", "humidifier", "water_heater"],
+        "z_index": 11,
+    },
+    {
+        "id": "zugang",
+        "name": "Türen & Bewegung",
+        "icon": "mdi:door-open",
+        "domains": ["binary_sensor", "lock", "cover"],
+        "device_classes": ["motion", "occupancy", "presence", "door", "window",
+                           "garage_door", "opening"],
+        "z_index": 10,
+    },
+    {
+        "id": "medien",
+        "name": "Medien",
+        "icon": "mdi:speaker",
+        "domains": ["media_player"],
+        "z_index": 9,
+    },
+]
+
+
+def effective_layers(store: Any) -> tuple[list[dict[str, Any]], bool]:
+    """The layers in force, and whether they are still the defaults.
+
+    Never configured and configured-to-nothing are different answers. A
+    user who deleted every layer meant it, and resurrecting the defaults
+    on the next restart would be the hub arguing with them.
+    """
+    stored = store.get("settings", "view").get("custom_layers")
+    if stored is None:
+        return [dict(layer) for layer in DEFAULT_LAYERS], True
+    return [layer for layer in stored if isinstance(layer, dict)], False
 
 
 def matching_entities(
@@ -133,6 +195,88 @@ def _device_class(hass: HomeAssistant, entry: Any) -> str | None:
     return state.attributes.get("device_class") if state else None
 
 
+def _device_of(hass: HomeAssistant, entity_id: str) -> Any:
+    try:
+        entry = er.async_get(hass).async_get(entity_id)
+    except (AttributeError, KeyError):  # pragma: no cover - registry absent
+        return None
+    if entry is None or not getattr(entry, "device_id", None):
+        return None
+    try:
+        return dr.async_get(hass).async_get(entry.device_id)
+    except (AttributeError, KeyError):  # pragma: no cover
+        return None
+
+
+def _via_node(device: Any) -> dict[str, Any]:
+    """A parent device as a node, claiming only what is actually known.
+
+    No state: the controller a device is reached through often has no
+    entity at all, and inventing "online" for it would be a guess the
+    plan then draws in green.
+    """
+    return {
+        "id": f"{VIA_PREFIX}{device.id}",
+        "label": getattr(device, "name_by_user", None) or getattr(device, "name", "")
+        or "Gerät",
+        "area_id": getattr(device, "area_id", None),
+        "icon": "mdi:hub-outline",
+        "metadata": {
+            "hersteller": getattr(device, "manufacturer", "") or "",
+            "modell": getattr(device, "model", "") or "",
+        },
+    }
+
+
+def topology(hass: HomeAssistant, entity_ids: list[str]) -> dict[str, list]:
+    """Edges from Home Assistant's own `via_device` graph.
+
+    This is the one piece of real topology the core registries already
+    hold, and it belongs to nobody: an integration that knows a device is
+    reached through a controller writes `via_device` when it creates it.
+    Reading that names no integration and needs no cooperation from any --
+    which is the only reason the hub is allowed to read it at all.
+
+    What it deliberately does not do is reach into any integration's own
+    websocket API for the good stuff -- routes, neighbour tables, link
+    quality. Those exist for exactly one integration each, and the first
+    one the hub asked for by name would be the last day this was a
+    platform.
+    """
+    try:
+        devices = dr.async_get(hass)
+    except (AttributeError, KeyError):  # pragma: no cover - registry absent
+        return {"nodes": [], "edges": []}
+
+    extra: dict[str, dict[str, Any]] = {}
+    edges: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for entity_id in entity_ids:
+        device = _device_of(hass, entity_id)
+        via_id = getattr(device, "via_device_id", None) if device else None
+        if not via_id:
+            continue
+        parent = devices.async_get(via_id)
+        if parent is None:
+            continue
+        target = f"{VIA_PREFIX}{parent.id}"
+        if (entity_id, target) in seen:
+            continue
+        seen.add((entity_id, target))
+        extra.setdefault(target, _via_node(parent))
+        edges.append({
+            "id": f"via-{entity_id}",
+            "source": entity_id,
+            "target": target,
+            # Home Assistant states the relation, not its condition. Saying
+            # "good" here would be a measurement nobody took.
+            "quality": "unknown",
+        })
+
+    return {"nodes": list(extra.values()), "edges": edges}
+
+
 def registration(hass: HomeAssistant, config: dict[str, Any]) -> dict[str, Any]:
     """One custom layer, expressed as an ordinary provider registration.
 
@@ -143,18 +287,30 @@ def registration(hass: HomeAssistant, config: dict[str, Any]) -> dict[str, Any]:
     layer_id = str(config.get("id") or "layer")
     name = str(config.get("name") or "Eigene Ebene")
 
+    wants_topology = bool(config.get("topology"))
+
     def data() -> dict[str, Any]:
         entities, warnings = matching_entities(hass, config)
         for warning in warnings:
             _LOGGER.debug("Floorplan-Hub custom layer %s: %s", layer_id, warning)
-        return {"nodes": entities}
+        if not wants_topology:
+            return {"nodes": entities}
+        extra = topology(hass, entities)
+        return {
+            "nodes": [*entities, *extra["nodes"]],
+            "edges": extra["edges"],
+        }
 
     return {
         "provider_id": f"{PROVIDER_PREFIX}{layer_id}",
         "api_version": API_VERSION,
         "name": name,
         "icon": str(config.get("icon") or "mdi:shape-outline"),
-        "capabilities": {"nodes": True, "edges": False, "popup": True},
+        "capabilities": {
+            "nodes": True,
+            "edges": bool(config.get("topology")),
+            "popup": True,
+        },
         "layers": [
             {
                 "id": f"{PROVIDER_PREFIX}{layer_id}",
@@ -177,8 +333,7 @@ class GenericProviders:
 
     @property
     def configs(self) -> list[dict[str, Any]]:
-        stored = self.store.get("settings", "view").get("custom_layers")
-        return [layer for layer in stored or [] if isinstance(layer, dict)]
+        return effective_layers(self.store)[0]
 
     @callback
     def async_sync(self) -> None:

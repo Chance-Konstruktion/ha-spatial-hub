@@ -32,7 +32,11 @@ ans Licht gebracht hat. Der vollständige Plan steht in
 Nach der Einrichtung steht **Floorplan** in der Seitenleiste. Kein
 Dashboard anlegen, keine Karte konfigurieren, kein YAML:
 
-- **Etagen** als Reiter, direkt aus der Floor-Registry
+- **Haus**: alle Etagen übereinander, als Erstes und voreingestellt — die
+  einzige Ansicht, in der eine Verbindung zwischen zwei Stockwerken
+  überhaupt zu sehen ist
+- **Etagen** als Reiter, direkt aus der Floor-Registry — zum Anordnen und
+  für Details
 - **Bereiche** als Räume, automatisch angeordnet
 - **Ebenen** einzeln ein-/ausschaltbar — die Auswahl wird gespeichert
 - **Nodes** mit Zustandsfarbe, Provider-Icon oder eigenem Inline-SVG
@@ -114,13 +118,33 @@ Die meisten Integrationen werden nie einen Floorplan-Hub-Provider
 schreiben. Das ist kein Versäumnis, sondern der Normalfall — und eine
 Plattform, die nur für die Eingeweihten funktioniert, funktioniert nicht.
 
-Also beschreibt der Nutzer stattdessen eine Ebene: *„alle Lichter"*,
+**Vier Ebenen sind ab Werk da**: Licht, Klima, Türen & Bewegung, Medien.
+Direkt nach der Installation, ohne dass jemand eine Regel schreibt und
+bevor irgendein Provider existiert. Es sind Regeln, keine Integrationsliste
+— ein Haus mit Z-Wave-Lampen und eines mit ESPHome-Lampen bekommen dieselben
+vier. Wer sie nicht will, löscht sie; wer alle löscht, hat sie gelöscht und
+bekommt sie nicht beim nächsten Neustart zurück.
+
+Darüber hinaus beschreibt der Nutzer eine Ebene selbst: *„alle Lichter"*,
 *„alles mit Label security"*, *„diese vier Entitäten"*. Im Bearbeiten-Modus,
 Seitenleiste, **+ Ebene**.
 
 Eine **Regel, keine Liste**: „alle Lichter" stimmt auch noch, wenn nächsten
 Monat eine Lampe dazukommt — aus demselben Grund, aus dem Stockwerke und
 Bereiche aus den Registries kommen und nicht aus einem Zeichenprogramm.
+
+Und Home Assistant weiß bei vielen Geräten selbst, **worüber** sie erreicht
+werden — jedes Gerät hinter einer Bridge, einem Controller oder einem Hub
+trägt dessen ID. Diese Verbindungen lassen sich pro Ebene einschalten. Das
+ist echte Topologie, ohne dass der Hub eine einzige Integration beim Namen
+nennt: Wer `via_device` schreibt, ist ihm egal, und wie *gut* die Verbindung
+ist, behauptet er nicht — das misst niemand.
+
+Was er dafür bewusst **nicht** tut: in die eigene Websocket-API irgendeiner
+Integration greifen, um Routen, Nachbartabellen oder Signalstärken zu holen.
+Die gibt es je genau einmal, für je genau eine Integration — und die erste,
+die der Hub beim Namen fragt, wäre der letzte Tag, an dem er eine Plattform
+ist.
 
 Und der entscheidende Teil: Diese Ebenen registrieren sich über **denselben
 öffentlichen Provider-Vertrag** wie jeder Fremde. Kein Sonderweg in den Hub,

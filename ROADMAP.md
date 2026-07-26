@@ -140,6 +140,12 @@ derselben Fehler-Isolierung. Ein Sonderweg an dieser Stelle wäre der erste
 Riss — die eingebauten Ebenen wären dann stillschweigend bessere Bürger als
 die Integration von irgendjemand anderem. Ein Test hält das fest.
 
+Seit die Standard-Ebenen dazugekommen sind, gilt das auch ohne jedes
+Zutun: Licht, Klima, Türen & Bewegung, Medien sind nach der Installation
+da. Und weil Home Assistant in `via_device` selbst führt, worüber ein Gerät
+erreicht wird, zeichnet die Licht-Ebene die Bridges und Controller gleich
+mit — echte Topologie, ohne eine Integration beim Namen zu nennen.
+
 Dazu `floorplan_hub/entities/facets`: welche Arten, Label und Geräteklassen
 es in diesem Haus wirklich gibt. Ohne das müsste der Editor raten — und
 Raten endet in einer fest verdrahteten Liste von Integrationsnamen.

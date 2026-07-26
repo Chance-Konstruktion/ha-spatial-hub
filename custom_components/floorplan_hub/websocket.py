@@ -55,6 +55,7 @@ _CUSTOM_LAYER_SCHEMA = vol.Schema(
         vol.Optional("device_classes"): _NAMES,
         vol.Optional("entities"): _NAMES,
         vol.Optional("exclude"): _NAMES,
+        vol.Optional("topology"): bool,
         vol.Optional("z_index"): vol.Coerce(int),
     }
 )

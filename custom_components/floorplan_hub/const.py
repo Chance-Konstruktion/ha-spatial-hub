@@ -79,6 +79,13 @@ STATE_ONLINE: Final = "online"
 STATE_OFFLINE: Final = "offline"
 STATE_UNKNOWN: Final = "unknown"
 
+# `on` and `off` are as universal in Home Assistant as online/offline, and
+# they mean something different: a lamp that is off is not broken. Without
+# them in the vocabulary every light on the plan draws in the grey meant
+# for "no idea", which is the wrong thing to tell somebody about a lamp.
+STATE_ON: Final = "on"
+STATE_OFF: Final = "off"
+
 # Edge quality tiers -- same vocabulary across every provider so a renderer
 # can colour edges without knowing who produced them.
 QUALITY_GOOD: Final = "good"

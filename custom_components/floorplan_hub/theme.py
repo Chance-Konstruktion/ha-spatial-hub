@@ -23,7 +23,9 @@ from .const import (
     QUALITY_GOOD,
     QUALITY_POOR,
     QUALITY_UNKNOWN,
+    STATE_OFF,
     STATE_OFFLINE,
+    STATE_ON,
     STATE_ONLINE,
     STATE_UNKNOWN,
 )
@@ -41,6 +43,8 @@ _AUTO: dict[str, Any] = {
         STATE_ONLINE: _INHERIT,
         STATE_OFFLINE: _INHERIT,
         STATE_UNKNOWN: _INHERIT,
+        STATE_ON: _INHERIT,
+        STATE_OFF: _INHERIT,
     },
     "quality_colors": {
         QUALITY_GOOD: _INHERIT,
@@ -74,7 +78,8 @@ PRESETS: dict[str, dict[str, Any]] = {
     "classic": _preset(
         accent="#03a9f4",
         state_colors={STATE_ONLINE: "#43a047", STATE_OFFLINE: "#e53935",
-                      STATE_UNKNOWN: "#9e9e9e"},
+                      STATE_UNKNOWN: "#9e9e9e",
+                      STATE_ON: "#fbc02d", STATE_OFF: "#78909c"},
         quality_colors={QUALITY_GOOD: "#43a047", QUALITY_FAIR: "#fb8c00",
                         QUALITY_POOR: "#e53935", QUALITY_UNKNOWN: "#9e9e9e"},
     ),
@@ -82,7 +87,8 @@ PRESETS: dict[str, dict[str, Any]] = {
     "blueprint": _preset(
         accent="#1e88e5",
         state_colors={STATE_ONLINE: "#1e88e5", STATE_OFFLINE: "#546e7a",
-                      STATE_UNKNOWN: "#90a4ae"},
+                      STATE_UNKNOWN: "#90a4ae",
+                      STATE_ON: "#42a5f5", STATE_OFF: "#607d8b"},
         quality_colors={QUALITY_GOOD: "#1e88e5", QUALITY_FAIR: "#5c9ce0",
                         QUALITY_POOR: "#b0bec5", QUALITY_UNKNOWN: "#cfd8dc"},
         node_shape="square",
@@ -94,7 +100,8 @@ PRESETS: dict[str, dict[str, Any]] = {
     "neon": _preset(
         accent="#00e5ff",
         state_colors={STATE_ONLINE: "#00e676", STATE_OFFLINE: "#ff1744",
-                      STATE_UNKNOWN: "#7c4dff"},
+                      STATE_UNKNOWN: "#7c4dff",
+                      STATE_ON: "#ffea00", STATE_OFF: "#455a64"},
         quality_colors={QUALITY_GOOD: "#00e676", QUALITY_FAIR: "#ffea00",
                         QUALITY_POOR: "#ff1744", QUALITY_UNKNOWN: "#7c4dff"},
         node_shape="rounded",
@@ -106,7 +113,8 @@ PRESETS: dict[str, dict[str, Any]] = {
     "paper": _preset(
         accent="#6d4c41",
         state_colors={STATE_ONLINE: "#7cb342", STATE_OFFLINE: "#c62828",
-                      STATE_UNKNOWN: "#bcaaa4"},
+                      STATE_UNKNOWN: "#bcaaa4",
+                      STATE_ON: "#c0a062", STATE_OFF: "#a1887f"},
         quality_colors={QUALITY_GOOD: "#7cb342", QUALITY_FAIR: "#c0a062",
                         QUALITY_POOR: "#c62828", QUALITY_UNKNOWN: "#d7ccc8"},
         node_shape="rounded",

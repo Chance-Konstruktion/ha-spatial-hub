@@ -285,3 +285,211 @@ async def test_a_custom_layer_is_isolated_like_any_other_provider(house):
 
     assert model["nodes"] == []
     assert len(model["providers"]) == 1, "it fails alone, like anyone else"
+
+
+# ── Home Assistant's own topology ─────────────────────────
+
+
+def _house_with_a_controller(hass):
+    """A controller and two devices reached through it.
+
+    Deliberately not named after any integration: Z-Wave, ESPHome, Zigbee
+    and Hue all write `via_device` the same way, which is exactly why the
+    hub may read it.
+    """
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+
+    from conftest import FakeDevice, FakeEntity
+
+    devices = dr.async_get(hass)
+    devices.devices = {
+        "ctrl": FakeDevice("ctrl", area_id="flur", name="Controller",
+                           manufacturer="Beispiel", model="X1"),
+        "lamp": FakeDevice("lamp", area_id="wohnzimmer", via_device_id="ctrl"),
+        "plug": FakeDevice("plug", area_id="kueche", via_device_id="ctrl"),
+        "solo": FakeDevice("solo", area_id="bad"),
+    }
+    entities = er.async_get(hass)
+    for entity_id, device_id in (
+        ("light.lamp", "lamp"), ("switch.plug", "plug"), ("light.solo", "solo")
+    ):
+        entry = FakeEntity(entity_id)
+        entry.device_id = device_id
+        entities.entities[entity_id] = entry
+    return ["light.lamp", "switch.plug", "light.solo"]
+
+
+def test_the_via_device_graph_becomes_edges(hass):
+    from custom_components.floorplan_hub.generic import VIA_PREFIX, topology
+
+    result = topology(hass, _house_with_a_controller(hass))
+
+    assert [e["source"] for e in result["edges"]] == ["light.lamp", "switch.plug"]
+    assert {e["target"] for e in result["edges"]} == {f"{VIA_PREFIX}ctrl"}
+    assert [n["id"] for n in result["nodes"]] == [f"{VIA_PREFIX}ctrl"], (
+        "the controller is pulled in once, not once per child"
+    )
+
+
+def test_a_device_with_no_parent_draws_no_edge(hass):
+    from custom_components.floorplan_hub.generic import topology
+
+    result = topology(hass, _house_with_a_controller(hass))
+
+    assert all(e["source"] != "light.solo" for e in result["edges"])
+
+
+def test_the_controller_claims_no_state_it_cannot_know(hass):
+    """It often has no entity at all. Green would be a guess drawn in colour."""
+    from custom_components.floorplan_hub.generic import topology
+
+    controller = topology(hass, _house_with_a_controller(hass))["nodes"][0]
+
+    assert "state" not in controller
+    assert controller["area_id"] == "flur", "but where it sits is known"
+    assert controller["label"] == "Controller"
+
+
+def test_the_relation_is_stated_not_measured(hass):
+    """Home Assistant says the link exists, never how good it is."""
+    from custom_components.floorplan_hub.generic import topology
+
+    result = topology(hass, _house_with_a_controller(hass))
+
+    assert {e["quality"] for e in result["edges"]} == {"unknown"}
+
+
+def test_topology_is_off_unless_the_layer_asks(hass):
+    from custom_components.floorplan_hub.generic import registration
+
+    _house_with_a_controller(hass)
+    plain = registration(hass, {"id": "l", "name": "L", "domains": ["light"]})
+
+    assert plain["data"]() == {"nodes": ["light.lamp", "light.solo"]}
+    assert plain["capabilities"]["edges"] is False
+
+
+def test_a_layer_that_asks_for_topology_gets_both(hass):
+    from custom_components.floorplan_hub.generic import VIA_PREFIX, registration
+
+    _house_with_a_controller(hass)
+    layer = registration(
+        hass, {"id": "l", "name": "L", "domains": ["light"], "topology": True}
+    )
+    payload = layer["data"]()
+
+    assert [n if isinstance(n, str) else n["id"] for n in payload["nodes"]] == [
+        "light.lamp", "light.solo", f"{VIA_PREFIX}ctrl"
+    ]
+    assert len(payload["edges"]) == 1
+    assert layer["capabilities"]["edges"] is True
+
+
+def test_topology_takes_no_shortcut_into_the_hub_either(hass):
+    """Same public contract, same validation, no exceptions."""
+    from custom_components.floorplan_hub.generic import registration
+    from custom_components.floorplan_hub.registry import Provider
+
+    _house_with_a_controller(hass)
+    provider = Provider.from_registration(
+        registration(hass, {"id": "l", "name": "L", "domains": ["light"],
+                            "topology": True})
+    )
+
+    assert provider.warnings == []
+
+
+def test_no_integration_is_named_anywhere_in_the_adapter():
+    """The whole reason via_device is allowed and a Z-Wave API call is not."""
+    from pathlib import Path
+
+    source = Path(
+        "custom_components/floorplan_hub/generic.py"
+    ).read_text().lower()
+    code = "\n".join(
+        line for line in source.splitlines()
+        if not line.strip().startswith("#")
+    )
+    for integration in ("zwave", "z-wave", "esphome", "zigbee", "hue", "matter"):
+        assert integration not in code, (
+            f"{integration!r} is named in the generic adapter -- then it is "
+            "not generic, it is a list of the integrations somebody thought of"
+        )
+
+
+# ── What a fresh installation shows ───────────────────────
+
+
+def test_a_fresh_install_already_has_layers(hass):
+    from custom_components.floorplan_hub.generic import DEFAULT_LAYERS, effective_layers
+    from custom_components.floorplan_hub.storage import LayoutStore
+
+    layers, are_default = effective_layers(LayoutStore(hass))
+
+    assert [layer["id"] for layer in layers] == [d["id"] for d in DEFAULT_LAYERS]
+    assert are_default is True, "an editor must be able to say whose these are"
+
+
+def test_deleting_every_layer_is_respected(hass):
+    """Configured-to-nothing is not the same answer as never configured.
+
+    Bringing the defaults back on the next restart would be the hub
+    arguing with a user who meant it.
+    """
+    from custom_components.floorplan_hub.generic import effective_layers
+    from custom_components.floorplan_hub.storage import LayoutStore
+
+    store = LayoutStore(hass)
+    store.update("settings", "view", {"custom_layers": []})
+
+    layers, are_default = effective_layers(store)
+
+    assert layers == []
+    assert are_default is False
+
+
+def test_the_users_own_layers_replace_the_defaults_entirely(hass):
+    from custom_components.floorplan_hub.generic import effective_layers
+    from custom_components.floorplan_hub.storage import LayoutStore
+
+    store = LayoutStore(hass)
+    store.update(
+        "settings", "view", {"custom_layers": [{"id": "mine", "name": "Mine"}]}
+    )
+
+    layers, are_default = effective_layers(store)
+
+    assert [layer["id"] for layer in layers] == ["mine"]
+    assert are_default is False
+
+
+def test_the_defaults_name_no_integration():
+    """They are rules. A Z-Wave house and an ESPHome house get the same four."""
+    import json
+
+    from custom_components.floorplan_hub.generic import DEFAULT_LAYERS
+
+    text = json.dumps(DEFAULT_LAYERS).lower()
+    for integration in ("zwave", "esphome", "zigbee", "hue", "matter", "shelly"):
+        assert integration not in text
+
+
+def test_the_defaults_are_bounded(hass):
+    """"All sensors" in a real house is four hundred dots and no floor plan."""
+    from custom_components.floorplan_hub.generic import DEFAULT_LAYERS
+
+    sensors = next(layer for layer in DEFAULT_LAYERS if layer["id"] == "zugang")
+
+    assert sensors.get("device_classes"), (
+        "a layer over binary_sensor without a device_class filter is every "
+        "battery and connectivity sensor in the house"
+    )
+
+
+def test_the_defaults_register_like_anybody_else(hass):
+    from custom_components.floorplan_hub.generic import DEFAULT_LAYERS, registration
+    from custom_components.floorplan_hub.registry import Provider
+
+    for layer in DEFAULT_LAYERS:
+        provider = Provider.from_registration(registration(hass, layer))
+        assert provider.warnings == [], f"{layer['id']}: {provider.warnings}"
