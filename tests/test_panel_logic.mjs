@@ -11,6 +11,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1108,6 +1109,38 @@ test("fit-to-screen is always the way back", () => {
   view._view = { zoom: 4, x: -800, y: 300 };
   view._fitToScreen();
   assert.deepEqual(view._view, { zoom: 1, x: 0, y: 0 });
+});
+
+test("the camera exposes its zoom so nodes can keep their screen size", () => {
+  let canvasStyle = "";
+  const view = panel();
+  view._root = {
+    querySelector(selector) {
+      if (selector !== ".canvas") return null;
+      return {
+        style: {
+          set transform(value) {
+            canvasStyle = value;
+          },
+          setProperty(name, value) {
+            canvasStyle += `;${name}:${value}`;
+          },
+        },
+      };
+    },
+  };
+  view._zoomBy(2, { x: 100, y: 100 });
+  assert.match(canvasStyle, /--camera-zoom:2/);
+});
+
+test("node markup counter-scales with the camera", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "floorplan_hub", "www",
+         "floorplan-hub-panel.js"),
+    "utf8",
+  );
+  assert.match(source, /scale\(calc\(var\(--node-scale,1\) \/ var\(--camera-zoom,1\)\)\)/);
+  assert.match(source, /scale:calc\(1 \/ var\(--camera-zoom, 1\)\)/);
 });
 
 // ── Search ─────────────────────────────────────────────────
