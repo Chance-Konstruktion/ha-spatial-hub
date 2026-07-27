@@ -544,6 +544,7 @@ class FloorplanHubPanel extends HTMLElement {
     if (!canvas) return;
     const { zoom, x, y } = this._view;
     canvas.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
+    canvas.style.setProperty("--camera-zoom", zoom);
     const readout = this._root.querySelector("[data-zoom-value]");
     if (readout) readout.textContent = `${Math.round(zoom * 100)} %`;
   }
@@ -2715,7 +2716,7 @@ main { flex:1; min-width:0; }
 
 /* The camera. Transform only, so panning never rebuilds the plan. */
 .viewport { overflow:hidden; touch-action:none; border-radius:12px; }
-.canvas { transform-origin:0 0; will-change:transform; }
+.canvas { transform-origin:0 0; will-change:transform; width:min(100%, 1280px); }
 
 .stack { background:var(--fp-surface, var(--card-background-color,#fff));
          border-radius:12px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12));
@@ -2729,7 +2730,8 @@ main { flex:1; min-width:0; }
 .stack-edge { stroke-linecap:round; }
 /* A connection between two storeys is the whole reason this view exists. */
 .stack-edge.across { opacity:.95; }
-.stack-node { cursor:pointer; }
+.stack-node { cursor:pointer; transform-box:fill-box; transform-origin:center;
+              scale:calc(1 / var(--camera-zoom, 1)); }
 .stack-node circle { stroke:var(--card-background-color,#fff); stroke-width:2; }
 .stack-node.on circle { stroke:var(--fp-accent, var(--primary-color,#03a9f4)); stroke-width:4; }
 .stack-node.floorless circle { stroke-dasharray:3 2; }
@@ -2770,7 +2772,8 @@ main { flex:1; min-width:0; }
 .area-name { position:absolute; top:6px; left:8px; font-size:12px;
              color:var(--secondary-text-color,#727272); display:flex; align-items:center; gap:4px; }
 
-.node { position:absolute; transform:translate(-50%,-50%) scale(var(--node-scale,1));
+.node { position:absolute;
+        transform:translate(-50%,-50%) scale(calc(var(--node-scale,1) / var(--camera-zoom,1)));
         border:0; background:transparent; cursor:pointer; padding:0;
         display:flex; flex-direction:column; align-items:center; gap:2px; }
 .node .dot { width:36px; height:36px; border-radius:50%; display:flex;
