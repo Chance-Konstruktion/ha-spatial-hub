@@ -1373,3 +1373,73 @@ test("no tab strip yet is not an error", () => {
   view._root = { querySelector: () => null };
   view._revealCurrentTab();
 });
+
+// ── Layer opacity ──────────────────────────────────────────
+
+test("turning a layer down actually fades what it drew", () => {
+  // The slider wrote its value into the layout and the value came back
+  // in the model, and then nothing read it -- so it did nothing at all.
+  const data = model();
+  data.layers[0].opacity = 0.3;
+  const view = panel(data);
+
+  assert.equal(view._providerOpacity("a:one"), 0.3);
+  assert.match(view._nodeHtml(view._visibleNodes[0]), /--layer-opacity:0\.3/);
+  assert.match(view._edgeHtml(view._visibleEdges[0]), /--layer-opacity:0\.3/);
+});
+
+test("a layer nobody touched stays solid", () => {
+  const view = panel();
+  assert.equal(view._providerOpacity("a:one"), 1);
+});
+
+test("a provider is as solid as its clearest visible layer", () => {
+  // Same shape as hiding: a provider disappears when *every* layer is
+  // hidden, so it fades only when every layer is turned down.
+  const data = model();
+  data.layers[0].opacity = 0.2;
+  data.layers.push({ id: "a_second", name: "A2", z_index: 20, opacity: 0.9,
+                     visible: true, provider_id: "a" });
+  const view = panel(data);
+
+  assert.equal(view._providerOpacity("a:one"), 0.9);
+});
+
+test("a hidden layer does not drag its provider's opacity down", () => {
+  const data = model();
+  data.layers[0].opacity = 0.9;
+  data.layers.push({ id: "a_second", name: "A2", z_index: 20, opacity: 0.1,
+                     visible: false, provider_id: "a" });
+  const view = panel(data);
+
+  assert.equal(view._providerOpacity("a:one"), 0.9,
+    "an invisible layer has no say in how solid the visible ones are");
+});
+
+test("an item whose provider has no layers is drawn normally", () => {
+  const view = panel(model({ layers: [] }));
+  assert.equal(view._providerOpacity("a:one"), 1);
+  assert.equal(view._providerOpacity("nobody:x"), 1);
+});
+
+test("layer opacity and the search dimming multiply", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "floorplan_hub", "www",
+         "floorplan-hub-panel.js"),
+    "utf8",
+  );
+  // Inline opacity would beat a class outright, so a dimmed node in a
+  // faded layer has to come out fainter than either on its own.
+  assert.match(source, /\.node\.dimmed \{ opacity:calc\(var\(--layer-opacity,1\) \* \.25\)/);
+  assert.match(source,
+    /\.stack-node\.dimmed \{ opacity:calc\(var\(--layer-opacity,1\) \* \.25\)/);
+});
+
+test("the stacked view fades with the same rule", () => {
+  const data = model();
+  data.layers[0].opacity = 0.4;
+  const view = panel(data, { floor: null });
+  const html = view._stackHtml();
+
+  assert.match(html, /--layer-opacity:0\.4/);
+});

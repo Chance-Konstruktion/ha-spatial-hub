@@ -361,6 +361,32 @@ class FloorplanHubPanel extends HTMLElement {
     );
   }
 
+  /** How solid a provider's things are drawn, from its layers.
+   *
+   *  The slider next to a layer wrote its value into the layout and the
+   *  value came back in the model, and then nothing read it: turning a
+   *  layer down did precisely nothing on screen. This is the missing half.
+   *
+   *  A node belongs to a provider, not to one layer, so the rule has to
+   *  match the one visibility already uses: hidden when *every* layer is
+   *  hidden, and here, as solid as the clearest layer the provider still
+   *  has. Fading a provider out is then "turn all of its layers down",
+   *  which is the same shape as hiding it.
+   */
+  _providerOpacity(itemId) {
+    const owner = this._providerOf(itemId);
+    const mine = ((this._model && this._model.layers) || []).filter(
+      (layer) => (layer.provider_id || "") === owner &&
+                 layer.visible !== false,
+    );
+    if (!mine.length) return 1;
+    return mine.reduce(
+      (best, layer) =>
+        Math.max(best, typeof layer.opacity === "number" ? layer.opacity : 1),
+      0,
+    );
+  }
+
   /** The theme the hub resolved. Never a preset table of our own -- a
    *  second renderer must be able to agree with this one for free. */
   get _theme() {
@@ -850,6 +876,7 @@ class FloorplanHubPanel extends HTMLElement {
         const across = planeOf(this._node(edge.source)) !==
           planeOf(this._node(edge.target));
         return `<line class="stack-edge ${across ? "across" : ""}"
+          style="--layer-opacity:${this._providerOpacity(edge.id)}"
           x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"
           stroke="${this._qualityColour(edge.quality)}"
           stroke-width="${across ? 5 : 3}"
@@ -874,6 +901,7 @@ class FloorplanHubPanel extends HTMLElement {
                    ${matches && !dimmed ? "found" : ""}
                    ${node.floor_id ? "" : "floorless"}"
                    data-node="${escapeHtml(node.id)}"
+                   style="--layer-opacity:${this._providerOpacity(node.id)}"
                    transform="translate(${at.x},${at.y})">
           <circle r="14" fill="${this._nodeColour(node)}"/>
           ${this._stackIconHtml(node)}
@@ -1081,6 +1109,7 @@ class FloorplanHubPanel extends HTMLElement {
       .join(" ");
     const shared = `class="${classes}" data-edge="${escapeHtml(edge.id)}"
         stroke="${escapeHtml(colour)}"
+        style="--layer-opacity:${this._providerOpacity(edge.id)}"
         stroke-width="${edge.width || 2}"
         vector-effect="non-scaling-stroke"
         ${edge.dashed ? 'stroke-dasharray="6 5"' : ""}
@@ -1162,6 +1191,7 @@ class FloorplanHubPanel extends HTMLElement {
         style="left:${inFrame(node.position.x, frame)}%;
                top:${inFrame(node.position.y, frame)}%;
                --node-color:${escapeHtml(colour)}; --node-scale:${scale};
+               --layer-opacity:${this._providerOpacity(node.id)};
                ${node.rotation ? `--node-rotation:${node.rotation}deg;` : ""}">
         <span class="dot">${icon}</span>
         <span class="label">${escapeHtml(node.label)}</span>
@@ -2829,10 +2859,13 @@ main { flex:1; min-width:0; }
 .stack .room { fill:rgba(128,128,128,.10);
                stroke:var(--divider-color,rgba(128,128,128,.35)); stroke-width:1.5; }
 .stack .room-label { font-size:17px; fill:currentColor; opacity:.5; }
-.stack-edge { stroke-linecap:round; }
+.stack-edge { stroke-linecap:round; opacity:var(--layer-opacity,1); }
 /* A connection between two storeys is the whole reason this view exists. */
-.stack-edge.across { opacity:.95; }
+.stack-edge.across { opacity:calc(var(--layer-opacity,1) * .95); }
+/* Ebenen-Deckkraft und die Abblendung der Suche multiplizieren sich,
+   statt sich gegenseitig zu überschreiben. */
 .stack-node { cursor:pointer; transform-box:fill-box; transform-origin:center;
+              opacity:var(--layer-opacity,1);
               scale:calc(1 / var(--camera-zoom, 1)); }
 .stack-node circle { stroke:var(--card-background-color,#fff); stroke-width:2; }
 .stack-node.on circle { stroke:var(--fp-accent, var(--primary-color,#03a9f4)); stroke-width:4; }
@@ -2853,7 +2886,7 @@ main { flex:1; min-width:0; }
          stroke-width:2; stroke-dasharray:12 8; }
 .plane.virtual .storey { stroke-dasharray:14 10; opacity:.7; }
 /* Die Suche blendet nicht aus, sie stellt zurück: der Rest bleibt sichtbar. */
-.stack-node.dimmed { opacity:.25; }
+.stack-node.dimmed { opacity:calc(var(--layer-opacity,1) * .25); }
 .stack-node.found circle { stroke:var(--fp-accent, var(--primary-color,#03a9f4));
                            stroke-width:4; }
 
@@ -2863,8 +2896,9 @@ main { flex:1; min-width:0; }
          box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); overflow:hidden; }
 .stage.placing { cursor:crosshair; outline:2px dashed var(--primary-color,#03a9f4); }
 .edges { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
-.edge { pointer-events:stroke; cursor:pointer; opacity:.85; }
-.edge.on { opacity:1; stroke-width:5; }
+.edge { pointer-events:stroke; cursor:pointer;
+        opacity:calc(var(--layer-opacity,1) * .85); }
+.edge.on { opacity:var(--layer-opacity,1); stroke-width:5; }
 .edge.animated { stroke-dasharray:8 6; animation:flow 1.2s linear infinite; }
 @keyframes flow { to { stroke-dashoffset:-28; } }
 
@@ -2874,7 +2908,7 @@ main { flex:1; min-width:0; }
 .area-name { position:absolute; top:6px; left:8px; font-size:12px;
              color:var(--secondary-text-color,#727272); display:flex; align-items:center; gap:4px; }
 
-.node { position:absolute;
+.node { position:absolute; opacity:var(--layer-opacity,1);
         transform:translate(-50%,-50%) scale(calc(var(--node-scale,1) / var(--camera-zoom,1)));
         border:0; background:transparent; cursor:pointer; padding:0;
         display:flex; flex-direction:column; align-items:center; gap:2px; }
@@ -2953,7 +2987,7 @@ select { font:inherit; padding:6px; border-radius:8px;
                 background:var(--fp-outdoor, rgba(76,175,80,.10)); }
 .area.virtual { border-style:dotted; }
 .stage.with-apron { outline:none; }
-.node.dimmed { opacity:.25; }
+.node.dimmed { opacity:calc(var(--layer-opacity,1) * .25); }
 .node.found .dot { box-shadow:0 0 0 4px var(--fp-accent, var(--primary-color,#03a9f4)); }
 .area-hide { position:absolute; top:2px; right:2px; border:0; background:transparent;
              color:var(--secondary-text-color,#727272); cursor:pointer; padding:2px;
