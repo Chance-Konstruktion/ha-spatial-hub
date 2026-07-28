@@ -23,10 +23,26 @@ ein Edit-Modus für alles, was die Automatik falsch geraten hat, Themes — und
 eigene Ebenen für jede Integration, die nie einen Adapter schreiben wird, und
 ein SDK für die, die einen schreiben wollen.
 
-[ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) und
-[ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p) sind
-angebunden — die zweite ohne `DataUpdateCoordinator`, was zwei Löcher im SDK
-ans Licht gebracht hat.
+<details>
+<summary><b>Angebundene Integrationen</b> — jede ein eigenes Repository, keine davon Pflicht</summary>
+
+<br>
+
+Der Hub zeichnet dein Haus aus Home Assistants eigenen Bereichen und Etagen,
+und für Integrationen ohne eigenen Adapter bringt er generische Ebenen mit.
+Wer mehr will, installiert genau die, die er braucht — **nicht alle**.
+
+| Integration | Was sie auf den Grundriss bringt |
+|---|---|
+| **[ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline)** | Powerline-Adapter mit ihrer echten Topologie, Linkraten und eigenen Icons |
+| **[ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p)** | ESPEasy-P2P-Mesh: welche Unit sich zuletzt gemeldet hat, bevor sie ausfällt |
+| **[ha-spatial-zwave](https://github.com/Chance-Konstruktion/ha-spatial-zwave)** | Z-Wave-Mesh: Controller, jeder Node in seinem Raum, Kanten nach Signalstärke |
+| **ESPHome** | über die generische Ebene — kein Adapter nötig, siehe [docs/PROVIDERS.md](docs/PROVIDERS.md) |
+
+`ha-espeasy-p2p` kommt ohne `DataUpdateCoordinator` aus, was zwei Löcher im
+SDK ans Licht gebracht hat — genau wofür diese Adapter da sind.
+
+</details>
 
 Drei Dokumente, drei Fragen:
 

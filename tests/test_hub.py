@@ -749,3 +749,125 @@ async def test_a_stated_building_line_beats_the_guess(hass):
     floor = next(f for f in model["floors"] if f["id"] == "eg")
 
     assert floor["outline"] == stated
+
+
+# ── A "floor" that is not a storey ────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_floor_called_outside_dissolves_completely(hass):
+    """Home Assistant has floors and nothing else, so that is where the
+    garden ends up. Asking each area on its own got "Vorgarten" right and
+    "Autos" wrong, and left the garden standing as half a storey."""
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0),
+         FakeFloor("draussen", "Draußen")],
+        [FakeArea("wohnen", "Wohnzimmer", floor_id="eg"),
+         FakeArea("vorgarten", "Vorgarten", floor_id="draussen"),
+         FakeArea("autos", "Autos", floor_id="draussen")],
+    )
+
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
+    kinds = {area["id"]: area["kind"] for area in model["areas"]}
+
+    assert kinds["autos"] == "outdoor", "the floor decides, not the area's name"
+    assert kinds["vorgarten"] == "outdoor"
+    assert "draussen" not in {floor["id"] for floor in model["floors"]}, (
+        "a storey that was only ever the garden must not survive it"
+    )
+    ground = next(f for f in model["floors"] if f["id"] == "eg")
+    assert ground["has_outdoor"], "the garden is the ring around the house"
+
+
+@pytest.mark.asyncio
+async def test_a_floor_named_after_the_network_becomes_a_cloud(hass):
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0),
+         FakeFloor("net", "Server-Network")],
+        [FakeArea("wohnen", "Wohnzimmer", floor_id="eg"),
+         FakeArea("vps", "vps", floor_id="net"),
+         FakeArea("lan", "LAN", floor_id="net")],
+    )
+
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
+    kinds = {area["id"]: area["kind"] for area in model["areas"]}
+
+    assert kinds["vps"] == "virtual" and kinds["lan"] == "virtual"
+    assert "net" not in {floor["id"] for floor in model["floors"]}
+    # Each stays its own area -- one cloud per thing, not one box holding
+    # every server the house has.
+    assert len([a for a in model["areas"] if a["kind"] == "virtual"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_storey_is_left_alone(hass):
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0)],
+        [FakeArea("wohnen", "Wohnzimmer", floor_id="eg")],
+    )
+
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
+
+    assert next(a for a in model["areas"] if a["id"] == "wohnen")["kind"] == "indoor"
+    assert "eg" in {floor["id"] for floor in model["floors"]}
+
+
+@pytest.mark.asyncio
+async def test_the_user_can_say_a_floor_is_an_ordinary_storey_after_all(hass):
+    """A real cellar called "Netz" exists somewhere. The guess is a guess."""
+    store = LayoutStore(hass)
+    store.update("floors", "net", {"kind": "indoor"})
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0), FakeFloor("net", "Netz")],
+        [FakeArea("wohnen", "Wohnzimmer", floor_id="eg"),
+         FakeArea("rack", "Rack", floor_id="net")],
+    )
+
+    model = await SpatialHub(hass, store).async_model()
+
+    assert next(a for a in model["areas"] if a["id"] == "rack")["kind"] == "indoor"
+    assert "net" in {floor["id"] for floor in model["floors"]}
+
+
+@pytest.mark.asyncio
+async def test_a_stored_area_kind_still_beats_its_floor(hass):
+    """The narrower answer wins: one shed on the garden floor is a room."""
+    store = LayoutStore(hass)
+    store.update("areas", "huette", {"kind": "indoor"})
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0),
+         FakeFloor("draussen", "Draußen")],
+        [FakeArea("wohnen", "Wohnzimmer", floor_id="eg"),
+         FakeArea("huette", "Gartenhütte", floor_id="draussen")],
+    )
+
+    model = await SpatialHub(hass, store).async_model()
+
+    assert next(a for a in model["areas"] if a["id"] == "huette")["kind"] == "indoor"
+
+
+@pytest.mark.asyncio
+async def test_a_floors_kind_goes_over_the_wire_as_a_word(hass):
+    """JSON has no enums; a websocket that cannot serialise the model is a
+    blank panel with a traceback nobody sees."""
+    import json
+
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0), FakeFloor("net", "Cloud")],
+        [FakeArea("wohnen", "Wohnzimmer", floor_id="eg"),
+         FakeArea("vps", "vps", floor_id="net")],
+    )
+
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
+
+    json.dumps(model["floors"])  # must not raise
+    for floor in model["floors"]:
+        assert not isinstance(floor.get("kind"), object) or isinstance(
+            floor.get("kind"), (str, type(None))
+        )

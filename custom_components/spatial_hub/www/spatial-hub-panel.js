@@ -56,6 +56,18 @@ const frameOf = (floor) => {
 
 const inFrame = (value, frame) => ((value - frame.min) / frame.span) * 100;
 
+/** The outline every virtual area is drawn in.
+ *
+ *  Stretched to whatever the area's box is, so a wide VPN and a small
+ *  cloud are the same shape at different sizes rather than two shapes.
+ *  `preserveAspectRatio="none"` is the point: it is a label for "this is
+ *  not a room", not a picture of a cloud that has to stay round.
+ */
+const CLOUD_SVG = `<svg class="cloud" viewBox="0 0 100 60"
+  preserveAspectRatio="none" aria-hidden="true"><path d="M26 52
+  C12 52 5 44 5 35 C5 26 12 19 21 19 C24 9 33 3 43 3 C56 3 66 12 68 24
+  C79 24 88 30 88 39 C88 47 80 52 70 52 Z"/></svg>`;
+
 /** The three area kinds, frozen. Specification § Area Type.
  *
  *  A renderer that compares against a literal is a renderer that quietly
@@ -451,15 +463,35 @@ class SpatialHubPanel extends HTMLElement {
     return model.nodes.filter((node) => {
       if (hidden.has(this._providerOf(node.id))) return false;
       if (!node.position) return false;
-      // A node with no floor belongs to no storey and would otherwise be
-      // invisible everywhere. Better shown on each with a marker than lost.
-      if (!node.floor_id) return true;
+      // A node with no floor has no place on the plan -- it gets the tray
+      // underneath instead. Dropping it somewhere in the rooms was the
+      // worst of both: it looked assigned, and it sat on top of a grid
+      // measured without it.
+      if (!node.floor_id) return false;
       // In the house view, a storey the user kept out of the sandwich
       // takes its nodes with it -- otherwise they float over the storey
       // below and read as belonging to it.
       if (!floor) return stackable.has(node.floor_id);
       return node.floor_id === floor.id;
     });
+  }
+
+  /** Everything Home Assistant has not put on a storey yet.
+   *
+   *  These are not drawn in the plan. They belong to no room, so any
+   *  position the hub invents for them is a lie the user then has to
+   *  un-believe -- and the one time it matters is precisely when they are
+   *  looking for what is still unsorted. They go in a strip under the
+   *  house, on every floor, because the fix is one click away in Home
+   *  Assistant and nowhere in here.
+   */
+  get _floorlessNodes() {
+    const model = this._model;
+    if (!model) return [];
+    const hidden = this._hiddenProviders;
+    return model.nodes.filter(
+      (node) => !node.floor_id && !hidden.has(this._providerOf(node.id)),
+    );
   }
 
   get _visibleEdges() {
@@ -593,8 +625,33 @@ class SpatialHubPanel extends HTMLElement {
     const { zoom, x, y } = this._view;
     canvas.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
     canvas.style.setProperty("--camera-zoom", zoom);
+    this._holdStackIconSize(canvas);
     const readout = this._root.querySelector("[data-zoom-value]");
     if (readout) readout.textContent = `${Math.round(zoom * 100)} %`;
+  }
+
+  /** Keep the stacked view's markers one size, without moving them.
+   *
+   *  Written into the SVG `transform` attribute rather than left to the
+   *  CSS `scale` property. Order is the whole point: `translate` then
+   *  `scale` scales the marker *about its own anchor*, so it stays on the
+   *  spot it marks. The CSS property composes the other way round and
+   *  needs `transform-box`/`transform-origin` to say where the middle is
+   *  -- which browsers answer differently for a group whose bounding box
+   *  includes the label underneath. That is why the icons crept further
+   *  from their rooms the deeper you zoomed, and why it looked right in
+   *  Firefox and wrong in Chromium. An attribute has one meaning.
+   */
+  _holdStackIconSize(canvas) {
+    // No real DOM (first paint, or a headless test): nothing drawn yet.
+    if (!canvas || typeof canvas.querySelectorAll !== "function") return;
+    const counter = 1 / this._view.zoom;
+    for (const marker of canvas.querySelectorAll(".stack-node")) {
+      const x = marker.getAttribute("data-at-x");
+      const y = marker.getAttribute("data-at-y");
+      if (x === null || y === null) continue;
+      marker.setAttribute("transform", `translate(${x},${y}) scale(${counter})`);
+    }
   }
 
   /** Keep the plan against the window it is drawn in.
@@ -653,9 +710,27 @@ class SpatialHubPanel extends HTMLElement {
     this._applyCamera();
   }
 
-  /** Back to the whole plan, centred. The way out of any lost zoom. */
+  /** Back to the whole plan, centred. The way out of any lost zoom.
+   *
+   *  "Show everything" has to mean it. The plan is square and a screen is
+   *  not, so on a wide monitor 100 % is not the whole house -- the bottom
+   *  storey sits below the fold and the button that promises to fix that
+   *  did nothing. Zoom out until it fits, never in: filling a 16:9 window
+   *  with a magnified plan is not what the button says either.
+   */
   _fitToScreen() {
     this._view = { zoom: 1, x: 0, y: 0 };
+    const canvas = this._root && this._root.querySelector(".canvas");
+    const viewport = this._root && this._root.querySelector(".viewport");
+    if (canvas && viewport && canvas.offsetWidth && canvas.offsetHeight) {
+      const fits = Math.min(
+        viewport.clientWidth / canvas.offsetWidth,
+        viewport.clientHeight / canvas.offsetHeight,
+      );
+      if (fits > 0 && fits < 1) {
+        this._view.zoom = Math.max(ZOOM.min, fits);
+      }
+    }
     this._applyCamera();
   }
 
@@ -915,7 +990,10 @@ class SpatialHubPanel extends HTMLElement {
                    ${node.floor_id ? "" : "floorless"}"
                    data-node="${escapeHtml(node.id)}"
                    style="--layer-opacity:${this._providerOpacity(node.id)}"
-                   transform="translate(${at.x},${at.y})">
+                   data-at-x="${at.x}" data-at-y="${at.y}"
+                   transform="translate(${at.x},${at.y}) scale(${
+                     1 / this._view.zoom
+                   })">
           <circle r="14" fill="${this._nodeColour(node)}"/>
           ${this._stackIconHtml(node)}
           <text class="stack-label" y="30">${escapeHtml(node.label)}</text>
@@ -925,6 +1003,7 @@ class SpatialHubPanel extends HTMLElement {
 
     return `${this._viewportHtml(`<div class="stack">
       <svg viewBox="0 0 1000 1000">
+        ${this._shellHtml(floors)}
         ${plans.join("")}
         ${edges}
         ${nodes}
@@ -935,6 +1014,70 @@ class SpatialHubPanel extends HTMLElement {
     Anordnen und für Details eine einzelne Etage wählen.</p>`;
   }
 
+  /** A hinted building around the storeys: walls you can see through.
+   *
+   *  Without it the stacked view is a pile of loose sheets. The rooms are
+   *  all there and it still does not read as a house, because nothing
+   *  says the storeys are one building rather than four drawings that
+   *  happen to be above each other.
+   *
+   *  Hinted, not drawn: the walls are barely-there fills and the roof is
+   *  a suggestion. The moment they are solid they cover the plan, and the
+   *  plan is the thing the user came for. Purely decorative, so it takes
+   *  no clicks -- and it is skipped when there is only one storey, where
+   *  a body around a single sheet says nothing.
+   */
+  _shellHtml(floors) {
+    const solid = floors.filter((floor) => !floor.virtual && !floor.unassigned);
+    if (solid.length < 2) return "";
+    const top = floors.indexOf(solid[0]);
+    const base = floors.indexOf(solid[solid.length - 1]);
+
+    // The building line is the house, 0..1 -- never the apron. A garden
+    // is not a wall, and hanging the shell off it would put the front
+    // door somewhere in the lawn.
+    const corners = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    const upper = corners.map(([x, y]) => this._project(top, x, y));
+    const lower = corners.map(([x, y]) => this._project(base, x, y));
+    const points = (list) => list.map((p) => `${p.x},${p.y}`).join(" ");
+
+    const walls = corners
+      .map((_corner, index) => {
+        const next = (index + 1) % corners.length;
+        return `<polygon class="shell-wall" points="${points([
+          upper[index], upper[next], lower[next], lower[index],
+        ])}"/>`;
+      })
+      .join("");
+
+    const posts = corners
+      .map(
+        (_corner, index) =>
+          `<line class="shell-post" x1="${upper[index].x}" y1="${upper[index].y}"
+                 x2="${lower[index].x}" y2="${lower[index].y}"/>`,
+      )
+      .join("");
+
+    // A gable over the top storey, ridged along the same axis the plan is
+    // skewed on, so it sits on the house instead of across it.
+    const middle = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    const rise = Math.max(40, (lower[0].y - upper[0].y) * 0.22);
+    const ridgeFrom = middle(upper[0], upper[3]);
+    const ridgeTo = middle(upper[1], upper[2]);
+    const peak = (point) => ({ x: point.x, y: point.y - rise });
+    const roof = `
+      <polygon class="shell-roof" points="${points([
+        upper[0], upper[1], peak(ridgeTo), peak(ridgeFrom),
+      ])}"/>
+      <polygon class="shell-roof" points="${points([
+        upper[3], upper[2], peak(ridgeTo), peak(ridgeFrom),
+      ])}"/>
+      <line class="shell-ridge" x1="${peak(ridgeFrom).x}" y1="${peak(ridgeFrom).y}"
+            x2="${peak(ridgeTo).x}" y2="${peak(ridgeTo).y}"/>`;
+
+    return `<g class="shell" aria-hidden="true">${walls}${posts}${roof}</g>`;
+  }
+
   /** The icon in the stack, in the same shape as on a single floor.
    *
    *  `foreignObject` so this is literally the same `ha-icon` element: the
@@ -943,15 +1086,20 @@ class SpatialHubPanel extends HTMLElement {
    */
   _stackIconHtml(node) {
     const custom = this._customIcon(node);
-    if (custom) {
-      return `<g class="stack-icon" transform="translate(-9,-9) scale(0.75)"
-        >${custom.svg}</g>`;
-    }
-    const icon = node.icon || this._genericIcon(node);
+    // Both kinds go through `foreignObject`, and that is not a detail.
+    // A provider ships its icon as a bare `<svg viewBox="0 0 24 24">`
+    // with no width or height. Dropped straight into this SVG that is a
+    // *nested viewport*, which defaults to 100% × 100% of the drawing:
+    // Firefox honours the CSS width, Chromium did not, so one device came
+    // out as a 1000-unit white shape covering the whole house. In HTML
+    // the same markup is an ordinary sized element, in every browser.
+    const inner = custom
+      ? `<span class="custom-icon">${custom.svg}</span>`
+      : `<ha-icon icon="${escapeHtml(
+          node.icon || this._genericIcon(node),
+        )}"></ha-icon>`;
     return `<foreignObject x="-11" y="-11" width="22" height="22"
-              class="stack-icon">
-        <ha-icon icon="${escapeHtml(icon)}"></ha-icon>
-      </foreignObject>`;
+              class="stack-icon">${inner}</foreignObject>`;
   }
 
   /** The camera lives here: one wrapper, both views, identical behaviour. */
@@ -1038,6 +1186,7 @@ class SpatialHubPanel extends HTMLElement {
     return `
       ${banner}
       ${this._viewportHtml(stage)}
+      ${this._trayHtml()}
       ${
         this._edit && !this._placing
           ? `<p class="hint">Ziehen ordnet an; an den Wänden und Ecken eines
@@ -1052,6 +1201,49 @@ class SpatialHubPanel extends HTMLElement {
             )}“. <button class="link" data-cancel-place="1">Abbrechen</button></p>`
           : ""
       }`;
+  }
+
+  /** The strip under the house: everything still waiting for a room.
+   *
+   *  Outside the plan on purpose. These devices have no place in it yet,
+   *  and the whole job of this strip is to be the list that gets shorter
+   *  -- so it says where the fix is (Home Assistant, not here) and gets
+   *  out of the way the moment it is empty.
+   */
+  _trayHtml() {
+    const waiting = this._floorlessNodes;
+    if (!waiting.length) return "";
+    return `
+      <section class="tray">
+        <p class="tray-head">
+          <ha-icon icon="mdi:tray-arrow-down"></ha-icon>
+          <span>${waiting.length} ohne Etage</span>
+          <span class="muted">— in Home Assistant unter <i>Einstellungen →
+          Bereiche &amp; Zonen</i> einem Raum zuweisen, dann wandern sie von
+          selbst an ihren Platz.</span>
+        </p>
+        <div class="tray-items">
+          ${waiting
+            .map((node) => {
+              const custom = this._customIcon(node);
+              return `
+              <button class="tray-item" data-node="${escapeHtml(node.id)}"
+                      title="${escapeHtml(node.label)}">
+                <span class="dot" style="--node-color:${escapeHtml(
+                  this._nodeColour(node),
+                )}">${
+                  custom
+                    ? `<span class="custom-icon">${custom.svg}</span>`
+                    : `<ha-icon icon="${escapeHtml(
+                        node.icon || this._genericIcon(node),
+                      )}"></ha-icon>`
+                }</span>
+                <span>${escapeHtml(node.label)}</span>
+              </button>`;
+            })
+            .join("")}
+        </div>
+      </section>`;
   }
 
   /** The eight handles that make a room properly editable.
@@ -1131,6 +1323,7 @@ class SpatialHubPanel extends HTMLElement {
               top:${inFrame(area.position.y, frame)}%;
               width:${(size.width / frame.span) * 100}%;
               height:${(size.height / frame.span) * 100}%;">
+          ${kindOf(area) === AREA_KIND.VIRTUAL ? CLOUD_SVG : ""}
           <span class="area-name">
             ${area.icon ? `<ha-icon icon="${escapeHtml(area.icon)}"></ha-icon>` : ""}
             ${escapeHtml(area.name)}
@@ -2868,8 +3061,12 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
    zuletzt gesehen hat, und der Grundriss darunter würde bei jedem
    Etagenwechsel springen. Also eine Zeile, und bei Bedarf seitlich
    scrollbar -- die Leiste wird schmaler, nie höher. */
+/* "flex:1 1 auto" statt "0 1 auto": die Leiste nimmt sich den freien Platz
+   selbst, statt ihn dem Abstandshalter zu überlassen und danach auf zwei
+   Reiter zusammenzuschrumpfen. Bei sieben Etagen auf einem schmalen
+   Fenster lagen die letzten sonst unerreichbar unter dem Suchfeld. */
 .tabs { display:flex; gap:4px; flex-wrap:nowrap; overflow-x:auto;
-        min-width:0; flex:0 1 auto; scrollbar-width:none;
+        min-width:0; flex:1 1 auto; scrollbar-width:none;
         overscroll-behavior-x:contain; }
 .tabs::-webkit-scrollbar { display:none; }
 .tab { display:flex; align-items:center; gap:6px; border:0; border-radius:16px;
@@ -2879,7 +3076,7 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
           gequetschtes "Dachgeschoss" ist kein Reiter mehr. */
        flex:0 0 auto; white-space:nowrap; }
 .tab.on { background:rgba(255,255,255,.85); color:var(--primary-color,#03a9f4); }
-.spacer { flex:1 1 0; min-width:0; }
+.spacer { flex:0 1 0; min-width:0; }
 .icon-btn { border:0; background:transparent; color:inherit; cursor:pointer;
             border-radius:50%; padding:6px; display:flex; }
 .icon-btn.on { background:rgba(255,255,255,.25); }
@@ -2913,13 +3110,33 @@ main { flex:1; min-width:0; }
 .icon-btn[disabled] { opacity:.4; cursor:default; }
 
 /* The camera. Transform only, so panning never rebuilds the plan. */
-.viewport { overflow:hidden; touch-action:none; border-radius:12px; }
-.canvas { transform-origin:0 0; will-change:transform; width:min(100%, 1280px); }
+/* Der Grundriss ist quadratisch, ein Bildschirm ist es nicht. Ohne Deckel
+   ragt das Haus auf einem 16:9-Monitor unten aus dem Fenster und die
+   Ansicht wirkt wie im Hochformat. */
+.viewport { overflow:hidden; touch-action:none; border-radius:12px;
+            max-height:calc(100vh - 200px); }
+/* Kein "will-change:transform": das befördert die Fläche auf eine eigene
+   Ebene, die einmal gerastert und danach nur noch als Bitmap vergrößert
+   wird -- beim Hineinzoomen werden die Icons dadurch unscharf statt neu
+   gezeichnet. Chromium tut das konsequent, Firefox nicht, daher sah es
+   auf dem einen Rechner scharf und auf dem anderen matschig aus. */
+.canvas { transform-origin:0 0; width:min(100%, 1280px); }
 
 .stack { background:var(--fp-surface, var(--card-background-color,#fff));
          border-radius:12px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12));
          padding:8px; }
 .stack svg { display:block; width:100%; height:auto; }
+/* Der angedeutete Gebäudekörper. Durchsichtig ist keine Stilfrage: sobald
+   die Wände decken, verdecken sie den Grundriss, und der ist der Grund,
+   warum jemand hinschaut. Rein dekorativ, daher pointer-events:none. */
+.shell { pointer-events:none; }
+.shell-wall { fill:var(--fp-shell, rgba(128,145,170,.07)); stroke:none; }
+.shell-post { stroke:var(--fp-shell-line, rgba(128,145,170,.45)); stroke-width:2; }
+.shell-roof { fill:var(--fp-shell, rgba(128,145,170,.10));
+              stroke:var(--fp-shell-line, rgba(128,145,170,.45)); stroke-width:2;
+              stroke-linejoin:round; }
+.shell-ridge { stroke:var(--fp-shell-line, rgba(128,145,170,.6)); stroke-width:2.5;
+               stroke-linecap:round; }
 .storey { fill:none; stroke:var(--divider-color,rgba(128,128,128,.45)); stroke-width:2; }
 .storey-name { font-size:26px; fill:currentColor; opacity:.65; text-anchor:end; }
 .stack .room { fill:rgba(128,128,128,.10);
@@ -2930,9 +3147,9 @@ main { flex:1; min-width:0; }
 .stack-edge.across { opacity:calc(var(--layer-opacity,1) * .95); }
 /* Ebenen-Deckkraft und die Abblendung der Suche multiplizieren sich,
    statt sich gegenseitig zu überschreiben. */
-.stack-node { cursor:pointer; transform-box:fill-box; transform-origin:center;
-              opacity:var(--layer-opacity,1);
-              scale:calc(1 / var(--camera-zoom, 1)); }
+/* Die Gegenskalierung sitzt im transform-Attribut, siehe
+   _holdStackIconSize -- hier steht bewusst kein scale. */
+.stack-node { cursor:pointer; opacity:var(--layer-opacity,1); }
 .stack-node circle { stroke:var(--card-background-color,#fff); stroke-width:2; }
 .stack-node.on circle { stroke:var(--fp-accent, var(--primary-color,#03a9f4)); stroke-width:4; }
 .stack-node.floorless circle { stroke-dasharray:3 2; }
@@ -2943,9 +3160,12 @@ main { flex:1; min-width:0; }
 .stack-node.crowded .stack-label { opacity:0; transition:opacity .12s; }
 .stack-node.crowded:hover .stack-label,
 .stack-node.crowded.on .stack-label { opacity:1; }
-.stack-icon { color:#fff; pointer-events:none; }
+.stack-icon { color:#fff; pointer-events:none; overflow:visible; }
 .stack-icon ha-icon { --mdc-icon-size:22px; color:#fff; }
-.stack-icon svg { width:22px; height:22px; fill:#fff; }
+/* Das mitgelieferte Provider-SVG bringt keine Größe mit. Im HTML-Kontext
+   des foreignObject greift diese hier zuverlässig. */
+.stack-icon .custom-icon { display:block; width:22px; height:22px; }
+.stack-icon .custom-icon svg { width:22px; height:22px; display:block; fill:#fff; }
 /* Der Garten ist der Ring ums Erdgeschoss, keine eigene Etage. */
 .apron { fill:var(--fp-outdoor, rgba(76,175,80,.10));
          stroke:var(--fp-outdoor-line, rgba(76,175,80,.45));
@@ -3062,7 +3282,35 @@ select { font:inherit; padding:6px; border-radius:8px;
                display:flex; border-radius:50%; }
 .area.outdoor { border-style:solid; border-color:var(--fp-outdoor-line, rgba(76,175,80,.6));
                 background:var(--fp-outdoor, rgba(76,175,80,.10)); }
-.area.virtual { border-style:dotted; }
+/* Ein virtueller Bereich ist kein Raum, und ein Rechteck mit gepunktetem
+   Rand sagt das niemandem. Jeder so markierte Bereich bekommt seine eigene
+   Wolke: Cloud, VPN und Server sind drei Dinge, nicht ein Kasten mit drei
+   Kästen darin. */
+.area.virtual { border:0; background:transparent; opacity:1; }
+.area.virtual .cloud { position:absolute; inset:0; overflow:visible; }
+.area.virtual .cloud path {
+  fill:var(--fp-virtual, rgba(120,144,180,.16));
+  stroke:var(--fp-virtual-line, rgba(120,144,180,.7));
+  stroke-width:1.5; vector-effect:non-scaling-stroke; stroke-dasharray:7 5; }
+.area.virtual .area-name { top:30%; left:0; right:0; justify-content:center; }
+/* Die Ablage steht bewusst außerhalb des Grundrisses: was hier liegt,
+   hat noch keinen Platz im Haus, und einer im Raster wäre eine Behauptung. */
+.tray { margin:10px 0 0; padding:8px 12px; border-radius:12px;
+        background:var(--card-background-color,#fff);
+        box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
+.tray-head { display:flex; align-items:center; flex-wrap:wrap; gap:6px;
+             margin:0 0 8px; font-size:13px; }
+.tray-items { display:flex; flex-wrap:wrap; gap:6px; }
+.tray-item { display:flex; align-items:center; gap:6px; border:0; font:inherit;
+             color:inherit; cursor:pointer; border-radius:16px; padding:3px 10px 3px 3px;
+             background:var(--secondary-background-color,#fafafa); font-size:13px; }
+.tray-item:hover { background:var(--divider-color,#e0e0e0); }
+.tray-item .dot { width:26px; height:26px; border-radius:50%; display:flex;
+                  align-items:center; justify-content:center; color:#fff;
+                  background:var(--node-color);
+                  outline:2px dashed var(--warning-color,#ff9800); outline-offset:1px; }
+.tray-item .dot ha-icon { --mdc-icon-size:16px; }
+.tray-item .custom-icon svg { width:16px; height:16px; fill:currentColor; }
 .stage.with-apron { outline:none; }
 .node.dimmed { opacity:calc(var(--layer-opacity,1) * .25); }
 .node.found .dot { box-shadow:0 0 0 4px var(--fp-accent, var(--primary-color,#03a9f4)); }

@@ -183,7 +183,7 @@ class SpatialHub:
         # a storey: the user's own settings win over the guessed kind,
         # outdoor areas move onto the ground floor, virtual ones onto a
         # plane of their own, and only then is there something to arrange.
-        self._merge_area_overrides(areas)
+        self._merge_area_overrides(areas, floors)
         floors = self._resolve_area_kinds(floors, areas)
         if self.auto_areas:
             discovery.async_arrange_areas(areas)
@@ -415,7 +415,12 @@ class SpatialHub:
         candidates = [
             floor
             for floor in floors
-            if not floor.get("unassigned") and not floor.get("virtual")
+            if not floor.get("unassigned")
+            and not floor.get("virtual")
+            # A floor that is itself the outdoors cannot be the storey the
+            # outdoors wraps around. Picking it left the garden as its own
+            # ground floor, and therefore still a storey.
+            and floor.get("kind", AreaKind.INDOOR) is AreaKind.INDOOR
         ]
         if not candidates:
             return None
@@ -466,6 +471,10 @@ class SpatialHub:
         is exactly the misalignment this is meant to reveal.
         """
         for floor in floors:
+            # The wire format is the plain word, as it is for areas: JSON
+            # has no enums and the specification names the three by value.
+            if floor.get("kind") is not None:
+                floor["kind"] = AreaKind(floor["kind"]).value
             stated = self.store.get("floors", floor["id"]).get("outline")
             if stated:
                 floor["outline"] = stated
@@ -481,19 +490,48 @@ class SpatialHub:
             )
         return floors
 
-    def _merge_area_overrides(self, areas: list[dict[str, Any]]) -> None:
+    def _merge_area_overrides(
+        self,
+        areas: list[dict[str, Any]],
+        floors: list[dict[str, Any]] | None = None,
+    ) -> None:
         """Fold the user's stored decisions into each area, in place.
 
         Everything downstream -- which storey an area belongs to, where it
         is arranged, whether the sandwich shows it -- depends on the answers
         the user gave, so they have to be in the dict before any of it runs.
+
+        A "floor" that is not a storey passes its kind down to everything
+        standing on it. Three answers in order: what the user stored for
+        *this area*, then what the floor says, then the area's own name.
+        That order is what fixes the half-dissolved storey -- a floor
+        called "Draußen" holding "Vorgarten", "Gartenhütte" and "Autos"
+        used to move the first two outside and keep the floor alive for the
+        third, leaving a garden that was still a storey.
         """
+        # Resolved once and written onto the floor, because two different
+        # questions need the same answer: what kind are the areas on it,
+        # and -- just as important -- may it be the *ground floor*. A
+        # garden that gets chosen as the storey the garden wraps around
+        # keeps itself alive, which is exactly what used to happen.
+        by_floor = {floor["id"]: floor for floor in floors or []}
+        for floor in by_floor.values():
+            kind = discovery.floor_kind(
+                floor.get("name", ""),
+                self.store.get("floors", floor["id"]).get("kind"),
+            )
+            if kind is not None:
+                floor["kind"] = kind
+
         for area in areas:
             override = self.store.get("areas", area["id"])
             # Whatever is stored, whatever a future editor writes, and
             # whatever the guess produced all arrive here as one of three
             # values or as a complaint -- never as an unexamined string.
             guessed = AreaKind.parse(area.get("kind"), AreaKind.INDOOR)
+            floor = by_floor.get(area.get("floor_id"))
+            if floor is not None and floor.get("kind") is not None:
+                guessed = floor["kind"]
             if "kind" in override:
                 stated = AreaKind.parse(override["kind"])
                 if stated is None:

@@ -173,12 +173,32 @@ test("only the selected floor is drawn", () => {
   assert.deepEqual(view._visibleNodes.map((n) => n.id), ["a:up"]);
 });
 
-test("a node with no floor is shown on every floor rather than nowhere", () => {
+test("a node with no floor waits in the tray, not somewhere in the rooms", () => {
+  // Dropped into the plan it was the worst of both: it looked assigned,
+  // and it sat on top of a grid that was measured without it.
   const view = panel(model({ nodes: [node("a:homeless", { floor_id: null })] }));
-  assert.equal(view._visibleNodes.length, 1);
+  assert.deepEqual(view._visibleNodes, [], "never drawn among the rooms");
+  assert.deepEqual(view._floorlessNodes.map((n) => n.id), ["a:homeless"]);
+
   view._floorId = "og";
-  assert.equal(view._visibleNodes.length, 1, "still visible upstairs");
-  assert.match(view._nodeHtml(view._visibleNodes[0]), /floorless/);
+  assert.deepEqual(
+    view._floorlessNodes.map((n) => n.id),
+    ["a:homeless"],
+    "the tray is the same on every storey -- the fix is not per floor",
+  );
+  assert.match(view._trayHtml(), /a:homeless/);
+});
+
+test("the tray disappears once everything has a room", () => {
+  const view = panel(model());
+  assert.deepEqual(view._floorlessNodes, []);
+  assert.equal(view._trayHtml(), "", "an empty strip is furniture, not information");
+});
+
+test("hiding a provider empties its share of the tray too", () => {
+  const data = model({ nodes: [node("a:homeless", { floor_id: null })] });
+  data.layers[0].visible = false;
+  assert.deepEqual(panel(data)._floorlessNodes, []);
 });
 
 test("hiding a layer hides the provider that produced it", () => {
@@ -945,12 +965,14 @@ test("many storeys are squeezed instead of running off the bottom", () => {
   assert.ok(view._project(5, 1, 1).y <= 1000, "the bottom storey is off-canvas");
 });
 
-test("a node on no storey at all is drawn, not silently missing", () => {
+test("a node on no storey at all lands in the tray, not silently missing", () => {
   const data = model({ nodes: [node("a:lost", { floor_id: null })] });
   const view = panel(data, { floor: null });
 
-  assert.match(view._stackHtml(), /floorless/);
-  assert.match(view._stackHtml(), /a:lost/);
+  // Not on a storey it does not belong to -- in the strip underneath,
+  // which is the same answer the single-floor view gives.
+  assert.doesNotMatch(view._stackHtml(), /a:lost/);
+  assert.match(view._trayHtml(), /a:lost/);
 });
 
 test("the storey for roomless areas stays at the bottom of the stack", () => {
@@ -1140,7 +1162,57 @@ test("node markup counter-scales with the camera", () => {
     "utf8",
   );
   assert.match(source, /scale\(calc\(var\(--node-scale,1\) \/ var\(--camera-zoom,1\)\)\)/);
-  assert.match(source, /scale:calc\(1 \/ var\(--camera-zoom, 1\)\)/);
+});
+
+test("the stacked view scales its markers about their own anchor", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  // translate first, then scale: the marker grows around the spot it
+  // marks instead of drifting away from it the deeper the camera goes.
+  assert.match(source, /translate\(\$\{x\},\$\{y\}\) scale\(\$\{counter\}\)/);
+  assert.doesNotMatch(
+    source,
+    /scale:calc\(1 \/ var\(--camera-zoom, 1\)\)/,
+    "the CSS scale property composes the other way round, and browsers " +
+      "disagree about where a group's middle is -- that was the drift",
+  );
+});
+
+test("a provider's own icon is never nested raw into the drawing", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  // A bare <svg> with no width is a nested viewport and defaults to the
+  // whole drawing -- one device covered the entire house.
+  assert.doesNotMatch(source, /<g class="stack-icon"[^>]*>\$\{custom\.svg\}/);
+  assert.match(source, /class="stack-icon">\$\{inner\}<\/foreignObject>/);
+});
+
+test("the canvas is not frozen onto a bitmap layer", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  // will-change:transform rasterises the plan once and then only stretches
+  // that bitmap, which is what made the icons blurry on the way in.
+  assert.doesNotMatch(source, /\.canvas \{[^}]*will-change:transform/);
+});
+
+test("the floor tabs claim the free space themselves", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  // Otherwise the spacer takes it and the last storeys end up unreachable
+  // underneath the search box on a narrow window.
+  assert.match(source, /\.tabs \{[^}]*flex:1 1 auto/);
 });
 
 // ── Search ─────────────────────────────────────────────────
@@ -1542,4 +1614,71 @@ test("a ghost is placed through the same window as the rooms", () => {
 
   const expected = ((0.2 - frame.min) / frame.span) * 100;
   assert.match(html, new RegExp(`left:${expected}%`));
+});
+
+// ── The building around the storeys ────────────────────────
+
+test("the stack gets a body so it reads as one house", () => {
+  const data = model();
+  const view = panel(data, { floor: null });
+  const html = view._stackHtml();
+
+  assert.match(html, /shell-wall/, "see-through walls between the storeys");
+  assert.match(html, /shell-roof/, "and something on top of them");
+  assert.match(html, /shell-post/);
+});
+
+test("one storey gets no body", () => {
+  // A shell around a single sheet says nothing that the sheet did not.
+  const data = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+  });
+  const view = panel(data, { floor: null });
+
+  assert.equal(view._shellHtml(view._stackFloors), "");
+});
+
+test("the body is hung off the house, never off the garden", () => {
+  // The apron reaches outside 0..1. A shell that followed it would put
+  // the front wall somewhere in the lawn.
+  const plain = panel(model(), { floor: null });
+  const withGarden = panel(
+    model({
+      floors: [
+        { id: "eg", name: "Erdgeschoss", level: 0, icon: "", has_outdoor: true },
+        { id: "og", name: "Obergeschoss", level: 1, icon: "" },
+      ],
+    }),
+    { floor: null },
+  );
+
+  const corners = (html) =>
+    (html.match(/class="shell-post"[^/]*/g) || []).length;
+  assert.equal(corners(plain._stackHtml()), 4);
+  assert.equal(corners(withGarden._stackHtml()), 4, "still four walls");
+});
+
+test("the cloud and the homeless storey are not part of the building", () => {
+  const data = model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "" },
+      { id: "_virtual", name: "Virtuell", level: 900, virtual: true },
+    ],
+  });
+  const view = panel(data, { floor: null });
+
+  assert.equal(
+    view._shellHtml(view._stackFloors),
+    "",
+    "one real storey plus a cloud is still one storey",
+  );
+});
+
+test("the body never swallows a click meant for a device", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  assert.match(source, /\.shell \{ pointer-events:none/);
 });

@@ -282,6 +282,45 @@ Der Hub rät die Art aus dem Bereichsnamen (deutsch und englisch,
 umlautunempfindlich). Die Vermutung ist billig, falsch zu sein: Ein Klick im
 Editor korrigiert sie, und die Korrektur wird gespeichert.
 
+### Etagen, die keine sind
+
+Home Assistant kennt **nur Etagen**. Wer einen Garten oder ein Netzdiagramm
+unterbringen will, legt es also dort an, wo Etagen liegen — und es landet als
+Stockwerk zwischen Keller und Erdgeschoss.
+
+Eine Etage DARF deshalb dieselbe Art tragen wie ein Bereich (`kind`). Trägt sie
+eine, gilt sie für **alles auf ihr**:
+
+| Antwort | Quelle | Vorrang |
+|---|---|---|
+| gespeicherte Art **dieses Bereichs** | Editor | 1 (gewinnt immer) |
+| Art der **Etage** | gespeichert, sonst aus dem Etagennamen geraten | 2 |
+| Name des Bereichs | geraten | 3 |
+
+Diese Reihenfolge ist normativ, und der mittlere Schritt ist der Grund für
+diesen Abschnitt: Eine Etage „Draußen“ mit den Bereichen `Vorgarten`,
+`Gartenhütte` und `Autos` wird sonst nur zu zwei Dritteln aufgelöst — die
+ersten beiden wandern nach draußen, der dritte hält die Etage am Leben, und
+übrig bleibt ein Garten, der immer noch ein Stockwerk ist.
+
+Eine Etage, die selbst nicht `indoor` ist, DARF NICHT als Erdgeschoss gewählt
+werden. Sonst wird der Garten zu der Etage, um die sich der Garten legt, und
+hält sich damit selbst am Leben.
+
+Jeder `virtual`-Bereich wird **einzeln** gezeichnet — eine Wolke pro Bereich.
+Cloud, VPN und Server sind drei Dinge, nicht ein Kasten mit drei Kästen darin.
+
+### Ohne Etage
+
+Ein Knoten ohne Etage DARF NICHT in den Grundriss gezeichnet werden. Er gehört
+in keinen Raum, also ist jede Position, die der Hub für ihn erfindet, eine
+Behauptung, die der Nutzer anschließend widerlegen muss — und sie liegt über
+einem Raster, das ohne ihn vermessen wurde.
+
+Solche Knoten gehören in eine **Ablage außerhalb des Grundrisses**, auf jeder
+Etage sichtbar, weil die Zuordnung in Home Assistant passiert und nicht hier.
+Ist die Ablage leer, verschwindet sie.
+
 **Umgang mit unbekannten Werten**, normativ:
 
 - Am Websocket wird ein unbekannter Wert **abgelehnt**, mit einer Fehlermeldung,
