@@ -1251,3 +1251,89 @@ test("clicking the legend toggle opens and closes it", () => {
   assert.equal(view._legendOpen, false);
   assert.equal(renders, 2, "each toggle redraws once");
 });
+
+/** A panel with a viewport of a known size and a canvas of another. */
+function framed(view, { viewport = 1000, canvas = 1000 } = {}) {
+  view._root = {
+    querySelector(selector) {
+      if (selector === ".canvas") {
+        return {
+          offsetWidth: canvas,
+          offsetHeight: canvas,
+          style: { setProperty() {} },
+          getBoundingClientRect: () => ({ left: 0, top: 0 }),
+        };
+      }
+      if (selector === ".viewport") {
+        return {
+          clientWidth: viewport,
+          clientHeight: viewport,
+          getBoundingClientRect: () => ({
+            left: 0, top: 0, width: viewport, height: viewport,
+          }),
+        };
+      }
+      return null;
+    },
+  };
+  return view;
+}
+
+test("the plan cannot be shoved out of the window", () => {
+  const view = framed(panel());
+  view._view = { zoom: 2, x: 0, y: 0 };
+
+  // A drag far past the left edge: the plan's right edge may not come
+  // inside the viewport, so x stops at viewport - scaled = -1000.
+  view._view.x = -99999;
+  view._view.y = -99999;
+  view._applyCamera();
+  assert.equal(view._view.x, -1000);
+  assert.equal(view._view.y, -1000);
+
+  // And the other way: the plan's top-left may not leave the corner.
+  view._view.x = 99999;
+  view._view.y = 99999;
+  view._applyCamera();
+  assert.equal(view._view.x, 0);
+  assert.equal(view._view.y, 0);
+});
+
+test("a plan smaller than the window stays inside it", () => {
+  const view = framed(panel(), { viewport: 1000, canvas: 1000 });
+  view._view = { zoom: 0.5, x: -400, y: 900 };
+  view._applyCamera();
+
+  assert.equal(view._view.x, 0, "not off the left edge");
+  assert.equal(view._view.y, 500, "and no further than its own height allows");
+});
+
+test("panning within the plan is left alone", () => {
+  const view = framed(panel());
+  view._view = { zoom: 2, x: -250, y: -600 };
+  view._applyCamera();
+
+  assert.deepEqual(view._view, { zoom: 2, x: -250, y: -600 });
+});
+
+test("zooming out from a corner pulls the plan back into view", () => {
+  // Zoom in hard, drag to the far corner, then zoom out: without a clamp
+  // the plan is left stranded off-screen with nothing on the stage.
+  const view = framed(panel());
+  view._view = { zoom: 4, x: -3000, y: -3000 };
+  view._applyCamera();
+  assert.equal(view._view.x, -3000, "still legal at 4x");
+
+  view._zoomBy(0.25);
+  assert.ok(view._view.x >= -0, "back against the edge once it fits");
+  assert.ok(view._view.y >= -0);
+});
+
+test("no layout yet means nothing to clamp against", () => {
+  const view = framed(panel(), { viewport: 0, canvas: 0 });
+  view._view = { zoom: 1, x: -5000, y: 4000 };
+  view._applyCamera();
+
+  assert.deepEqual(view._view, { zoom: 1, x: -5000, y: 4000 },
+    "guessing before first paint would be worse than waiting");
+});

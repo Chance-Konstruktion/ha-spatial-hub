@@ -546,11 +546,51 @@ class FloorplanHubPanel extends HTMLElement {
   _applyCamera() {
     const canvas = this._root.querySelector(".canvas");
     if (!canvas) return;
+    this._clampView(canvas);
     const { zoom, x, y } = this._view;
     canvas.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
     canvas.style.setProperty("--camera-zoom", zoom);
     const readout = this._root.querySelector("[data-zoom-value]");
     if (readout) readout.textContent = `${Math.round(zoom * 100)} %`;
+  }
+
+  /** Keep the plan against the window it is drawn in.
+   *
+   *  Without this the map can be shoved right out of the viewport and the
+   *  user is left looking at an empty rectangle with no clue which
+   *  direction their house went. There is a fit button, but needing it to
+   *  undo an ordinary drag is not a camera, it is a trap.
+   *
+   *  The bound is the drawing's own edge -- with a garden, that is the
+   *  outer edge of the apron, because the apron is part of the canvas.
+   *  Zoomed in, the edge may not travel inside the viewport, so the view
+   *  is always full of plan. Zoomed out far enough that the whole thing
+   *  fits, it simply stays inside instead.
+   */
+  _clampView(canvas) {
+    const viewport = this._root.querySelector(".viewport");
+    if (!viewport) return;
+    const view = this._view;
+    const along = (extent, size) => {
+      // No layout yet (first paint, or a headless test): nothing to clamp
+      // against, and guessing would be worse than leaving it alone.
+      if (!extent || !size) return null;
+      const scaled = size * view.zoom;
+      return scaled >= extent
+        ? [extent - scaled, 0] // bigger than the window: no gap at either end
+        : [0, extent - scaled]; // smaller: stays inside it
+    };
+    const clamp = (value, range) =>
+      range === null ? value : Math.min(range[1], Math.max(range[0], value));
+
+    view.x = clamp(
+      view.x,
+      along(viewport.clientWidth, canvas.offsetWidth),
+    );
+    view.y = clamp(
+      view.y,
+      along(viewport.clientHeight, canvas.offsetHeight),
+    );
   }
 
   /** Zoom about a point, so what is under the cursor stays under it. */
