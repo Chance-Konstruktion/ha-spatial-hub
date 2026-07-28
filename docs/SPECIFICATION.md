@@ -138,6 +138,26 @@ können; 2D-Renderer ignorieren sie.
   weiß. Der Hub setzt den Node in die Mitte seines Bereichs und verteilt
   mehrere auf ein Raster; die Nutzeranordnung schlägt beides.
 
+### Bauflucht
+
+Jede Etage meldet ihre Außenwände als `outline` — ein Kasten
+`{x, y, width, height}` in denselben Koordinaten, oder `null`, wenn die
+Etage keine Innenräume hat.
+
+Der Hub leitet ihn aus den Räumen der Etage ab; eine gespeicherte Angabe
+schlägt die Ableitung. **Außenbereiche zählen nicht mit**: Der Garten ist
+nicht das Gebäude, und ließe man die Terrasse die Flucht bestimmen, bliebe
+genau der Versatz unsichtbar, den diese Angabe zeigen soll.
+
+Ein Editor SOLLTE beim Bearbeiten einer Etage die `outline` der **anderen**
+Etagen einblenden. Ein Haus ist ein Gebäude und seine Geschosse liegen
+übereinander — aber jedes Geschoss ist ein eigener Reiter, und ohne die
+fremde Kontur bleibt nur, sich das andere Geschoss zu merken.
+
+Ein Renderer DARF Etagen **nicht** zur Deckungsgleichheit zwingen. Eine
+Terrasse, ein Erker, ein zurückgesetztes Dachgeschoss sind der Normalfall,
+kein Fehler; die Kontur ist eine Auskunft, keine Vorschrift.
+
 ## § Popup
 
 Was beim Anklicken erscheint. Ein Renderer SOLL es **mittig über dem

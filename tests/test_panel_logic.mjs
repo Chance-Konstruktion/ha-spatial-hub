@@ -1443,3 +1443,103 @@ test("the stacked view fades with the same rule", () => {
 
   assert.match(html, /--layer-opacity:0\.4/);
 });
+
+// ── Building alignment: the other storeys' outer walls ─────
+
+const withOutlines = () =>
+  model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "",
+        outline: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 } },
+      { id: "og", name: "Obergeschoss", level: 1, icon: "",
+        outline: { x: 0.2, y: 0.2, width: 0.6, height: 0.6 } },
+    ],
+  });
+
+test("the other storeys' walls appear while editing a floor", () => {
+  const view = panel(withOutlines(), { edit: true, floor: "eg" });
+
+  assert.deepEqual(view._ghostFloors().map((f) => f.id), ["og"],
+    "the floor being edited is not its own ghost");
+  const html = view._ghostsHtml();
+  assert.match(html, /class="ghost"/);
+  assert.match(html, /Obergeschoss/, "a line nobody can name is not a hint");
+});
+
+test("nothing haunts the plan outside edit mode", () => {
+  const view = panel(withOutlines(), { edit: false, floor: "eg" });
+
+  assert.deepEqual(view._ghostFloors(), [],
+    "clutter over a plan nobody is changing");
+});
+
+test("the stacked view needs no ghosts -- it already stacks", () => {
+  const view = panel(withOutlines(), { edit: true, floor: null });
+
+  assert.deepEqual(view._ghostFloors(), []);
+});
+
+test("a floor with no building line casts no ghost", () => {
+  const data = withOutlines();
+  data.floors[1].outline = null;
+  const view = panel(data, { edit: true, floor: "eg" });
+
+  assert.deepEqual(view._ghostFloors(), [],
+    "a storey with only a garden has no walls to line up against");
+});
+
+test("the cloud and the homeless storey are not part of the building", () => {
+  const data = withOutlines();
+  data.floors.push(
+    { id: "_virtual", name: "Virtuell", virtual: true,
+      outline: { x: 0, y: 0, width: 1, height: 1 } },
+    { id: "_unassigned", name: "Ohne Etage", unassigned: true,
+      outline: { x: 0, y: 0, width: 1, height: 1 } },
+  );
+  const view = panel(data, { edit: true, floor: "eg" });
+
+  assert.deepEqual(view._ghostFloors().map((f) => f.id), ["og"]);
+});
+
+test("the ghosts can be switched off, and the button knows when to appear", () => {
+  const view = panel(withOutlines(), { edit: true, floor: "eg" });
+  assert.equal(view._ghosts, true, "on by default: the drift is the point");
+  assert.equal(view._ghostFloorCount, 1);
+
+  view._ghosts = false;
+  assert.equal(view._ghostsHtml(), "");
+
+  // A single-storey house has nothing to line up against, so no button.
+  const alone = panel(
+    model({ floors: [{ id: "eg", name: "Erdgeschoss", level: 0,
+                       outline: { x: 0, y: 0, width: 1, height: 1 } }] }),
+    { edit: true, floor: "eg" },
+  );
+  assert.equal(alone._ghostFloorCount, 0);
+});
+
+test("clicking the ghost toggle flips it", () => {
+  const view = panel(withOutlines(), { edit: true, floor: "eg" });
+  view._render = () => {};
+  const toggle = {
+    getAttribute: (name) => (name === "data-toggle-ghosts" ? "" : null),
+  };
+
+  view._onClick({ composedPath: () => [toggle] });
+  assert.equal(view._ghosts, false);
+  view._onClick({ composedPath: () => [toggle] });
+  assert.equal(view._ghosts, true);
+});
+
+test("a ghost is placed through the same window as the rooms", () => {
+  // With a garden the frame widens past 0..1; a building line drawn in
+  // raw percentages would sit somewhere else than the rooms it describes.
+  const data = withOutlines();
+  data.areas[0].kind = "outdoor";
+  const view = panel(data, { edit: true, floor: "eg" });
+  const frame = view._frame;
+  const html = view._ghostsHtml();
+
+  const expected = ((0.2 - frame.min) / frame.span) * 100;
+  assert.match(html, new RegExp(`left:${expected}%`));
+});

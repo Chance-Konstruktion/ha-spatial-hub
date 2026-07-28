@@ -645,3 +645,107 @@ async def test_the_roof_does_not_end_up_on_the_ground(hass):
     assert [floor["id"] for floor in model["floors"]] == ["keller", "eg", "dach"], (
         "bottom-up: the cellar is under the house and the roof is on top"
     )
+
+
+# ── The building line ──────────────────────────────────────────────────
+
+
+def test_the_box_around_nothing_is_nothing():
+    """A storey with no rooms has no building line to draw."""
+    from custom_components.spatial_hub.hub import _bounding_box
+
+    assert _bounding_box([]) is None
+
+
+def test_the_box_reaches_the_far_edge_of_every_room():
+    """Positions are centres, so each room reaches half its size outwards."""
+    from custom_components.spatial_hub.hub import _bounding_box
+
+    box = _bounding_box([
+        {"position": {"x": 0.25, "y": 0.25}, "size": {"width": 0.1, "height": 0.1}},
+        {"position": {"x": 0.75, "y": 0.5}, "size": {"width": 0.2, "height": 0.4}},
+    ])
+
+    assert box == pytest.approx(
+        {"x": 0.2, "y": 0.2, "width": 0.65, "height": 0.5}, rel=1e-6
+    )
+
+
+def test_a_room_with_no_size_still_counts_as_a_point():
+    from custom_components.spatial_hub.hub import _bounding_box
+
+    box = _bounding_box([{"position": {"x": 0.5, "y": 0.5}}])
+
+    assert box == {"x": 0.5, "y": 0.5, "width": 0.0, "height": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_every_floor_reports_its_outer_walls(hass):
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0),
+         FakeFloor("og", "Obergeschoss", level=1)],
+        [FakeArea("wohnen", "Wohnzimmer", floor_id="eg"),
+         FakeArea("bad", "Bad", floor_id="og")],
+    )
+
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
+    outlines = {floor["id"]: floor["outline"] for floor in model["floors"]}
+
+    assert outlines["eg"] and outlines["og"], (
+        "without a building line there is nothing to line the storeys up against"
+    )
+    for outline in outlines.values():
+        assert set(outline) == {"x", "y", "width", "height"}
+
+
+@pytest.mark.asyncio
+async def test_the_garden_does_not_decide_where_the_wall_runs(hass):
+    """The terrace is not the building, and pretending it is hides the drift."""
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0)],
+        [FakeArea("wohnen", "Wohnzimmer", floor_id="eg"),
+         FakeArea("terrasse", "Terrasse", floor_id="eg")],
+    )
+
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
+    floor = next(f for f in model["floors"] if f["id"] == "eg")
+    garden = next(a for a in model["areas"] if a["id"] == "terrasse")
+
+    assert garden["kind"] == "outdoor", "the fixture only works if this is outdoors"
+    # The apron reaches outside 0..1; the building line must not follow it.
+    assert floor["outline"]["x"] >= 0
+    assert floor["outline"]["x"] + floor["outline"]["width"] <= 1
+
+
+@pytest.mark.asyncio
+async def test_a_floor_with_only_a_garden_has_no_building_line(hass):
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0)],
+        [FakeArea("garten", "Garten", floor_id="eg")],
+    )
+
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
+    floor = next(f for f in model["floors"] if f["id"] == "eg")
+
+    assert floor["outline"] is None, "no building, no building line"
+
+
+@pytest.mark.asyncio
+async def test_a_stated_building_line_beats_the_guess(hass):
+    """A user whose terrace is under the roof gets to say so."""
+    _house(
+        hass,
+        [FakeFloor("eg", "Erdgeschoss", level=0)],
+        [FakeArea("wohnen", "Wohnzimmer", floor_id="eg")],
+    )
+    hub = SpatialHub(hass, LayoutStore(hass))
+    stated = {"x": 0.1, "y": 0.2, "width": 0.7, "height": 0.6}
+    hub.store.update("floors", "eg", {"outline": stated})
+
+    model = await hub.async_model()
+    floor = next(f for f in model["floors"] if f["id"] == "eg")
+
+    assert floor["outline"] == stated
