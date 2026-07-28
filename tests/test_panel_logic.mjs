@@ -1337,3 +1337,39 @@ test("no layout yet means nothing to clamp against", () => {
   assert.deepEqual(view._view, { zoom: 1, x: -5000, y: 4000 },
     "guessing before first paint would be worse than waiting");
 });
+
+test("the floor tabs stay on one line however many storeys there are", () => {
+  // A house with a dozen floors used to wrap the header into four rows,
+  // so the tabs moved under the user between one render and the next.
+  const source = readFileSync(
+    join(here, "..", "custom_components", "floorplan_hub", "www",
+         "floorplan-hub-panel.js"),
+    "utf8",
+  );
+  const tabs = source.slice(source.indexOf(".tabs {"));
+  assert.match(tabs.slice(0, 240), /flex-wrap:nowrap/, "one line, always");
+  assert.match(tabs.slice(0, 240), /overflow-x:auto/, "and reachable sideways");
+  assert.match(tabs, /\.tab \{[^}]*white-space:nowrap/s,
+    "a floor name is not broken across lines either");
+});
+
+test("the selected floor is scrolled back into view", () => {
+  const view = panel();
+  let asked = null;
+  view._root = {
+    querySelector: (selector) =>
+      selector === ".tab.on"
+        ? { scrollIntoView: (options) => { asked = options; } }
+        : null,
+  };
+  view._revealCurrentTab();
+
+  assert.deepEqual(asked, { block: "nearest", inline: "nearest" },
+    "nearest: bring it into the strip without yanking the page about");
+});
+
+test("no tab strip yet is not an error", () => {
+  const view = panel();
+  view._root = { querySelector: () => null };
+  view._revealCurrentTab();
+});

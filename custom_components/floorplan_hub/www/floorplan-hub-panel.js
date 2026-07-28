@@ -533,6 +533,19 @@ class FloorplanHubPanel extends HTMLElement {
       ${this._popupHtml()}
     `;
     this._applyCamera();
+    this._revealCurrentTab();
+  }
+
+  /** Keep the storey you are on where you can see it.
+   *
+   *  The tab strip is one scrolling line rather than a block that grows
+   *  downwards, so in a tall house the selected floor can sit outside it
+   *  -- most obviously right after switching to a floor near the end.
+   */
+  _revealCurrentTab() {
+    const tab = this._root.querySelector(".tab.on");
+    if (!tab || !tab.scrollIntoView) return;
+    tab.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
   // ── Camera: zoom, pan, fit ──────────────────────────────
@@ -2754,12 +2767,23 @@ const STYLES = `
 header { display:flex; align-items:center; gap:8px; padding:8px 12px;
          background:var(--fp-accent, var(--app-header-background-color, var(--primary-color,#03a9f4)));
          color:var(--app-header-text-color,#fff); }
-.tabs { display:flex; gap:4px; flex-wrap:wrap; }
+/* Ein Haus mit zwölf Etagen darf die Kopfzeile nicht in vier Zeilen
+   umbrechen: die Reiter blieben sonst nicht dort, wo der Nutzer sie
+   zuletzt gesehen hat, und der Grundriss darunter würde bei jedem
+   Etagenwechsel springen. Also eine Zeile, und bei Bedarf seitlich
+   scrollbar -- die Leiste wird schmaler, nie höher. */
+.tabs { display:flex; gap:4px; flex-wrap:nowrap; overflow-x:auto;
+        min-width:0; flex:0 1 auto; scrollbar-width:none;
+        overscroll-behavior-x:contain; }
+.tabs::-webkit-scrollbar { display:none; }
 .tab { display:flex; align-items:center; gap:6px; border:0; border-radius:16px;
        padding:6px 14px; cursor:pointer; font:inherit; color:inherit;
-       background:rgba(255,255,255,.15); }
+       background:rgba(255,255,255,.15);
+       /* Reiter geben keine Breite her: ein auf drei Buchstaben
+          gequetschtes "Dachgeschoss" ist kein Reiter mehr. */
+       flex:0 0 auto; white-space:nowrap; }
 .tab.on { background:rgba(255,255,255,.85); color:var(--primary-color,#03a9f4); }
-.spacer { flex:1; }
+.spacer { flex:1 1 0; min-width:0; }
 .icon-btn { border:0; background:transparent; color:inherit; cursor:pointer;
             border-radius:50%; padding:6px; display:flex; }
 .icon-btn.on { background:rgba(255,255,255,.25); }
@@ -2783,12 +2807,13 @@ main { flex:1; min-width:0; }
                font-size:13px; border-top:1px solid var(--divider-color,#e0e0e0); }
 .links { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 4px; }
 .links .chip { display:flex; align-items:center; gap:4px; font-size:13px; }
+/* Suche und Zoom geben keine Breite her -- die Reiterleiste scrollt. */
 .search { display:flex; align-items:center; gap:4px; background:rgba(255,255,255,.18);
-          border-radius:16px; padding:2px 10px; }
+          border-radius:16px; padding:2px 10px; flex:0 0 auto; }
 .search input { border:0; background:transparent; color:inherit; font:inherit;
                 width:120px; outline:none; }
 .search input::placeholder { color:inherit; opacity:.7; }
-.zoom { display:flex; align-items:center; gap:2px; font-size:12px; }
+.zoom { display:flex; align-items:center; gap:2px; font-size:12px; flex:0 0 auto; }
 .icon-btn[disabled] { opacity:.4; cursor:default; }
 
 /* The camera. Transform only, so panning never rebuilds the plan. */
