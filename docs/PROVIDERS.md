@@ -38,7 +38,7 @@ nachprüfbar, und das reicht.
 
 ## Und wenn deine Integration fehlt?
 
-Als Nutzer: [ASK_FOR_SUPPORT.md](ASK_FOR_SUPPORT.md) — freundlich fragen,
+Als Nutzer: [ASK_FOR_SUPPORT.de.md](ASK_FOR_SUPPORT.de.md) — freundlich fragen,
 einmal. Und bis dahin baust du dir die Ebene im Editor selbst, was in den
 meisten Fällen schon reicht.
 

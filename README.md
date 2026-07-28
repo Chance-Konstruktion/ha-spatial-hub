@@ -26,11 +26,17 @@ ein SDK für die, die einen schreiben wollen.
 [ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) und
 [ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p) sind
 angebunden — die zweite ohne `DataUpdateCoordinator`, was zwei Löcher im SDK
-ans Licht gebracht hat. Der vollständige Plan steht in
-**[ROADMAP.md](ROADMAP.md)**, das räumliche Format in der
-**[Spatial Provider Specification 1.0](docs/SPECIFICATION.md)** — Node, Edge,
-Layer, Position, Popup, Action, Theme, Icon, Camera, Area Type, normativ und
-mitgetestet.
+ans Licht gebracht hat.
+
+Drei Dokumente, drei Fragen:
+
+- **[docs/Vision.md](docs/Vision.md)** — *wohin das Ganze soll.* Installieren,
+  öffnen, alles ist schon da. Kein Dashboard mehr bauen.
+- **[ROADMAP.md](ROADMAP.md)** — *wie weit es ist.* Was steht, was als
+  Nächstes kommt und was bewusst noch fehlt.
+- **[Spatial Provider Specification 1.0](docs/SPECIFICATION.md)** — *woran man
+  sich hält.* Node, Edge, Layer, Position, Popup, Action, Theme, Icon, Camera,
+  Area Type — normativ und mitgetestet.
 
 ## Der Renderer
 
@@ -217,7 +223,7 @@ echten Hub läuft und denselben Conformance-Vertrag erfüllen muss wie fremder
 Code. Sie kann also nicht stillschweigend verrotten.
 
 Und wenn du Nutzer einer Integration bist, die noch fehlt:
-**[docs/ASK_FOR_SUPPORT.md](docs/ASK_FOR_SUPPORT.md)** ist der Text, den du
+**[docs/ASK_FOR_SUPPORT.de.md](docs/ASK_FOR_SUPPORT.de.md)** ist der Text, den du
 dort einreichst — samt der Bitte, es einmal zu tun und freundlich. Weil die
 meisten Integrationen englischsprachig entwickelt werden, liegt derselbe
 Text auch als [ASK_FOR_SUPPORT.en.md](docs/ASK_FOR_SUPPORT.en.md) bereit.

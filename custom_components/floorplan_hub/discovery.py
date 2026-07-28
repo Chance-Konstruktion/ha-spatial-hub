@@ -12,7 +12,8 @@ All coordinates are normalised 0..1 per floor.
 from __future__ import annotations
 
 import math
-from typing import Any
+import re
+from typing import Any, Final
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import (
@@ -147,25 +148,68 @@ def fallback_icon(entity_id: str, device_class: str = "") -> str:
     return _DOMAIN_ICONS.get(domain, "mdi:shape-outline")
 
 
+# Storeys, by the words people actually name them with. Home Assistant
+# lets a floor exist without a level, and most do -- the field is optional
+# and easy to miss. Everything without one used to become level 0, which
+# put the attic on the ground next to the cellar and made the house in the
+# sandwich view nonsense. Guessing from the name is not a substitute for
+# the field; it is what to do until somebody fills it in.
+_FLOOR_LEVELS: Final[tuple[tuple[frozenset[str], int], ...]] = (
+    (frozenset({"tiefgarage", "untergeschoss", "ug", "souterrain"}), -2),
+    (frozenset({"keller", "cellar", "basement", "kg"}), -1),
+    (frozenset({"erdgeschoss", "eg", "parterre", "ground", "groundfloor",
+                "eartefloor"}), 0),
+    (frozenset({"hochparterre", "mezzanine", "zwischengeschoss"}), 1),
+    (frozenset({"dach", "dachboden", "dachgeschoss", "spitzboden", "attic",
+                "loft", "speicher", "attika", "dg"}), 90),
+)
+
+# "1. OG", "2 OG", "3rd floor", "Etage 4" -- the number is the level.
+_FLOOR_NUMBER = re.compile(
+    r"(\d+)\s*(?:\.|st|nd|rd|th)?\s*(?:og|obergeschoss|stock|etage|floor)"
+    r"|(?:og|obergeschoss|stock|etage|floor)\s*(\d+)"
+)
+
+
+def floor_level(name: str, stated: int | None = None) -> int | None:
+    """The storey a floor sits on, from its level or failing that its name.
+
+    A stated level always wins, including a stated zero: the user filled
+    the field in and that is the end of the discussion. Only the floors
+    Home Assistant has no level for are guessed at, and a floor whose name
+    says nothing stays ``None`` so the caller can keep treating it as
+    ground rather than inventing a storey for it.
+    """
+    if stated is not None:
+        return stated
+    folded = _fold(name)
+    words = set(folded.split())
+    for names, level in _FLOOR_LEVELS:
+        if words & names:
+            return level
+    match = _FLOOR_NUMBER.search(folded)
+    if match:
+        return int(match.group(1) or match.group(2))
+    return None
+
+
 def async_floors(hass: HomeAssistant) -> list[dict[str, Any]]:
     """Floors from the floor registry, ordered as the user sorted them."""
     try:
         registry = fr.async_get(hass)
     except (AttributeError, KeyError):  # HA < 2024.4 has no floor registry
         return []
-    floors = sorted(
-        registry.async_list_floors(),
-        key=lambda floor: (floor.level if floor.level is not None else 0, floor.name),
-    )
-    return [
+    floors = [
         {
             "id": floor.floor_id,
             "name": floor.name,
-            "level": floor.level,
+            "level": floor_level(floor.name, floor.level),
             "icon": floor.icon or "",
         }
-        for floor in floors
+        for floor in registry.async_list_floors()
     ]
+    floors.sort(key=lambda floor: (floor["level"] or 0, floor["name"]))
+    return floors
 
 
 def async_areas(hass: HomeAssistant) -> list[dict[str, Any]]:

@@ -117,6 +117,10 @@ class FloorplanHubPanel extends HTMLElement {
     this._layerDialog = null; // the custom layer being written
     this._areaDialog = null; // the area whose kind is being set
     this._showEntities = false; // the device's entity list, in the popup
+    // The legend starts folded away. It is a reference, not a destination:
+    // the first thing somebody wants to see is their house, not a list of
+    // the layers it is made of. One click opens it and it stays open.
+    this._legendOpen = false;
     this._facets = null;
     // The camera. One per view, shared by the stacked and the single
     // floor: zooming in, switching tabs and finding the same magnification
@@ -357,6 +361,32 @@ class FloorplanHubPanel extends HTMLElement {
     );
   }
 
+  /** How solid a provider's things are drawn, from its layers.
+   *
+   *  The slider next to a layer wrote its value into the layout and the
+   *  value came back in the model, and then nothing read it: turning a
+   *  layer down did precisely nothing on screen. This is the missing half.
+   *
+   *  A node belongs to a provider, not to one layer, so the rule has to
+   *  match the one visibility already uses: hidden when *every* layer is
+   *  hidden, and here, as solid as the clearest layer the provider still
+   *  has. Fading a provider out is then "turn all of its layers down",
+   *  which is the same shape as hiding it.
+   */
+  _providerOpacity(itemId) {
+    const owner = this._providerOf(itemId);
+    const mine = ((this._model && this._model.layers) || []).filter(
+      (layer) => (layer.provider_id || "") === owner &&
+                 layer.visible !== false,
+    );
+    if (!mine.length) return 1;
+    return mine.reduce(
+      (best, layer) =>
+        Math.max(best, typeof layer.opacity === "number" ? layer.opacity : 1),
+      0,
+    );
+  }
+
   /** The theme the hub resolved. Never a preset table of our own -- a
    *  second renderer must be able to agree with this one for free. */
   get _theme() {
@@ -519,7 +549,7 @@ class FloorplanHubPanel extends HTMLElement {
       ${this._headerHtml()}
       <div class="body">
         <main>${this._stageHtml()}</main>
-        <section class="dock">${this._sidebarHtml()}</section>
+        ${this._legendHtml()}
       </div>
       ${this._showDiagnostics ? this._diagnosticsHtml() : ""}
       ${this._floorDialog ? this._floorDialogHtml() : ""}
@@ -529,6 +559,19 @@ class FloorplanHubPanel extends HTMLElement {
       ${this._popupHtml()}
     `;
     this._applyCamera();
+    this._revealCurrentTab();
+  }
+
+  /** Keep the storey you are on where you can see it.
+   *
+   *  The tab strip is one scrolling line rather than a block that grows
+   *  downwards, so in a tall house the selected floor can sit outside it
+   *  -- most obviously right after switching to a floor near the end.
+   */
+  _revealCurrentTab() {
+    const tab = this._root.querySelector(".tab.on");
+    if (!tab || !tab.scrollIntoView) return;
+    tab.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
   // ── Camera: zoom, pan, fit ──────────────────────────────
@@ -542,11 +585,51 @@ class FloorplanHubPanel extends HTMLElement {
   _applyCamera() {
     const canvas = this._root.querySelector(".canvas");
     if (!canvas) return;
+    this._clampView(canvas);
     const { zoom, x, y } = this._view;
     canvas.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
     canvas.style.setProperty("--camera-zoom", zoom);
     const readout = this._root.querySelector("[data-zoom-value]");
     if (readout) readout.textContent = `${Math.round(zoom * 100)} %`;
+  }
+
+  /** Keep the plan against the window it is drawn in.
+   *
+   *  Without this the map can be shoved right out of the viewport and the
+   *  user is left looking at an empty rectangle with no clue which
+   *  direction their house went. There is a fit button, but needing it to
+   *  undo an ordinary drag is not a camera, it is a trap.
+   *
+   *  The bound is the drawing's own edge -- with a garden, that is the
+   *  outer edge of the apron, because the apron is part of the canvas.
+   *  Zoomed in, the edge may not travel inside the viewport, so the view
+   *  is always full of plan. Zoomed out far enough that the whole thing
+   *  fits, it simply stays inside instead.
+   */
+  _clampView(canvas) {
+    const viewport = this._root.querySelector(".viewport");
+    if (!viewport) return;
+    const view = this._view;
+    const along = (extent, size) => {
+      // No layout yet (first paint, or a headless test): nothing to clamp
+      // against, and guessing would be worse than leaving it alone.
+      if (!extent || !size) return null;
+      const scaled = size * view.zoom;
+      return scaled >= extent
+        ? [extent - scaled, 0] // bigger than the window: no gap at either end
+        : [0, extent - scaled]; // smaller: stays inside it
+    };
+    const clamp = (value, range) =>
+      range === null ? value : Math.min(range[1], Math.max(range[0], value));
+
+    view.x = clamp(
+      view.x,
+      along(viewport.clientWidth, canvas.offsetWidth),
+    );
+    view.y = clamp(
+      view.y,
+      along(viewport.clientHeight, canvas.offsetHeight),
+    );
   }
 
   /** Zoom about a point, so what is under the cursor stays under it. */
@@ -793,6 +876,7 @@ class FloorplanHubPanel extends HTMLElement {
         const across = planeOf(this._node(edge.source)) !==
           planeOf(this._node(edge.target));
         return `<line class="stack-edge ${across ? "across" : ""}"
+          style="--layer-opacity:${this._providerOpacity(edge.id)}"
           x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"
           stroke="${this._qualityColour(edge.quality)}"
           stroke-width="${across ? 5 : 3}"
@@ -817,6 +901,7 @@ class FloorplanHubPanel extends HTMLElement {
                    ${matches && !dimmed ? "found" : ""}
                    ${node.floor_id ? "" : "floorless"}"
                    data-node="${escapeHtml(node.id)}"
+                   style="--layer-opacity:${this._providerOpacity(node.id)}"
                    transform="translate(${at.x},${at.y})">
           <circle r="14" fill="${this._nodeColour(node)}"/>
           ${this._stackIconHtml(node)}
@@ -1024,6 +1109,7 @@ class FloorplanHubPanel extends HTMLElement {
       .join(" ");
     const shared = `class="${classes}" data-edge="${escapeHtml(edge.id)}"
         stroke="${escapeHtml(colour)}"
+        style="--layer-opacity:${this._providerOpacity(edge.id)}"
         stroke-width="${edge.width || 2}"
         vector-effect="non-scaling-stroke"
         ${edge.dashed ? 'stroke-dasharray="6 5"' : ""}
@@ -1105,10 +1191,33 @@ class FloorplanHubPanel extends HTMLElement {
         style="left:${inFrame(node.position.x, frame)}%;
                top:${inFrame(node.position.y, frame)}%;
                --node-color:${escapeHtml(colour)}; --node-scale:${scale};
+               --layer-opacity:${this._providerOpacity(node.id)};
                ${node.rotation ? `--node-rotation:${node.rotation}deg;` : ""}">
         <span class="dot">${icon}</span>
         <span class="label">${escapeHtml(node.label)}</span>
       </button>`;
+  }
+
+  /** The legend, folded away until somebody asks for it.
+   *
+   *  Collapsed is the honest default: layers and providers are how you
+   *  adjust the plan once you already trust it, and a wall of chips under
+   *  a house nobody has looked at yet is noise on the one screen that is
+   *  supposed to say "this is my home".
+   */
+  _legendHtml() {
+    const open = this._legendOpen;
+    return `
+      <section class="legend ${open ? "open" : ""}">
+        <button class="legend-toggle" data-legend
+                aria-expanded="${open ? "true" : "false"}">
+          <ha-icon icon="${
+            open ? "mdi:chevron-down" : "mdi:chevron-right"
+          }"></ha-icon>
+          <span>Legende</span>
+        </button>
+        ${open ? `<div class="dock">${this._sidebarHtml()}</div>` : ""}
+      </section>`;
   }
 
   _sidebarHtml() {
@@ -2274,6 +2383,12 @@ class FloorplanHubPanel extends HTMLElement {
       return;
     }
 
+    if (hit("data-legend")) {
+      this._legendOpen = !this._legendOpen;
+      this._render();
+      return;
+    }
+
     if (hit("data-undo")) {
       this._undoStep();
       return;
@@ -2682,12 +2797,23 @@ const STYLES = `
 header { display:flex; align-items:center; gap:8px; padding:8px 12px;
          background:var(--fp-accent, var(--app-header-background-color, var(--primary-color,#03a9f4)));
          color:var(--app-header-text-color,#fff); }
-.tabs { display:flex; gap:4px; flex-wrap:wrap; }
+/* Ein Haus mit zwölf Etagen darf die Kopfzeile nicht in vier Zeilen
+   umbrechen: die Reiter blieben sonst nicht dort, wo der Nutzer sie
+   zuletzt gesehen hat, und der Grundriss darunter würde bei jedem
+   Etagenwechsel springen. Also eine Zeile, und bei Bedarf seitlich
+   scrollbar -- die Leiste wird schmaler, nie höher. */
+.tabs { display:flex; gap:4px; flex-wrap:nowrap; overflow-x:auto;
+        min-width:0; flex:0 1 auto; scrollbar-width:none;
+        overscroll-behavior-x:contain; }
+.tabs::-webkit-scrollbar { display:none; }
 .tab { display:flex; align-items:center; gap:6px; border:0; border-radius:16px;
        padding:6px 14px; cursor:pointer; font:inherit; color:inherit;
-       background:rgba(255,255,255,.15); }
+       background:rgba(255,255,255,.15);
+       /* Reiter geben keine Breite her: ein auf drei Buchstaben
+          gequetschtes "Dachgeschoss" ist kein Reiter mehr. */
+       flex:0 0 auto; white-space:nowrap; }
 .tab.on { background:rgba(255,255,255,.85); color:var(--primary-color,#03a9f4); }
-.spacer { flex:1; }
+.spacer { flex:1 1 0; min-width:0; }
 .icon-btn { border:0; background:transparent; color:inherit; cursor:pointer;
             border-radius:50%; padding:6px; display:flex; }
 .icon-btn.on { background:rgba(255,255,255,.25); }
@@ -2695,6 +2821,11 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
    ist das Einzige, was Breite wirklich braucht. */
 .body { flex:1; display:flex; flex-direction:column; gap:16px; padding:16px; overflow:auto; }
 main { flex:1; min-width:0; }
+/* Eingeklappt: erst das Haus, dann die Erklärung dazu. */
+.legend-toggle { display:flex; align-items:center; gap:6px; border:0;
+                 background:transparent; color:var(--secondary-text-color,#727272);
+                 font:inherit; cursor:pointer; padding:4px 0; border-radius:8px; }
+.legend-toggle:hover { color:var(--primary-text-color,#212121); }
 .dock { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start;
         background:var(--card-background-color,#fff); border-radius:12px;
         padding:4px 16px 14px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
@@ -2706,12 +2837,13 @@ main { flex:1; min-width:0; }
                font-size:13px; border-top:1px solid var(--divider-color,#e0e0e0); }
 .links { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 4px; }
 .links .chip { display:flex; align-items:center; gap:4px; font-size:13px; }
+/* Suche und Zoom geben keine Breite her -- die Reiterleiste scrollt. */
 .search { display:flex; align-items:center; gap:4px; background:rgba(255,255,255,.18);
-          border-radius:16px; padding:2px 10px; }
+          border-radius:16px; padding:2px 10px; flex:0 0 auto; }
 .search input { border:0; background:transparent; color:inherit; font:inherit;
                 width:120px; outline:none; }
 .search input::placeholder { color:inherit; opacity:.7; }
-.zoom { display:flex; align-items:center; gap:2px; font-size:12px; }
+.zoom { display:flex; align-items:center; gap:2px; font-size:12px; flex:0 0 auto; }
 .icon-btn[disabled] { opacity:.4; cursor:default; }
 
 /* The camera. Transform only, so panning never rebuilds the plan. */
@@ -2727,10 +2859,13 @@ main { flex:1; min-width:0; }
 .stack .room { fill:rgba(128,128,128,.10);
                stroke:var(--divider-color,rgba(128,128,128,.35)); stroke-width:1.5; }
 .stack .room-label { font-size:17px; fill:currentColor; opacity:.5; }
-.stack-edge { stroke-linecap:round; }
+.stack-edge { stroke-linecap:round; opacity:var(--layer-opacity,1); }
 /* A connection between two storeys is the whole reason this view exists. */
-.stack-edge.across { opacity:.95; }
+.stack-edge.across { opacity:calc(var(--layer-opacity,1) * .95); }
+/* Ebenen-Deckkraft und die Abblendung der Suche multiplizieren sich,
+   statt sich gegenseitig zu überschreiben. */
 .stack-node { cursor:pointer; transform-box:fill-box; transform-origin:center;
+              opacity:var(--layer-opacity,1);
               scale:calc(1 / var(--camera-zoom, 1)); }
 .stack-node circle { stroke:var(--card-background-color,#fff); stroke-width:2; }
 .stack-node.on circle { stroke:var(--fp-accent, var(--primary-color,#03a9f4)); stroke-width:4; }
@@ -2751,7 +2886,7 @@ main { flex:1; min-width:0; }
          stroke-width:2; stroke-dasharray:12 8; }
 .plane.virtual .storey { stroke-dasharray:14 10; opacity:.7; }
 /* Die Suche blendet nicht aus, sie stellt zurück: der Rest bleibt sichtbar. */
-.stack-node.dimmed { opacity:.25; }
+.stack-node.dimmed { opacity:calc(var(--layer-opacity,1) * .25); }
 .stack-node.found circle { stroke:var(--fp-accent, var(--primary-color,#03a9f4));
                            stroke-width:4; }
 
@@ -2761,8 +2896,9 @@ main { flex:1; min-width:0; }
          box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); overflow:hidden; }
 .stage.placing { cursor:crosshair; outline:2px dashed var(--primary-color,#03a9f4); }
 .edges { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
-.edge { pointer-events:stroke; cursor:pointer; opacity:.85; }
-.edge.on { opacity:1; stroke-width:5; }
+.edge { pointer-events:stroke; cursor:pointer;
+        opacity:calc(var(--layer-opacity,1) * .85); }
+.edge.on { opacity:var(--layer-opacity,1); stroke-width:5; }
 .edge.animated { stroke-dasharray:8 6; animation:flow 1.2s linear infinite; }
 @keyframes flow { to { stroke-dashoffset:-28; } }
 
@@ -2772,7 +2908,7 @@ main { flex:1; min-width:0; }
 .area-name { position:absolute; top:6px; left:8px; font-size:12px;
              color:var(--secondary-text-color,#727272); display:flex; align-items:center; gap:4px; }
 
-.node { position:absolute;
+.node { position:absolute; opacity:var(--layer-opacity,1);
         transform:translate(-50%,-50%) scale(calc(var(--node-scale,1) / var(--camera-zoom,1)));
         border:0; background:transparent; cursor:pointer; padding:0;
         display:flex; flex-direction:column; align-items:center; gap:2px; }
@@ -2851,7 +2987,7 @@ select { font:inherit; padding:6px; border-radius:8px;
                 background:var(--fp-outdoor, rgba(76,175,80,.10)); }
 .area.virtual { border-style:dotted; }
 .stage.with-apron { outline:none; }
-.node.dimmed { opacity:.25; }
+.node.dimmed { opacity:calc(var(--layer-opacity,1) * .25); }
 .node.found .dot { box-shadow:0 0 0 4px var(--fp-accent, var(--primary-color,#03a9f4)); }
 .area-hide { position:absolute; top:2px; right:2px; border:0; background:transparent;
              color:var(--secondary-text-color,#727272); cursor:pointer; padding:2px;

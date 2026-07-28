@@ -114,7 +114,7 @@ def test_both_translations_tell_the_same_story():
     A German user reading the German page and an English maintainer reading
     what arrived must be looking at the same offer.
     """
-    german = (ROOT / "docs" / "ASK_FOR_SUPPORT.md").read_text()
+    german = (ROOT / "docs" / "ASK_FOR_SUPPORT.de.md").read_text()
     english = (ROOT / "docs" / "ASK_FOR_SUPPORT.en.md").read_text()
 
     for shared in (

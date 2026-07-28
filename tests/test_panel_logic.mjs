@@ -1220,3 +1220,226 @@ test("a node with nothing behind it gets no dead links", () => {
   assert.doesNotMatch(html, /data-navigate/);
   assert.doesNotMatch(html, /data-toggle-entities/);
 });
+
+test("the legend starts folded away", () => {
+  const view = panel();
+
+  assert.equal(view._legendOpen, false, "the house comes first, not its index");
+  const closed = view._legendHtml();
+  assert.match(closed, /data-legend/, "and there is a way to open it");
+  assert.equal(
+    /class="dock"/.test(closed), false,
+    "nothing of the legend is rendered while it is closed",
+  );
+
+  view._legendOpen = true;
+  assert.match(view._legendHtml(), /class="dock"/);
+});
+
+test("clicking the legend toggle opens and closes it", () => {
+  const view = panel();
+  let renders = 0;
+  view._render = () => { renders += 1; };
+  const toggle = {
+    getAttribute: (name) => (name === "data-legend" ? "" : null),
+  };
+  const click = { composedPath: () => [toggle] };
+
+  view._onClick(click);
+  assert.equal(view._legendOpen, true);
+  view._onClick(click);
+  assert.equal(view._legendOpen, false);
+  assert.equal(renders, 2, "each toggle redraws once");
+});
+
+/** A panel with a viewport of a known size and a canvas of another. */
+function framed(view, { viewport = 1000, canvas = 1000 } = {}) {
+  view._root = {
+    querySelector(selector) {
+      if (selector === ".canvas") {
+        return {
+          offsetWidth: canvas,
+          offsetHeight: canvas,
+          style: { setProperty() {} },
+          getBoundingClientRect: () => ({ left: 0, top: 0 }),
+        };
+      }
+      if (selector === ".viewport") {
+        return {
+          clientWidth: viewport,
+          clientHeight: viewport,
+          getBoundingClientRect: () => ({
+            left: 0, top: 0, width: viewport, height: viewport,
+          }),
+        };
+      }
+      return null;
+    },
+  };
+  return view;
+}
+
+test("the plan cannot be shoved out of the window", () => {
+  const view = framed(panel());
+  view._view = { zoom: 2, x: 0, y: 0 };
+
+  // A drag far past the left edge: the plan's right edge may not come
+  // inside the viewport, so x stops at viewport - scaled = -1000.
+  view._view.x = -99999;
+  view._view.y = -99999;
+  view._applyCamera();
+  assert.equal(view._view.x, -1000);
+  assert.equal(view._view.y, -1000);
+
+  // And the other way: the plan's top-left may not leave the corner.
+  view._view.x = 99999;
+  view._view.y = 99999;
+  view._applyCamera();
+  assert.equal(view._view.x, 0);
+  assert.equal(view._view.y, 0);
+});
+
+test("a plan smaller than the window stays inside it", () => {
+  const view = framed(panel(), { viewport: 1000, canvas: 1000 });
+  view._view = { zoom: 0.5, x: -400, y: 900 };
+  view._applyCamera();
+
+  assert.equal(view._view.x, 0, "not off the left edge");
+  assert.equal(view._view.y, 500, "and no further than its own height allows");
+});
+
+test("panning within the plan is left alone", () => {
+  const view = framed(panel());
+  view._view = { zoom: 2, x: -250, y: -600 };
+  view._applyCamera();
+
+  assert.deepEqual(view._view, { zoom: 2, x: -250, y: -600 });
+});
+
+test("zooming out from a corner pulls the plan back into view", () => {
+  // Zoom in hard, drag to the far corner, then zoom out: without a clamp
+  // the plan is left stranded off-screen with nothing on the stage.
+  const view = framed(panel());
+  view._view = { zoom: 4, x: -3000, y: -3000 };
+  view._applyCamera();
+  assert.equal(view._view.x, -3000, "still legal at 4x");
+
+  view._zoomBy(0.25);
+  assert.ok(view._view.x >= -0, "back against the edge once it fits");
+  assert.ok(view._view.y >= -0);
+});
+
+test("no layout yet means nothing to clamp against", () => {
+  const view = framed(panel(), { viewport: 0, canvas: 0 });
+  view._view = { zoom: 1, x: -5000, y: 4000 };
+  view._applyCamera();
+
+  assert.deepEqual(view._view, { zoom: 1, x: -5000, y: 4000 },
+    "guessing before first paint would be worse than waiting");
+});
+
+test("the floor tabs stay on one line however many storeys there are", () => {
+  // A house with a dozen floors used to wrap the header into four rows,
+  // so the tabs moved under the user between one render and the next.
+  const source = readFileSync(
+    join(here, "..", "custom_components", "floorplan_hub", "www",
+         "floorplan-hub-panel.js"),
+    "utf8",
+  );
+  const tabs = source.slice(source.indexOf(".tabs {"));
+  assert.match(tabs.slice(0, 240), /flex-wrap:nowrap/, "one line, always");
+  assert.match(tabs.slice(0, 240), /overflow-x:auto/, "and reachable sideways");
+  assert.match(tabs, /\.tab \{[^}]*white-space:nowrap/s,
+    "a floor name is not broken across lines either");
+});
+
+test("the selected floor is scrolled back into view", () => {
+  const view = panel();
+  let asked = null;
+  view._root = {
+    querySelector: (selector) =>
+      selector === ".tab.on"
+        ? { scrollIntoView: (options) => { asked = options; } }
+        : null,
+  };
+  view._revealCurrentTab();
+
+  assert.deepEqual(asked, { block: "nearest", inline: "nearest" },
+    "nearest: bring it into the strip without yanking the page about");
+});
+
+test("no tab strip yet is not an error", () => {
+  const view = panel();
+  view._root = { querySelector: () => null };
+  view._revealCurrentTab();
+});
+
+// ── Layer opacity ──────────────────────────────────────────
+
+test("turning a layer down actually fades what it drew", () => {
+  // The slider wrote its value into the layout and the value came back
+  // in the model, and then nothing read it -- so it did nothing at all.
+  const data = model();
+  data.layers[0].opacity = 0.3;
+  const view = panel(data);
+
+  assert.equal(view._providerOpacity("a:one"), 0.3);
+  assert.match(view._nodeHtml(view._visibleNodes[0]), /--layer-opacity:0\.3/);
+  assert.match(view._edgeHtml(view._visibleEdges[0]), /--layer-opacity:0\.3/);
+});
+
+test("a layer nobody touched stays solid", () => {
+  const view = panel();
+  assert.equal(view._providerOpacity("a:one"), 1);
+});
+
+test("a provider is as solid as its clearest visible layer", () => {
+  // Same shape as hiding: a provider disappears when *every* layer is
+  // hidden, so it fades only when every layer is turned down.
+  const data = model();
+  data.layers[0].opacity = 0.2;
+  data.layers.push({ id: "a_second", name: "A2", z_index: 20, opacity: 0.9,
+                     visible: true, provider_id: "a" });
+  const view = panel(data);
+
+  assert.equal(view._providerOpacity("a:one"), 0.9);
+});
+
+test("a hidden layer does not drag its provider's opacity down", () => {
+  const data = model();
+  data.layers[0].opacity = 0.9;
+  data.layers.push({ id: "a_second", name: "A2", z_index: 20, opacity: 0.1,
+                     visible: false, provider_id: "a" });
+  const view = panel(data);
+
+  assert.equal(view._providerOpacity("a:one"), 0.9,
+    "an invisible layer has no say in how solid the visible ones are");
+});
+
+test("an item whose provider has no layers is drawn normally", () => {
+  const view = panel(model({ layers: [] }));
+  assert.equal(view._providerOpacity("a:one"), 1);
+  assert.equal(view._providerOpacity("nobody:x"), 1);
+});
+
+test("layer opacity and the search dimming multiply", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "floorplan_hub", "www",
+         "floorplan-hub-panel.js"),
+    "utf8",
+  );
+  // Inline opacity would beat a class outright, so a dimmed node in a
+  // faded layer has to come out fainter than either on its own.
+  assert.match(source, /\.node\.dimmed \{ opacity:calc\(var\(--layer-opacity,1\) \* \.25\)/);
+  assert.match(source,
+    /\.stack-node\.dimmed \{ opacity:calc\(var\(--layer-opacity,1\) \* \.25\)/);
+});
+
+test("the stacked view fades with the same rule", () => {
+  const data = model();
+  data.layers[0].opacity = 0.4;
+  const view = panel(data, { floor: null });
+  const html = view._stackHtml();
+
+  assert.match(html, /--layer-opacity:0\.4/);
+});

@@ -2,11 +2,20 @@
 
 Wo FloorPlan-Hub steht, und was noch kommt.
 
+Wohin das Ganze soll, steht in **[docs/Vision.md](docs/Vision.md)**:
+installieren, öffnen, alles ist schon da. Diese Roadmap ist die Antwort
+darauf, wie weit es bis dahin noch ist — die Phasen ab 15 sind direkt aus
+der Vision abgeleitet und stehen noch aus.
+
 Das Ziel dahinter ändert sich in keiner Phase: **Der Hub darf keine
 einzige Integration beim Namen kennen.** Er kennt Provider, Layer, Nodes,
 Edges, Actions und Capabilities — mehr nicht. In dem Moment, in dem
 irgendwo ein Sonderfall für Powerline oder UniFi steht, ist aus der
 Plattform ein weiteres Dashboard geworden.
+
+Die zweite Hälfte der Vision ist eine Frage an jedes Feature:
+**Macht das die Wohnung verständlicher?** Wenn nicht, gehört es nicht
+hierher — egal wie gut es sich baut.
 
 | Phase | Was | Status |
 |---|---|---|
@@ -24,6 +33,10 @@ Plattform ein weiteres Dashboard geworden.
 | 12 | Zero-Config als Endzustand | ✅ |
 | 13 | Feedback aus der ersten Version | ✅ |
 | 14 | Spezifikation 1.0 | ✅ |
+| 15 | Gebäudeflucht: Außenwände über alle Etagen | ⬜ |
+| 16 | Licht, das den Raum beleuchtet | ⬜ |
+| 17 | Ein Editor, den ein Kind bedient | ⬜ |
+| 18 | Klima im Raum | ⬜ |
 
 ---
 
@@ -173,7 +186,7 @@ Also ein **Vendoring-SDK**:
   Schnipsel. Sie läuft in unserer Testsuite gegen den echten Hub und muss
   dasselbe Conformance-Kit bestehen wie fremder Code — Beispiele, die
   verrotten, sind schlimmer als keine.
-- `docs/ASK_FOR_SUPPORT.md` ist der Text, den ein *Nutzer* bei einer
+- `docs/ASK_FOR_SUPPORT.de.md` ist der Text, den ein *Nutzer* bei einer
   fremden Integration einreicht. Mit der Bitte, es einmal zu tun,
   freundlich, und mit dem Angebot, den PR selbst zu schreiben. Der Weg
   einer Plattform führt über die Nutzer der anderen, nicht über uns.
@@ -346,3 +359,66 @@ gespeicherten Daten wird repariert, wenn er eindeutig ist (`outside`,
 `garden`, `außen`, `cloud`), und sonst mit Warnung auf `indoor` gesetzt. Ein
 Grundriss verschwindet nicht wegen eines Tippfehlers — aber niemand rätselt
 still.
+
+---
+
+# Was aus der Vision noch fehlt
+
+Ab hier ist nichts gebaut. Die vier Phasen stehen so in
+[`docs/Vision.md`](docs/Vision.md) und sind die Antwort darauf, warum der
+Hub heute einen Grundriss zeigt und noch keine Wohnung.
+
+## ⬜ Phase 15 — Gebäudeflucht
+
+Jede Etage soll ihre **Außenwände** kennen, und der Editor soll sie über
+alle Etagen hinweg einblenden — als blasse Kontur der jeweils anderen
+Stockwerke hinter der, die man gerade bearbeitet.
+
+Erst dann passt das Haus im Sandwich wirklich übereinander. Eine Etage darf
+anders aussehen als die darunter — eine Terrasse, ein Erker, ein
+zurückgesetztes Dachgeschoss sind der Normalfall, kein Fehler. Aber der
+Nutzer muss *sehen* können, wo die Wand darunter verläuft, sonst rät er.
+
+Dazu gehört Einrasten an der fremden Kontur, nicht nur am Raster. Und es
+gehört bewusst **nicht** dazu, die Etagen zur Deckungsgleichheit zu
+zwingen: Das Haus richtet sich nach dem Nutzer, nicht umgekehrt.
+
+## ⬜ Phase 16 — Licht
+
+Heute färbt eine eingeschaltete Lampe ihr eigenes Icon. Das ist der Zustand
+des Geräts, nicht der Zustand des Raums.
+
+Ziel ist ein Raum, der **beleuchtet aussieht**: ein einstellbarer
+Leuchtradius pro Node, RGB und Farbtemperatur aus der Entity, Helligkeit als
+Intensität — und Wände, die das Licht begrenzen, damit es im Raum bleibt, in
+dem die Lampe steht.
+
+Der Punkt aus der Vision, der das Ganze trägt: Es geht nicht darum, Icons zu
+zeichnen, sondern den Zustand der Wohnung zu zeigen. Und es muss beides
+können — ein Kind stellt eine Lampe in ein Zimmer, ein Nerd gibt seinem
+LED-Streifen einen Radius, eine Richtung und eine Farbe.
+
+## ⬜ Phase 17 — Editor
+
+Der Edit-Modus kann heute ziehen, skalieren, Ecken fassen, einrasten,
+rückgängig machen. Was fehlt, ist der Anspruch der Vision:
+**einfach genug für ein Kind, mächtig genug für einen Enthusiasten.**
+
+Offen sind unter anderem Mehrfachauswahl, freie Wandzüge statt Rechtecke,
+Labels an einen eigenen Platz ziehen und ein Weg, einen Raum zu zeichnen,
+ohne ihn erst in Home Assistant anzulegen.
+
+Interaktion ist hier mitgemeint und größtenteils schon da: **kurzer Klick
+schaltet**, **langer Druck öffnet** das mittige Modal mit Werten, Entities,
+More-Info und dem Panel des Providers — der Grundriss bleibt dahinter
+sichtbar. Was noch fehlt, ist der lange Druck auf dem Touchscreen mit dem
+gleichen Verhalten wie mit der Maus.
+
+## ⬜ Phase 18 — Klima
+
+Temperatur, Luftfeuchte, Luftqualität und Lüftung als **Verlauf über die
+Fläche**, nicht als Zahl am Icon. Ein kalter Raum soll kalt aussehen.
+
+Bewusst zuletzt: Es ist die Phase, in der am ehesten etwas entsteht, das gut
+aussieht und nichts erklärt — und damit die Frage aus der Vision als Erstes
+mit „nein" beantworten würde.

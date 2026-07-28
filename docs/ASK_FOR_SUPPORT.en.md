@@ -4,7 +4,7 @@ You use an integration that is missing from your floor plan. This page is
 the text you file in its repository — and a few requests about how.
 
 The German version, with the same text, is
-[ASK_FOR_SUPPORT.md](ASK_FOR_SUPPORT.md).
+[ASK_FOR_SUPPORT.de.md](ASK_FOR_SUPPORT.de.md).
 
 ## First: do you need to ask at all?
 

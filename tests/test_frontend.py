@@ -26,8 +26,8 @@ from custom_components.floorplan_hub.const import (
 )
 from custom_components.floorplan_hub.frontend import (
     PANEL_MODULE,
-    PANEL_VERSION,
     URL_BASE,
+    panel_version,
     async_register_panel,
     async_remove_panel,
 )
@@ -52,7 +52,7 @@ async def test_the_panel_lands_in_the_sidebar(hass):
     assert panel["component_name"] == "custom"
     assert panel["sidebar_title"] == PANEL_TITLE
     assert panel["sidebar_icon"] == PANEL_ICON
-    assert custom["module_url"] == f"{URL_BASE}/{PANEL_MODULE}?v={PANEL_VERSION}"
+    assert custom["module_url"] == f"{URL_BASE}/{PANEL_MODULE}?v={panel_version()}"
     assert custom["embed_iframe"] is False
     assert panel["require_admin"] is False, "looking at the house is not an admin act"
 
@@ -66,6 +66,40 @@ async def test_the_module_url_actually_resolves_to_a_file(hass):
     assert (Path(served.path) / PANEL_MODULE).is_file(), (
         "the panel points at a module that has to exist on disk"
     )
+
+
+def test_the_cache_key_follows_the_file_it_caches(tmp_path, monkeypatch):
+    """A hand-maintained version number was wrong for most of the project.
+
+    It sat at 0.5.0 through a dozen rewrites of the renderer, so every
+    browser that had loaded the panel once kept serving that first copy --
+    users saw bugs that were fixed months earlier and reloading did not
+    help, because the URL never changed. Deriving it from the file is the
+    only version of this that cannot be forgotten.
+    """
+    from custom_components.floorplan_hub import frontend
+
+    before = frontend.panel_version()
+    assert before == frontend.panel_version(), "same file, same key"
+
+    original = PANEL_JS.read_bytes()
+    try:
+        PANEL_JS.write_bytes(original + b"\n/* a change */\n")
+        assert frontend.panel_version() != before, (
+            "a changed renderer must be a changed URL"
+        )
+    finally:
+        PANEL_JS.write_bytes(original)
+
+    assert frontend.panel_version() == before, "and reverting brings it back"
+
+
+def test_a_missing_panel_never_breaks_the_cache_key(monkeypatch):
+    """No renderer is a problem; a traceback during setup is a worse one."""
+    from custom_components.floorplan_hub import frontend
+
+    monkeypatch.setattr(frontend, "PANEL_MODULE", "not-a-file.js")
+    assert frontend.panel_version() == "unknown"
 
 
 @pytest.mark.asyncio

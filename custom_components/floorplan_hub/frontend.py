@@ -11,6 +11,7 @@ sync with a repository. HACS copies the file, Home Assistant serves it.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -22,9 +23,29 @@ _LOGGER = logging.getLogger(__name__)
 
 URL_BASE = f"/{DOMAIN}_frontend"
 PANEL_MODULE = "floorplan-hub-panel.js"
-# Bumped whenever the panel changes -- browsers cache modules aggressively
-# and a stale renderer against a fresh model is a bad first impression.
-PANEL_VERSION = "0.5.0"
+
+
+def panel_version() -> str:
+    """A cache key that changes exactly when the panel does.
+
+    This used to be a hand-maintained string, and it was wrong for most of
+    the project's life: the renderer was rewritten a dozen times while the
+    number stayed at 0.5.0, so every browser that had ever loaded the panel
+    kept serving its first copy from cache. Users saw bugs that had been
+    fixed months earlier and no amount of reloading helped, because the URL
+    never changed.
+
+    Hashing the file removes the step a human has to remember. A changed
+    renderer is a changed URL, always, and an unchanged one still gets to
+    stay in the browser's cache where it belongs.
+    """
+    try:
+        source = (Path(__file__).parent / "www" / PANEL_MODULE).read_bytes()
+    except OSError:  # pragma: no cover - the file ships with the component
+        # Never break the panel over a cache key: an uncacheable URL is a
+        # far smaller problem than no renderer at all.
+        return "unknown"
+    return hashlib.sha256(source).hexdigest()[:12]
 
 
 async def async_register_panel(hass: HomeAssistant) -> None:
@@ -42,7 +63,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         config={
             "_panel_custom": {
                 "name": "floorplan-hub-panel",
-                "module_url": f"{URL_BASE}/{PANEL_MODULE}?v={PANEL_VERSION}",
+                "module_url": f"{URL_BASE}/{PANEL_MODULE}?v={panel_version()}",
                 "embed_iframe": False,
                 "trust_external": False,
             }

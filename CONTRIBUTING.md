@@ -31,7 +31,7 @@ has no effect on code.
 
 ## Language
 
-User-facing docs (`README.md`, `ROADMAP.md`, `docs/ASK_FOR_SUPPORT.md`) are
+User-facing docs (`README.md`, `ROADMAP.md`, `docs/ASK_FOR_SUPPORT.de.md`) are
 German. Maintainer-facing material (`sdk/`, this file, code comments, commit
 messages, test names) is English, because the people it is aimed at maintain
 integrations in every language there is. `docs/PROVIDER_API.md` is German
