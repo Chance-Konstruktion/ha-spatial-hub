@@ -593,8 +593,33 @@ class SpatialHubPanel extends HTMLElement {
     const { zoom, x, y } = this._view;
     canvas.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`;
     canvas.style.setProperty("--camera-zoom", zoom);
+    this._holdStackIconSize(canvas);
     const readout = this._root.querySelector("[data-zoom-value]");
     if (readout) readout.textContent = `${Math.round(zoom * 100)} %`;
+  }
+
+  /** Keep the stacked view's markers one size, without moving them.
+   *
+   *  Written into the SVG `transform` attribute rather than left to the
+   *  CSS `scale` property. Order is the whole point: `translate` then
+   *  `scale` scales the marker *about its own anchor*, so it stays on the
+   *  spot it marks. The CSS property composes the other way round and
+   *  needs `transform-box`/`transform-origin` to say where the middle is
+   *  -- which browsers answer differently for a group whose bounding box
+   *  includes the label underneath. That is why the icons crept further
+   *  from their rooms the deeper you zoomed, and why it looked right in
+   *  Firefox and wrong in Chromium. An attribute has one meaning.
+   */
+  _holdStackIconSize(canvas) {
+    // No real DOM (first paint, or a headless test): nothing drawn yet.
+    if (!canvas || typeof canvas.querySelectorAll !== "function") return;
+    const counter = 1 / this._view.zoom;
+    for (const marker of canvas.querySelectorAll(".stack-node")) {
+      const x = marker.getAttribute("data-at-x");
+      const y = marker.getAttribute("data-at-y");
+      if (x === null || y === null) continue;
+      marker.setAttribute("transform", `translate(${x},${y}) scale(${counter})`);
+    }
   }
 
   /** Keep the plan against the window it is drawn in.
@@ -653,9 +678,27 @@ class SpatialHubPanel extends HTMLElement {
     this._applyCamera();
   }
 
-  /** Back to the whole plan, centred. The way out of any lost zoom. */
+  /** Back to the whole plan, centred. The way out of any lost zoom.
+   *
+   *  "Show everything" has to mean it. The plan is square and a screen is
+   *  not, so on a wide monitor 100 % is not the whole house -- the bottom
+   *  storey sits below the fold and the button that promises to fix that
+   *  did nothing. Zoom out until it fits, never in: filling a 16:9 window
+   *  with a magnified plan is not what the button says either.
+   */
   _fitToScreen() {
     this._view = { zoom: 1, x: 0, y: 0 };
+    const canvas = this._root && this._root.querySelector(".canvas");
+    const viewport = this._root && this._root.querySelector(".viewport");
+    if (canvas && viewport && canvas.offsetWidth && canvas.offsetHeight) {
+      const fits = Math.min(
+        viewport.clientWidth / canvas.offsetWidth,
+        viewport.clientHeight / canvas.offsetHeight,
+      );
+      if (fits > 0 && fits < 1) {
+        this._view.zoom = Math.max(ZOOM.min, fits);
+      }
+    }
     this._applyCamera();
   }
 
@@ -915,7 +958,10 @@ class SpatialHubPanel extends HTMLElement {
                    ${node.floor_id ? "" : "floorless"}"
                    data-node="${escapeHtml(node.id)}"
                    style="--layer-opacity:${this._providerOpacity(node.id)}"
-                   transform="translate(${at.x},${at.y})">
+                   data-at-x="${at.x}" data-at-y="${at.y}"
+                   transform="translate(${at.x},${at.y}) scale(${
+                     1 / this._view.zoom
+                   })">
           <circle r="14" fill="${this._nodeColour(node)}"/>
           ${this._stackIconHtml(node)}
           <text class="stack-label" y="30">${escapeHtml(node.label)}</text>
@@ -943,15 +989,20 @@ class SpatialHubPanel extends HTMLElement {
    */
   _stackIconHtml(node) {
     const custom = this._customIcon(node);
-    if (custom) {
-      return `<g class="stack-icon" transform="translate(-9,-9) scale(0.75)"
-        >${custom.svg}</g>`;
-    }
-    const icon = node.icon || this._genericIcon(node);
+    // Both kinds go through `foreignObject`, and that is not a detail.
+    // A provider ships its icon as a bare `<svg viewBox="0 0 24 24">`
+    // with no width or height. Dropped straight into this SVG that is a
+    // *nested viewport*, which defaults to 100% × 100% of the drawing:
+    // Firefox honours the CSS width, Chromium did not, so one device came
+    // out as a 1000-unit white shape covering the whole house. In HTML
+    // the same markup is an ordinary sized element, in every browser.
+    const inner = custom
+      ? `<span class="custom-icon">${custom.svg}</span>`
+      : `<ha-icon icon="${escapeHtml(
+          node.icon || this._genericIcon(node),
+        )}"></ha-icon>`;
     return `<foreignObject x="-11" y="-11" width="22" height="22"
-              class="stack-icon">
-        <ha-icon icon="${escapeHtml(icon)}"></ha-icon>
-      </foreignObject>`;
+              class="stack-icon">${inner}</foreignObject>`;
   }
 
   /** The camera lives here: one wrapper, both views, identical behaviour. */
@@ -2868,8 +2919,12 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
    zuletzt gesehen hat, und der Grundriss darunter würde bei jedem
    Etagenwechsel springen. Also eine Zeile, und bei Bedarf seitlich
    scrollbar -- die Leiste wird schmaler, nie höher. */
+/* "flex:1 1 auto" statt "0 1 auto": die Leiste nimmt sich den freien Platz
+   selbst, statt ihn dem Abstandshalter zu überlassen und danach auf zwei
+   Reiter zusammenzuschrumpfen. Bei sieben Etagen auf einem schmalen
+   Fenster lagen die letzten sonst unerreichbar unter dem Suchfeld. */
 .tabs { display:flex; gap:4px; flex-wrap:nowrap; overflow-x:auto;
-        min-width:0; flex:0 1 auto; scrollbar-width:none;
+        min-width:0; flex:1 1 auto; scrollbar-width:none;
         overscroll-behavior-x:contain; }
 .tabs::-webkit-scrollbar { display:none; }
 .tab { display:flex; align-items:center; gap:6px; border:0; border-radius:16px;
@@ -2879,7 +2934,7 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
           gequetschtes "Dachgeschoss" ist kein Reiter mehr. */
        flex:0 0 auto; white-space:nowrap; }
 .tab.on { background:rgba(255,255,255,.85); color:var(--primary-color,#03a9f4); }
-.spacer { flex:1 1 0; min-width:0; }
+.spacer { flex:0 1 0; min-width:0; }
 .icon-btn { border:0; background:transparent; color:inherit; cursor:pointer;
             border-radius:50%; padding:6px; display:flex; }
 .icon-btn.on { background:rgba(255,255,255,.25); }
@@ -2913,8 +2968,17 @@ main { flex:1; min-width:0; }
 .icon-btn[disabled] { opacity:.4; cursor:default; }
 
 /* The camera. Transform only, so panning never rebuilds the plan. */
-.viewport { overflow:hidden; touch-action:none; border-radius:12px; }
-.canvas { transform-origin:0 0; will-change:transform; width:min(100%, 1280px); }
+/* Der Grundriss ist quadratisch, ein Bildschirm ist es nicht. Ohne Deckel
+   ragt das Haus auf einem 16:9-Monitor unten aus dem Fenster und die
+   Ansicht wirkt wie im Hochformat. */
+.viewport { overflow:hidden; touch-action:none; border-radius:12px;
+            max-height:calc(100vh - 200px); }
+/* Kein "will-change:transform": das befördert die Fläche auf eine eigene
+   Ebene, die einmal gerastert und danach nur noch als Bitmap vergrößert
+   wird -- beim Hineinzoomen werden die Icons dadurch unscharf statt neu
+   gezeichnet. Chromium tut das konsequent, Firefox nicht, daher sah es
+   auf dem einen Rechner scharf und auf dem anderen matschig aus. */
+.canvas { transform-origin:0 0; width:min(100%, 1280px); }
 
 .stack { background:var(--fp-surface, var(--card-background-color,#fff));
          border-radius:12px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12));
@@ -2930,9 +2994,9 @@ main { flex:1; min-width:0; }
 .stack-edge.across { opacity:calc(var(--layer-opacity,1) * .95); }
 /* Ebenen-Deckkraft und die Abblendung der Suche multiplizieren sich,
    statt sich gegenseitig zu überschreiben. */
-.stack-node { cursor:pointer; transform-box:fill-box; transform-origin:center;
-              opacity:var(--layer-opacity,1);
-              scale:calc(1 / var(--camera-zoom, 1)); }
+/* Die Gegenskalierung sitzt im transform-Attribut, siehe
+   _holdStackIconSize -- hier steht bewusst kein scale. */
+.stack-node { cursor:pointer; opacity:var(--layer-opacity,1); }
 .stack-node circle { stroke:var(--card-background-color,#fff); stroke-width:2; }
 .stack-node.on circle { stroke:var(--fp-accent, var(--primary-color,#03a9f4)); stroke-width:4; }
 .stack-node.floorless circle { stroke-dasharray:3 2; }
@@ -2943,9 +3007,12 @@ main { flex:1; min-width:0; }
 .stack-node.crowded .stack-label { opacity:0; transition:opacity .12s; }
 .stack-node.crowded:hover .stack-label,
 .stack-node.crowded.on .stack-label { opacity:1; }
-.stack-icon { color:#fff; pointer-events:none; }
+.stack-icon { color:#fff; pointer-events:none; overflow:visible; }
 .stack-icon ha-icon { --mdc-icon-size:22px; color:#fff; }
-.stack-icon svg { width:22px; height:22px; fill:#fff; }
+/* Das mitgelieferte Provider-SVG bringt keine Größe mit. Im HTML-Kontext
+   des foreignObject greift diese hier zuverlässig. */
+.stack-icon .custom-icon { display:block; width:22px; height:22px; }
+.stack-icon .custom-icon svg { width:22px; height:22px; display:block; fill:#fff; }
 /* Der Garten ist der Ring ums Erdgeschoss, keine eigene Etage. */
 .apron { fill:var(--fp-outdoor, rgba(76,175,80,.10));
          stroke:var(--fp-outdoor-line, rgba(76,175,80,.45));

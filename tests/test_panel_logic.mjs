@@ -1140,7 +1140,57 @@ test("node markup counter-scales with the camera", () => {
     "utf8",
   );
   assert.match(source, /scale\(calc\(var\(--node-scale,1\) \/ var\(--camera-zoom,1\)\)\)/);
-  assert.match(source, /scale:calc\(1 \/ var\(--camera-zoom, 1\)\)/);
+});
+
+test("the stacked view scales its markers about their own anchor", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  // translate first, then scale: the marker grows around the spot it
+  // marks instead of drifting away from it the deeper the camera goes.
+  assert.match(source, /translate\(\$\{x\},\$\{y\}\) scale\(\$\{counter\}\)/);
+  assert.doesNotMatch(
+    source,
+    /scale:calc\(1 \/ var\(--camera-zoom, 1\)\)/,
+    "the CSS scale property composes the other way round, and browsers " +
+      "disagree about where a group's middle is -- that was the drift",
+  );
+});
+
+test("a provider's own icon is never nested raw into the drawing", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  // A bare <svg> with no width is a nested viewport and defaults to the
+  // whole drawing -- one device covered the entire house.
+  assert.doesNotMatch(source, /<g class="stack-icon"[^>]*>\$\{custom\.svg\}/);
+  assert.match(source, /class="stack-icon">\$\{inner\}<\/foreignObject>/);
+});
+
+test("the canvas is not frozen onto a bitmap layer", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  // will-change:transform rasterises the plan once and then only stretches
+  // that bitmap, which is what made the icons blurry on the way in.
+  assert.doesNotMatch(source, /\.canvas \{[^}]*will-change:transform/);
+});
+
+test("the floor tabs claim the free space themselves", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  // Otherwise the spacer takes it and the last storeys end up unreachable
+  // underneath the search box on a narrow window.
+  assert.match(source, /\.tabs \{[^}]*flex:1 1 auto/);
 });
 
 // ── Search ─────────────────────────────────────────────────
