@@ -37,6 +37,7 @@ hierher — egal wie gut es sich baut.
 | 16 | Licht, das den Raum beleuchtet | ⬜ |
 | 17 | Ein Editor, den ein Kind bedient | ⬜ |
 | 18 | Klima im Raum | ⬜ |
+| 19 | Wetter über dem Haus | ⬜ |
 
 ---
 
@@ -432,3 +433,19 @@ Fläche**, nicht als Zahl am Icon. Ein kalter Raum soll kalt aussehen.
 Bewusst zuletzt: Es ist die Phase, in der am ehesten etwas entsteht, das gut
 aussieht und nichts erklärt — und damit die Frage aus der Vision als Erstes
 mit „nein" beantworten würde.
+
+## ⬜ Phase 19 — Wetter über dem Haus
+
+Die Wetter-Entität wird nicht als Kachel gezeigt, sondern als **Zustand des
+Himmels über dem Haus**:
+
+- Die virtuellen Wolken **regnen**, wenn es regnet — es gibt sie schon, sie
+  müssen nur wissen, was draußen los ist
+- Bei bewölktem Himmel kommen **dunkelblaue Wolken** dazu
+- Eine **Sonne, die zum Mond wird**, und ihren Lauf über das Haus zieht
+- **Schnee**, **Blitze** bei Gewitter
+
+Bewusst nach dem Editor und nach dem Gebäudekörper. Es ist die Phase mit dem
+größten Verhältnis von Wirkung zu Nutzen, und ein Haus, das schneit, aber sich
+nicht einrichten lässt, hat die Reihenfolge falsch herum. Erst muss das Haus
+ein Haus sein.

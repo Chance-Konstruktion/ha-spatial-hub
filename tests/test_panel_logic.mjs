@@ -1615,3 +1615,70 @@ test("a ghost is placed through the same window as the rooms", () => {
   const expected = ((0.2 - frame.min) / frame.span) * 100;
   assert.match(html, new RegExp(`left:${expected}%`));
 });
+
+// ── The building around the storeys ────────────────────────
+
+test("the stack gets a body so it reads as one house", () => {
+  const data = model();
+  const view = panel(data, { floor: null });
+  const html = view._stackHtml();
+
+  assert.match(html, /shell-wall/, "see-through walls between the storeys");
+  assert.match(html, /shell-roof/, "and something on top of them");
+  assert.match(html, /shell-post/);
+});
+
+test("one storey gets no body", () => {
+  // A shell around a single sheet says nothing that the sheet did not.
+  const data = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+  });
+  const view = panel(data, { floor: null });
+
+  assert.equal(view._shellHtml(view._stackFloors), "");
+});
+
+test("the body is hung off the house, never off the garden", () => {
+  // The apron reaches outside 0..1. A shell that followed it would put
+  // the front wall somewhere in the lawn.
+  const plain = panel(model(), { floor: null });
+  const withGarden = panel(
+    model({
+      floors: [
+        { id: "eg", name: "Erdgeschoss", level: 0, icon: "", has_outdoor: true },
+        { id: "og", name: "Obergeschoss", level: 1, icon: "" },
+      ],
+    }),
+    { floor: null },
+  );
+
+  const corners = (html) =>
+    (html.match(/class="shell-post"[^/]*/g) || []).length;
+  assert.equal(corners(plain._stackHtml()), 4);
+  assert.equal(corners(withGarden._stackHtml()), 4, "still four walls");
+});
+
+test("the cloud and the homeless storey are not part of the building", () => {
+  const data = model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "" },
+      { id: "_virtual", name: "Virtuell", level: 900, virtual: true },
+    ],
+  });
+  const view = panel(data, { floor: null });
+
+  assert.equal(
+    view._shellHtml(view._stackFloors),
+    "",
+    "one real storey plus a cloud is still one storey",
+  );
+});
+
+test("the body never swallows a click meant for a device", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  assert.match(source, /\.shell \{ pointer-events:none/);
+});

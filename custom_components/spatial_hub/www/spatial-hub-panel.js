@@ -1003,6 +1003,7 @@ class SpatialHubPanel extends HTMLElement {
 
     return `${this._viewportHtml(`<div class="stack">
       <svg viewBox="0 0 1000 1000">
+        ${this._shellHtml(floors)}
         ${plans.join("")}
         ${edges}
         ${nodes}
@@ -1011,6 +1012,70 @@ class SpatialHubPanel extends HTMLElement {
     <p class="hint">Alle Etagen auf einmal — die einzige Ansicht, in der eine
     Verbindung zwischen zwei Stockwerken überhaupt zu sehen ist. Zum
     Anordnen und für Details eine einzelne Etage wählen.</p>`;
+  }
+
+  /** A hinted building around the storeys: walls you can see through.
+   *
+   *  Without it the stacked view is a pile of loose sheets. The rooms are
+   *  all there and it still does not read as a house, because nothing
+   *  says the storeys are one building rather than four drawings that
+   *  happen to be above each other.
+   *
+   *  Hinted, not drawn: the walls are barely-there fills and the roof is
+   *  a suggestion. The moment they are solid they cover the plan, and the
+   *  plan is the thing the user came for. Purely decorative, so it takes
+   *  no clicks -- and it is skipped when there is only one storey, where
+   *  a body around a single sheet says nothing.
+   */
+  _shellHtml(floors) {
+    const solid = floors.filter((floor) => !floor.virtual && !floor.unassigned);
+    if (solid.length < 2) return "";
+    const top = floors.indexOf(solid[0]);
+    const base = floors.indexOf(solid[solid.length - 1]);
+
+    // The building line is the house, 0..1 -- never the apron. A garden
+    // is not a wall, and hanging the shell off it would put the front
+    // door somewhere in the lawn.
+    const corners = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    const upper = corners.map(([x, y]) => this._project(top, x, y));
+    const lower = corners.map(([x, y]) => this._project(base, x, y));
+    const points = (list) => list.map((p) => `${p.x},${p.y}`).join(" ");
+
+    const walls = corners
+      .map((_corner, index) => {
+        const next = (index + 1) % corners.length;
+        return `<polygon class="shell-wall" points="${points([
+          upper[index], upper[next], lower[next], lower[index],
+        ])}"/>`;
+      })
+      .join("");
+
+    const posts = corners
+      .map(
+        (_corner, index) =>
+          `<line class="shell-post" x1="${upper[index].x}" y1="${upper[index].y}"
+                 x2="${lower[index].x}" y2="${lower[index].y}"/>`,
+      )
+      .join("");
+
+    // A gable over the top storey, ridged along the same axis the plan is
+    // skewed on, so it sits on the house instead of across it.
+    const middle = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    const rise = Math.max(40, (lower[0].y - upper[0].y) * 0.22);
+    const ridgeFrom = middle(upper[0], upper[3]);
+    const ridgeTo = middle(upper[1], upper[2]);
+    const peak = (point) => ({ x: point.x, y: point.y - rise });
+    const roof = `
+      <polygon class="shell-roof" points="${points([
+        upper[0], upper[1], peak(ridgeTo), peak(ridgeFrom),
+      ])}"/>
+      <polygon class="shell-roof" points="${points([
+        upper[3], upper[2], peak(ridgeTo), peak(ridgeFrom),
+      ])}"/>
+      <line class="shell-ridge" x1="${peak(ridgeFrom).x}" y1="${peak(ridgeFrom).y}"
+            x2="${peak(ridgeTo).x}" y2="${peak(ridgeTo).y}"/>`;
+
+    return `<g class="shell" aria-hidden="true">${walls}${posts}${roof}</g>`;
   }
 
   /** The icon in the stack, in the same shape as on a single floor.
@@ -3061,6 +3126,17 @@ main { flex:1; min-width:0; }
          border-radius:12px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12));
          padding:8px; }
 .stack svg { display:block; width:100%; height:auto; }
+/* Der angedeutete Gebäudekörper. Durchsichtig ist keine Stilfrage: sobald
+   die Wände decken, verdecken sie den Grundriss, und der ist der Grund,
+   warum jemand hinschaut. Rein dekorativ, daher pointer-events:none. */
+.shell { pointer-events:none; }
+.shell-wall { fill:var(--fp-shell, rgba(128,145,170,.07)); stroke:none; }
+.shell-post { stroke:var(--fp-shell-line, rgba(128,145,170,.45)); stroke-width:2; }
+.shell-roof { fill:var(--fp-shell, rgba(128,145,170,.10));
+              stroke:var(--fp-shell-line, rgba(128,145,170,.45)); stroke-width:2;
+              stroke-linejoin:round; }
+.shell-ridge { stroke:var(--fp-shell-line, rgba(128,145,170,.6)); stroke-width:2.5;
+               stroke-linecap:round; }
 .storey { fill:none; stroke:var(--divider-color,rgba(128,128,128,.45)); stroke-width:2; }
 .storey-name { font-size:26px; fill:currentColor; opacity:.65; text-anchor:end; }
 .stack .room { fill:rgba(128,128,128,.10);
