@@ -1,17 +1,27 @@
 # Wartehalle
 
-Zwei Integrationen, die **umziehen** — in eigene Repositories, sobald sie
-einmal an echter Hardware gelaufen sind. Hier liegen sie nur, damit sie
-nicht in einem Container verloren gehen, der abgeräumt wird.
+Integrationen, die **umziehen** — in eigene Repositories, sobald sie einmal
+an echter Hardware gelaufen sind. Hier liegen sie nur, damit sie nicht in
+einem Container verloren gehen, der abgeräumt wird.
 
 | | |
 |---|---|
-| `ha-spatial-zwave` | Z-Wave-Mesh: Controller, Nodes, RSSI |
 | `ha-spatial-esphome` | ESPHome-Boards: ein Punkt pro Platine, nicht pro Entität |
+
+## Ausgezogen
+
+| | |
+|---|---|
+| Z-Wave | [`Chance-Konstruktion/ha-spatial-zwave`](https://github.com/Chance-Konstruktion/ha-spatial-zwave) |
+
+Der Z-Wave-Adapter hat die Wartehalle verlassen: eigenes Repository, eigene
+Tests, eigenes Conformance-Kit. Was hier lag, ist **gelöscht statt kopiert**
+— zwei Kopien desselben Adapters laufen auseinander, und dann gewinnt die
+schlechtere, weil niemand merkt, welche er gerade liest.
 
 ## Warum sie nicht im Hub sind
 
-Sie nennen Z-Wave und ESPHome in jeder zweiten Zeile. Genau deshalb dürfen
+Sie nennen ESPHome und Z-Wave in jeder zweiten Zeile. Genau deshalb dürfen
 sie kein Teil des Hubs sein und werden es nie:
 
 - **Wer den Adapter geschenkt bekommt, schreibt ihn nie selbst.** Läge der
@@ -21,29 +31,28 @@ sie kein Teil des Hubs sein und werden es nie:
 - **Jede Integration außerhalb der Liste wäre zweite Klasse.** Der Moment,
   in dem der Hub zwei Integrationen kennt, ist der Moment, in dem er ein
   Katalog ist statt einer Plattform.
-- **Der Z-Wave-Adapter gehört am Ende in `zwave_js` selbst.** Zwanzig
-  Zeilen im Core, und niemand installiert mehr irgendwas. Dieses Repo hier
+- **Der Adapter gehört am Ende in die Integration selbst.** Zwanzig Zeilen
+  im Core, und niemand installiert mehr irgendwas. Ein eigenes Repository
   ist die Vorstufe, an der sich zeigen lässt, dass es zwanzig Zeilen sind.
+
+Das ist auch die Antwort auf „muss ich dafür jetzt fünf Repositories
+installieren?" — **nein.** Der Hub allein zeigt das Haus: Etagen und
+Bereiche kommen aus Home Assistant, und Licht, Klima, Türen & Bewegung und
+Medien sind als Ebenen ab Werk da. Ein Provider kommt nur dazu, wenn jemand
+etwas will, das in keiner Registry steht: die Topologie seines Funknetzes.
+Wer die nicht braucht, installiert nichts.
 
 `tests/test_staging.py` hält die Wand: Der Hub importiert nichts hieraus,
 und nichts hiervon liegt unter `custom_components/`.
 
 ## Stand
 
-**Ungetestet an echter Hardware.** Beide sind gegen die dokumentierten
-Strukturen gebaut und mit Fakes geprüft — ob ein echter Z-Wave-Stick die
-Statistiken so herausgibt, wie der Adapter es annimmt, weiß nur ein echter
-Stick.
-
-Der Z-Wave-Adapter greift dafür in die Laufzeitdaten von `zwave_js`, was
-keine zugesicherte Schnittstelle ist. Jeder einzelne Zugriff ist deshalb
-abgesichert, und wenn irgendetwas nicht so aussieht wie erwartet, fällt die
-Ebene auf die Device-Registry zurück und schreibt `quelle: registry` in ihre
-Metadaten. Ein Grundriss, der nach einem Update die RSSI-Zahlen verliert,
-ist ärgerlich. Einer, der die ganze Ebene verliert, ist kaputt.
+**Ungetestet an echter Hardware.** Gegen die dokumentierten Strukturen
+gebaut und mit Fakes geprüft — ob ein echtes Board sich so verhält, wie der
+Adapter es annimmt, weiß nur ein echtes Board.
 
 ## Installieren zum Testen
 
 Ordner aus `custom_components/` in die eigene HA-Konfiguration kopieren,
-neu starten, unter **Einstellungen → Geräte & Dienste** hinzufügen. Beide
-haben nichts einzustellen.
+neu starten, unter **Einstellungen → Geräte & Dienste** hinzufügen. Nichts
+einzustellen.
