@@ -33,7 +33,7 @@ hierher — egal wie gut es sich baut.
 | 12 | Zero-Config als Endzustand | ✅ |
 | 13 | Feedback aus der ersten Version | ✅ |
 | 14 | Spezifikation 1.0 | ✅ |
-| 15 | Gebäudeflucht: Außenwände über alle Etagen | ⬜ |
+| 15 | Gebäudeflucht: Außenwände über alle Etagen | 🟡 |
 | 16 | Licht, das den Raum beleuchtet | ⬜ |
 | 17 | Ein Editor, den ein Kind bedient | ⬜ |
 | 18 | Klima im Raum | ⬜ |
@@ -368,7 +368,7 @@ Ab hier ist nichts gebaut. Die vier Phasen stehen so in
 [`docs/Vision.md`](docs/Vision.md) und sind die Antwort darauf, warum der
 Hub heute einen Grundriss zeigt und noch keine Wohnung.
 
-## ⬜ Phase 15 — Gebäudeflucht
+## 🟡 Phase 15 — Gebäudeflucht
 
 Jede Etage soll ihre **Außenwände** kennen, und der Editor soll sie über
 alle Etagen hinweg einblenden — als blasse Kontur der jeweils anderen
@@ -382,6 +382,16 @@ Nutzer muss *sehen* können, wo die Wand darunter verläuft, sonst rät er.
 Dazu gehört Einrasten an der fremden Kontur, nicht nur am Raster. Und es
 gehört bewusst **nicht** dazu, die Etagen zur Deckungsgleichheit zu
 zwingen: Das Haus richtet sich nach dem Nutzer, nicht umgekehrt.
+
+**Steht:** Jede Etage meldet ihre `outline`, abgeleitet aus ihren
+Innenräumen — ohne Editor, ohne Speicher, folgt beim Ziehen mit. Der
+Garten zählt nicht mit, sonst bestimmte die Terrasse die Flucht. Eine
+gespeicherte Angabe schlägt die Ableitung. Im Bearbeiten-Modus liegen die
+Konturen der anderen Etagen als blasse Linien hinter der aktuellen,
+abschaltbar, und der Knopf erscheint nur, wenn es überhaupt etwas zu
+vergleichen gibt.
+
+**Fehlt noch:** das Einrasten an der fremden Kontur.
 
 ## ⬜ Phase 16 — Licht
 

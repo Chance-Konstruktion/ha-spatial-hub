@@ -66,6 +66,17 @@ _SIZE_SCHEMA = {
     vol.Required("height"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=2)),
 }
 
+# A storey's outer walls. Bounded like a position rather than like a size,
+# because it is a box *somewhere* on the plan rather than an extent: the
+# apron reaches outside 0..1 and a building that touched it would be wrong,
+# but a stated line is the user's business and only needs sane limits.
+_OUTLINE_SCHEMA = {
+    vol.Required("x"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=2)),
+    vol.Required("y"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=2)),
+    vol.Required("width"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=3)),
+    vol.Required("height"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=3)),
+}
+
 _POSITION_SCHEMA = {
     vol.Required("x"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=2)),
     vol.Required("y"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=2)),
@@ -154,6 +165,7 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
             ),
             vol.Optional("name"): vol.Any(None, str),
             vol.Optional("order"): vol.Any(None, vol.Coerce(int)),
+            vol.Optional("outline"): vol.Any(None, _OUTLINE_SCHEMA),
             # What an area is, and where it may be drawn.
             vol.Optional("kind"): vol.Any(None, vol.In(list(AREA_KINDS))),
             vol.Optional("in_sandwich"): vol.Any(None, bool),

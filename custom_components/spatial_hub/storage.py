@@ -29,7 +29,13 @@ from .const import STORAGE_KEY, STORAGE_VERSION
 _NODE_KEYS = {"position", "icon", "color", "scale", "rotation", "label_offset",
               "hidden"}
 _LAYER_KEYS = {"visible", "z_index", "opacity"}
-_FLOOR_KEYS = {"background", "aspect", "name", "order", "in_sandwich"}
+# `outline` is the storey's outer walls. The hub derives one from the rooms
+# on the floor, which is right often enough to need no editor at all -- but
+# a house whose terrace sits under the roof, or whose attic is narrower than
+# its rooms suggest, has a building line the rooms cannot show. Stating one
+# says so, and clearing it goes back to the guess.
+_FLOOR_KEYS = {"background", "aspect", "name", "order", "in_sandwich",
+               "outline"}
 # `kind` is what an area *is* (room, garden, cloud); the two sandwich
 # flags are where it may be drawn. Both are the user's to decide.
 _AREA_KEYS = {"position", "size", "color", "hidden", "kind", "in_sandwich",

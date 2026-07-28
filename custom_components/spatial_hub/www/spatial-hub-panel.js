@@ -121,6 +121,10 @@ class SpatialHubPanel extends HTMLElement {
     // the first thing somebody wants to see is their house, not a list of
     // the layers it is made of. One click opens it and it stays open.
     this._legendOpen = false;
+    // The other storeys' walls, shown while editing. On by default: the
+    // whole point is to notice the drift without having gone looking for
+    // a setting first.
+    this._ghosts = true;
     this._facets = null;
     // The camera. One per view, shared by the stacked and the single
     // floor: zooming in, switching tabs and finding the same magnification
@@ -794,6 +798,15 @@ class SpatialHubPanel extends HTMLElement {
                <button class="icon-btn" data-floor-dialog="1" title="Etage einrichten">
                  <ha-icon icon="mdi:image-outline"></ha-icon>
                </button>
+               ${
+                 this._ghostFloorCount
+                   ? `<button class="icon-btn ${this._ghosts ? "on" : ""}"
+                              data-toggle-ghosts="1"
+                              title="Außenwände der anderen Etagen">
+                        <ha-icon icon="mdi:layers-outline"></ha-icon>
+                      </button>`
+                   : ""
+               }
                <button class="icon-btn" data-reset-floor="1"
                        title="Anordnung dieser Etage zurücksetzen">
                  <ha-icon icon="mdi:backup-restore"></ha-icon>
@@ -1008,6 +1021,7 @@ class SpatialHubPanel extends HTMLElement {
                ? `background-image:url('${escapeHtml(background)}')`
                : ""
            }">
+        ${this._ghostsHtml()}
         ${this._areasHtml()}
         <svg class="edges" viewBox="0 0 1000 1000" preserveAspectRatio="none">
           <defs>
@@ -1054,6 +1068,52 @@ class SpatialHubPanel extends HTMLElement {
             data-resize-area="${id}" data-resize-edge="${edge}"
             title="Größe ändern"></span>`,
       )
+      .join("");
+  }
+
+  /** The other storeys' outer walls, behind the one being edited.
+   *
+   *  A house is one building and its floors are meant to sit above each
+   *  other, but each floor is its own tab -- so until now the only way to
+   *  line the cellar up with the ground floor was to remember what the
+   *  ground floor looked like. Nobody can, and the sandwich showed the
+   *  drift that nothing during editing had revealed.
+   *
+   *  Only in edit mode, and only on a single floor: in the stacked view
+   *  the storeys are already drawn over each other, and outside editing
+   *  the lines are clutter over a plan nobody is changing.
+   */
+  _ghostFloors() {
+    if (!this._edit || this._stacked) return [];
+    const current = this._floor;
+    if (!current) return [];
+    return this._floors.filter(
+      (floor) =>
+        floor.id !== current.id && floor.outline && !floor.virtual &&
+        !floor.unassigned,
+    );
+  }
+
+  /** Whether there is anything to show, so the button can stay away. */
+  get _ghostFloorCount() {
+    return this._ghostFloors().length;
+  }
+
+  _ghostsHtml() {
+    if (!this._ghosts) return "";
+    const frame = this._frame;
+    return this._ghostFloors()
+      .map((floor) => {
+        const box = floor.outline;
+        return `
+        <div class="ghost" style="
+              left:${((box.x - frame.min) / frame.span) * 100}%;
+              top:${((box.y - frame.min) / frame.span) * 100}%;
+              width:${(box.width / frame.span) * 100}%;
+              height:${(box.height / frame.span) * 100}%;">
+          <span class="ghost-name">${escapeHtml(floor.name)}</span>
+        </div>`;
+      })
       .join("");
   }
 
@@ -2383,6 +2443,12 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
+    if (hit("data-toggle-ghosts")) {
+      this._ghosts = !this._ghosts;
+      this._render();
+      return;
+    }
+
     if (hit("data-legend")) {
       this._legendOpen = !this._legendOpen;
       this._render();
@@ -2901,6 +2967,17 @@ main { flex:1; min-width:0; }
 .edge.on { opacity:var(--layer-opacity,1); stroke-width:5; }
 .edge.animated { stroke-dasharray:8 6; animation:flow 1.2s linear infinite; }
 @keyframes flow { to { stroke-dashoffset:-28; } }
+
+/* Die Außenwände der anderen Etagen: eine Linie, kein Raum. Nicht
+   anklickbar, nicht im Weg -- nur da, damit man sieht, wo das Haus
+   darunter aufhört. */
+.ghost { position:absolute; pointer-events:none; border-radius:4px;
+         border:2px dashed var(--fp-ghost, rgba(128,128,128,.55));
+         background:transparent; }
+.ghost-name { position:absolute; top:-9px; left:8px; padding:0 4px;
+              font-size:10px; letter-spacing:.04em; text-transform:uppercase;
+              color:var(--secondary-text-color,#727272);
+              background:var(--fp-surface, var(--card-background-color,#fff)); }
 
 .area { position:absolute; transform:translate(-50%,-50%);
         border:1px dashed var(--divider-color,#e0e0e0); border-radius:10px;
