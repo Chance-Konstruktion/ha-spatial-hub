@@ -1699,3 +1699,32 @@ test("the body never swallows a click meant for a device", () => {
   );
   assert.match(source, /\.shell \{ pointer-events:none/);
 });
+
+test("the roof can be switched off", () => {
+  // Decoration, and decoration the user did not ask for is decoration
+  // they get to remove.
+  const view = panel(model(), { floor: null });
+  assert.match(view._shellHtml(view._stackFloors).front, /shell-roof/);
+
+  view._roof = false;
+  assert.equal(view._shellHtml(view._stackFloors).front.includes("shell-roof"),
+               false);
+});
+
+test("the roof is an outline, not a lid over the top storey", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  assert.match(source, /\.shell-roof \{ fill:none;/);
+});
+
+test("a cloud never swallows the grip that resizes it", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  assert.match(source, /\.area\.virtual \.cloud \{[^}]*pointer-events:none/);
+});

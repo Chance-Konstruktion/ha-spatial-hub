@@ -139,6 +139,11 @@ class SpatialHubPanel extends HTMLElement {
     // whole point is to notice the drift without having gone looking for
     // a setting first.
     this._ghosts = true;
+    // The roof is decoration and nothing else, so it is the user's to
+    // switch off. Four filled slopes over the top storey turned out to
+    // read as a lid rather than a house; an outline says "building"
+    // without covering the floor underneath it.
+    this._roof = true;
     this._facets = null;
     // The camera. One per view, shared by the stacked and the single
     // floor: zooming in, switching tabs and finding the same magnification
@@ -894,6 +899,15 @@ class SpatialHubPanel extends HTMLElement {
           </button>
         </div>
         ${
+          this._stacked
+            ? `<button class="icon-btn ${this._roof ? "on" : ""}"
+                       data-toggle-roof="1"
+                       title="${this._roof ? "Dach ausblenden" : "Dach zeigen"}">
+                 <ha-icon icon="mdi:home-roof"></ha-icon>
+               </button>`
+            : ""
+        }
+        ${
           this._edit
             ? `<button class="icon-btn" data-undo="1" title="Rückgängig"
                        ${this._undo.length ? "" : "disabled"}>
@@ -1114,14 +1128,16 @@ class SpatialHubPanel extends HTMLElement {
       y: (upper[0].y + upper[1].y + upper[2].y + upper[3].y) / 4
         - (depth * 0.5 + 80),
     };
-    const roof = upper
-      .map((corner, index) => {
-        const next = upper[(index + 1) % upper.length];
-        return `<polygon class="shell-roof" points="${points([
-          corner, next, apex,
-        ])}"/>`;
-      })
-      .join("");
+    const roof = this._roof
+      ? upper
+          .map((corner, index) => {
+            const next = upper[(index + 1) % upper.length];
+            return `<polygon class="shell-roof" points="${points([
+              corner, next, apex,
+            ])}"/>`;
+          })
+          .join("")
+      : "";
 
     // The walls go behind the storeys, the roof in front of them. With a
     // cloud plane above the top floor the roof sits exactly where the
@@ -2757,6 +2773,12 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
+    if (hit("data-toggle-roof")) {
+      this._roof = !this._roof;
+      this._render();
+      return;
+    }
+
     if (hit("data-toggle-ghosts")) {
       this._ghosts = !this._ghosts;
       this._render();
@@ -3253,8 +3275,10 @@ main { flex:1; min-width:0; }
 .shell { pointer-events:none; }
 .shell-wall { fill:var(--fp-shell, rgba(128,145,170,.09)); stroke:none; }
 .shell-post { stroke:var(--fp-shell-line, rgba(128,145,170,.45)); stroke-width:2; }
-.shell-roof { fill:var(--fp-shell, rgba(128,145,170,.16));
-              stroke:var(--fp-shell-line, rgba(128,145,170,.6)); stroke-width:2.5;
+/* Nur die Kante. Gefüllt lagen vier Flächen wie ein Deckel über dem
+   Dachgeschoss und verdeckten genau die Etage, die man sehen will. */
+.shell-roof { fill:none;
+              stroke:var(--fp-shell-line, rgba(128,145,170,.55)); stroke-width:2;
               stroke-linejoin:round; }
 .shell-ridge { stroke:var(--fp-shell-line, rgba(128,145,170,.6)); stroke-width:2.5;
                stroke-linecap:round; }
@@ -3419,7 +3443,8 @@ select { font:inherit; padding:6px; border-radius:8px;
    Wolke: Cloud, VPN und Server sind drei Dinge, nicht ein Kasten mit drei
    Kästen darin. */
 .area.virtual { border:0; background:transparent; opacity:1; }
-.area.virtual .cloud { position:absolute; inset:0; overflow:visible; }
+.area.virtual .cloud { position:absolute; inset:0; overflow:visible;
+                       pointer-events:none; }
 .area.virtual .cloud path {
   fill:var(--fp-virtual, rgba(120,144,180,.16));
   stroke:var(--fp-virtual-line, rgba(120,144,180,.7));
