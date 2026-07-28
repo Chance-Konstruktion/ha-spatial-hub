@@ -34,8 +34,12 @@ _LAYER_KEYS = {"visible", "z_index", "opacity"}
 # a house whose terrace sits under the roof, or whose attic is narrower than
 # its rooms suggest, has a building line the rooms cannot show. Stating one
 # says so, and clearing it goes back to the guess.
+# `kind` says a "floor" is not a storey at all: Home Assistant has floors
+# and nothing else, so a garden or a network diagram gets put where floors
+# go. Marking it here dissolves it -- outdoors into the ring around the
+# ground floor, virtual onto its own plane above the roof.
 _FLOOR_KEYS = {"background", "aspect", "name", "order", "in_sandwich",
-               "outline"}
+               "outline", "kind"}
 # `kind` is what an area *is* (room, garden, cloud); the two sandwich
 # flags are where it may be drawn. Both are the user's to decide.
 _AREA_KEYS = {"position", "size", "color", "hidden", "kind", "in_sandwich",

@@ -56,6 +56,18 @@ const frameOf = (floor) => {
 
 const inFrame = (value, frame) => ((value - frame.min) / frame.span) * 100;
 
+/** The outline every virtual area is drawn in.
+ *
+ *  Stretched to whatever the area's box is, so a wide VPN and a small
+ *  cloud are the same shape at different sizes rather than two shapes.
+ *  `preserveAspectRatio="none"` is the point: it is a label for "this is
+ *  not a room", not a picture of a cloud that has to stay round.
+ */
+const CLOUD_SVG = `<svg class="cloud" viewBox="0 0 100 60"
+  preserveAspectRatio="none" aria-hidden="true"><path d="M26 52
+  C12 52 5 44 5 35 C5 26 12 19 21 19 C24 9 33 3 43 3 C56 3 66 12 68 24
+  C79 24 88 30 88 39 C88 47 80 52 70 52 Z"/></svg>`;
+
 /** The three area kinds, frozen. Specification § Area Type.
  *
  *  A renderer that compares against a literal is a renderer that quietly
@@ -451,15 +463,35 @@ class SpatialHubPanel extends HTMLElement {
     return model.nodes.filter((node) => {
       if (hidden.has(this._providerOf(node.id))) return false;
       if (!node.position) return false;
-      // A node with no floor belongs to no storey and would otherwise be
-      // invisible everywhere. Better shown on each with a marker than lost.
-      if (!node.floor_id) return true;
+      // A node with no floor has no place on the plan -- it gets the tray
+      // underneath instead. Dropping it somewhere in the rooms was the
+      // worst of both: it looked assigned, and it sat on top of a grid
+      // measured without it.
+      if (!node.floor_id) return false;
       // In the house view, a storey the user kept out of the sandwich
       // takes its nodes with it -- otherwise they float over the storey
       // below and read as belonging to it.
       if (!floor) return stackable.has(node.floor_id);
       return node.floor_id === floor.id;
     });
+  }
+
+  /** Everything Home Assistant has not put on a storey yet.
+   *
+   *  These are not drawn in the plan. They belong to no room, so any
+   *  position the hub invents for them is a lie the user then has to
+   *  un-believe -- and the one time it matters is precisely when they are
+   *  looking for what is still unsorted. They go in a strip under the
+   *  house, on every floor, because the fix is one click away in Home
+   *  Assistant and nowhere in here.
+   */
+  get _floorlessNodes() {
+    const model = this._model;
+    if (!model) return [];
+    const hidden = this._hiddenProviders;
+    return model.nodes.filter(
+      (node) => !node.floor_id && !hidden.has(this._providerOf(node.id)),
+    );
   }
 
   get _visibleEdges() {
@@ -1089,6 +1121,7 @@ class SpatialHubPanel extends HTMLElement {
     return `
       ${banner}
       ${this._viewportHtml(stage)}
+      ${this._trayHtml()}
       ${
         this._edit && !this._placing
           ? `<p class="hint">Ziehen ordnet an; an den Wänden und Ecken eines
@@ -1103,6 +1136,49 @@ class SpatialHubPanel extends HTMLElement {
             )}“. <button class="link" data-cancel-place="1">Abbrechen</button></p>`
           : ""
       }`;
+  }
+
+  /** The strip under the house: everything still waiting for a room.
+   *
+   *  Outside the plan on purpose. These devices have no place in it yet,
+   *  and the whole job of this strip is to be the list that gets shorter
+   *  -- so it says where the fix is (Home Assistant, not here) and gets
+   *  out of the way the moment it is empty.
+   */
+  _trayHtml() {
+    const waiting = this._floorlessNodes;
+    if (!waiting.length) return "";
+    return `
+      <section class="tray">
+        <p class="tray-head">
+          <ha-icon icon="mdi:tray-arrow-down"></ha-icon>
+          <span>${waiting.length} ohne Etage</span>
+          <span class="muted">— in Home Assistant unter <i>Einstellungen →
+          Bereiche &amp; Zonen</i> einem Raum zuweisen, dann wandern sie von
+          selbst an ihren Platz.</span>
+        </p>
+        <div class="tray-items">
+          ${waiting
+            .map((node) => {
+              const custom = this._customIcon(node);
+              return `
+              <button class="tray-item" data-node="${escapeHtml(node.id)}"
+                      title="${escapeHtml(node.label)}">
+                <span class="dot" style="--node-color:${escapeHtml(
+                  this._nodeColour(node),
+                )}">${
+                  custom
+                    ? `<span class="custom-icon">${custom.svg}</span>`
+                    : `<ha-icon icon="${escapeHtml(
+                        node.icon || this._genericIcon(node),
+                      )}"></ha-icon>`
+                }</span>
+                <span>${escapeHtml(node.label)}</span>
+              </button>`;
+            })
+            .join("")}
+        </div>
+      </section>`;
   }
 
   /** The eight handles that make a room properly editable.
@@ -1182,6 +1258,7 @@ class SpatialHubPanel extends HTMLElement {
               top:${inFrame(area.position.y, frame)}%;
               width:${(size.width / frame.span) * 100}%;
               height:${(size.height / frame.span) * 100}%;">
+          ${kindOf(area) === AREA_KIND.VIRTUAL ? CLOUD_SVG : ""}
           <span class="area-name">
             ${area.icon ? `<ha-icon icon="${escapeHtml(area.icon)}"></ha-icon>` : ""}
             ${escapeHtml(area.name)}
@@ -3129,7 +3206,35 @@ select { font:inherit; padding:6px; border-radius:8px;
                display:flex; border-radius:50%; }
 .area.outdoor { border-style:solid; border-color:var(--fp-outdoor-line, rgba(76,175,80,.6));
                 background:var(--fp-outdoor, rgba(76,175,80,.10)); }
-.area.virtual { border-style:dotted; }
+/* Ein virtueller Bereich ist kein Raum, und ein Rechteck mit gepunktetem
+   Rand sagt das niemandem. Jeder so markierte Bereich bekommt seine eigene
+   Wolke: Cloud, VPN und Server sind drei Dinge, nicht ein Kasten mit drei
+   Kästen darin. */
+.area.virtual { border:0; background:transparent; opacity:1; }
+.area.virtual .cloud { position:absolute; inset:0; overflow:visible; }
+.area.virtual .cloud path {
+  fill:var(--fp-virtual, rgba(120,144,180,.16));
+  stroke:var(--fp-virtual-line, rgba(120,144,180,.7));
+  stroke-width:1.5; vector-effect:non-scaling-stroke; stroke-dasharray:7 5; }
+.area.virtual .area-name { top:30%; left:0; right:0; justify-content:center; }
+/* Die Ablage steht bewusst außerhalb des Grundrisses: was hier liegt,
+   hat noch keinen Platz im Haus, und einer im Raster wäre eine Behauptung. */
+.tray { margin:10px 0 0; padding:8px 12px; border-radius:12px;
+        background:var(--card-background-color,#fff);
+        box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
+.tray-head { display:flex; align-items:center; flex-wrap:wrap; gap:6px;
+             margin:0 0 8px; font-size:13px; }
+.tray-items { display:flex; flex-wrap:wrap; gap:6px; }
+.tray-item { display:flex; align-items:center; gap:6px; border:0; font:inherit;
+             color:inherit; cursor:pointer; border-radius:16px; padding:3px 10px 3px 3px;
+             background:var(--secondary-background-color,#fafafa); font-size:13px; }
+.tray-item:hover { background:var(--divider-color,#e0e0e0); }
+.tray-item .dot { width:26px; height:26px; border-radius:50%; display:flex;
+                  align-items:center; justify-content:center; color:#fff;
+                  background:var(--node-color);
+                  outline:2px dashed var(--warning-color,#ff9800); outline-offset:1px; }
+.tray-item .dot ha-icon { --mdc-icon-size:16px; }
+.tray-item .custom-icon svg { width:16px; height:16px; fill:currentColor; }
 .stage.with-apron { outline:none; }
 .node.dimmed { opacity:calc(var(--layer-opacity,1) * .25); }
 .node.found .dot { box-shadow:0 0 0 4px var(--fp-accent, var(--primary-color,#03a9f4)); }

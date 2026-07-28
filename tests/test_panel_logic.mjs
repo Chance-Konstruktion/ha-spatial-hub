@@ -173,12 +173,32 @@ test("only the selected floor is drawn", () => {
   assert.deepEqual(view._visibleNodes.map((n) => n.id), ["a:up"]);
 });
 
-test("a node with no floor is shown on every floor rather than nowhere", () => {
+test("a node with no floor waits in the tray, not somewhere in the rooms", () => {
+  // Dropped into the plan it was the worst of both: it looked assigned,
+  // and it sat on top of a grid that was measured without it.
   const view = panel(model({ nodes: [node("a:homeless", { floor_id: null })] }));
-  assert.equal(view._visibleNodes.length, 1);
+  assert.deepEqual(view._visibleNodes, [], "never drawn among the rooms");
+  assert.deepEqual(view._floorlessNodes.map((n) => n.id), ["a:homeless"]);
+
   view._floorId = "og";
-  assert.equal(view._visibleNodes.length, 1, "still visible upstairs");
-  assert.match(view._nodeHtml(view._visibleNodes[0]), /floorless/);
+  assert.deepEqual(
+    view._floorlessNodes.map((n) => n.id),
+    ["a:homeless"],
+    "the tray is the same on every storey -- the fix is not per floor",
+  );
+  assert.match(view._trayHtml(), /a:homeless/);
+});
+
+test("the tray disappears once everything has a room", () => {
+  const view = panel(model());
+  assert.deepEqual(view._floorlessNodes, []);
+  assert.equal(view._trayHtml(), "", "an empty strip is furniture, not information");
+});
+
+test("hiding a provider empties its share of the tray too", () => {
+  const data = model({ nodes: [node("a:homeless", { floor_id: null })] });
+  data.layers[0].visible = false;
+  assert.deepEqual(panel(data)._floorlessNodes, []);
 });
 
 test("hiding a layer hides the provider that produced it", () => {
@@ -945,12 +965,14 @@ test("many storeys are squeezed instead of running off the bottom", () => {
   assert.ok(view._project(5, 1, 1).y <= 1000, "the bottom storey is off-canvas");
 });
 
-test("a node on no storey at all is drawn, not silently missing", () => {
+test("a node on no storey at all lands in the tray, not silently missing", () => {
   const data = model({ nodes: [node("a:lost", { floor_id: null })] });
   const view = panel(data, { floor: null });
 
-  assert.match(view._stackHtml(), /floorless/);
-  assert.match(view._stackHtml(), /a:lost/);
+  // Not on a storey it does not belong to -- in the strip underneath,
+  // which is the same answer the single-floor view gives.
+  assert.doesNotMatch(view._stackHtml(), /a:lost/);
+  assert.match(view._trayHtml(), /a:lost/);
 });
 
 test("the storey for roomless areas stays at the bottom of the stack", () => {

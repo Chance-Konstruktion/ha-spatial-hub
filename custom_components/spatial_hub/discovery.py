@@ -171,6 +171,43 @@ _FLOOR_NUMBER = re.compile(
 )
 
 
+# Floor names that mean "this is not a storey at all". Home Assistant has
+# no such concept, so a user who wants a garden or a network diagram puts
+# it where floors go -- and it lands between the cellar and the ground
+# floor as if you could walk down into the front garden.
+_VIRTUAL_FLOOR_WORDS = frozenset(
+    {
+        "cloud", "wolke", "internet", "vpn", "netz", "netzwerk", "network",
+        "server", "online", "virtuell", "virtual", "extern", "external",
+        "web", "lan", "wan",
+    }
+)
+
+
+def floor_kind(name: str, stated: str | None = None) -> AreaKind | None:
+    """Is this "floor" a storey, the outdoors, or something virtual?
+
+    A stated kind always wins -- the editor is where the user corrects a
+    guess, and a correction that gets re-guessed every refresh is not a
+    correction. Otherwise the name decides, and a name that says nothing
+    stays ``None``: an ordinary storey needs no opinion.
+
+    This is deliberately a *floor* question and not the per-area one. A
+    floor called "Draußen" holding areas called "Autos" and "Gartenhütte"
+    is entirely normal, and asking each area on its own gets one of them
+    right and leaves the storey half-dissolved -- a garden that is still a
+    floor, with two rooms left on it.
+    """
+    if stated is not None:
+        return AreaKind.parse(stated)
+    words = set(_fold(name).split())
+    if words & _VIRTUAL_FLOOR_WORDS:
+        return AreaKind.VIRTUAL
+    if any(word in _OUTDOOR_WORDS for word in words):
+        return AreaKind.OUTDOOR
+    return None
+
+
 def floor_level(name: str, stated: int | None = None) -> int | None:
     """The storey a floor sits on, from its level or failing that its name.
 
