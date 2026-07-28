@@ -38,6 +38,37 @@ from .storage import LayoutStore
 _LOGGER = logging.getLogger(__name__)
 
 
+def _bounding_box(areas: list[dict[str, Any]]) -> dict[str, float] | None:
+    """The box around a set of rooms, or None when there are none.
+
+    Positions are centres, so each room reaches half its size in every
+    direction. None rather than a zero-size box: a storey with nothing on
+    it has no building line, and drawing a dot in the middle of the plan
+    would be an answer where there is none.
+    """
+    edges = [
+        (
+            area["position"]["x"] - (area.get("size") or {}).get("width", 0) / 2,
+            area["position"]["y"] - (area.get("size") or {}).get("height", 0) / 2,
+            area["position"]["x"] + (area.get("size") or {}).get("width", 0) / 2,
+            area["position"]["y"] + (area.get("size") or {}).get("height", 0) / 2,
+        )
+        for area in areas
+    ]
+    if not edges:
+        return None
+    left = min(edge[0] for edge in edges)
+    top = min(edge[1] for edge in edges)
+    right = max(edge[2] for edge in edges)
+    bottom = max(edge[3] for edge in edges)
+    return {
+        "x": left,
+        "y": top,
+        "width": right - left,
+        "height": bottom - top,
+    }
+
+
 class SpatialHub:
     """Aggregates providers, layout and registries into one model."""
 
@@ -212,7 +243,9 @@ class SpatialHub:
 
         return {
             "api_version": API_VERSION,
-            "floors": self._apply_floor_layout(floors),
+            "floors": self._outline_floors(
+                self._apply_floor_layout(floors), visible_areas
+            ),
             "areas": visible_areas,
             "hidden": {"nodes": hidden_nodes, "areas": hidden_areas},
             "layers": self._apply_layer_layout(layers),
@@ -410,6 +443,43 @@ class SpatialHub:
                 else (floor.get("level") or 0),
             ),
         )
+
+    def _outline_floors(
+        self, floors: list[dict[str, Any]], areas: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Give every floor its outer walls, so the storeys can be lined up.
+
+        A house is one building, and its storeys are supposed to sit above
+        each other. Until now nothing said where a floor *ends*, so the
+        only way to line the cellar up with the ground floor was to guess
+        by eye against rooms that are not even in the same tab.
+
+        The outline is derived rather than drawn: it is the box around
+        everything on the storey, which needs no editor, no storage and no
+        decision from the user, and follows along as rooms are dragged. A
+        user who wants a different building line can still store one --
+        a terrace does not have to count as the wall -- and that override
+        wins, which is the same rule every other guess in here follows.
+
+        Outdoor areas are left out on purpose. The garden is not part of
+        the building, and letting the terrace decide where the wall runs
+        is exactly the misalignment this is meant to reveal.
+        """
+        for floor in floors:
+            stated = self.store.get("floors", floor["id"]).get("outline")
+            if stated:
+                floor["outline"] = stated
+                continue
+            floor["outline"] = _bounding_box(
+                [
+                    area
+                    for area in areas
+                    if area.get("floor_id") == floor["id"]
+                    and area.get("position")
+                    and AreaKind.parse(area.get("kind")) is not AreaKind.OUTDOOR
+                ]
+            )
+        return floors
 
     def _merge_area_overrides(self, areas: list[dict[str, Any]]) -> None:
         """Fold the user's stored decisions into each area, in place.
