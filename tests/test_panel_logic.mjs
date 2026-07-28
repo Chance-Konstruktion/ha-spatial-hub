@@ -1220,3 +1220,34 @@ test("a node with nothing behind it gets no dead links", () => {
   assert.doesNotMatch(html, /data-navigate/);
   assert.doesNotMatch(html, /data-toggle-entities/);
 });
+
+test("the legend starts folded away", () => {
+  const view = panel();
+
+  assert.equal(view._legendOpen, false, "the house comes first, not its index");
+  const closed = view._legendHtml();
+  assert.match(closed, /data-legend/, "and there is a way to open it");
+  assert.equal(
+    /class="dock"/.test(closed), false,
+    "nothing of the legend is rendered while it is closed",
+  );
+
+  view._legendOpen = true;
+  assert.match(view._legendHtml(), /class="dock"/);
+});
+
+test("clicking the legend toggle opens and closes it", () => {
+  const view = panel();
+  let renders = 0;
+  view._render = () => { renders += 1; };
+  const toggle = {
+    getAttribute: (name) => (name === "data-legend" ? "" : null),
+  };
+  const click = { composedPath: () => [toggle] };
+
+  view._onClick(click);
+  assert.equal(view._legendOpen, true);
+  view._onClick(click);
+  assert.equal(view._legendOpen, false);
+  assert.equal(renders, 2, "each toggle redraws once");
+});

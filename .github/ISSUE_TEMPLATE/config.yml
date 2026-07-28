@@ -1,7 +1,7 @@
 blank_issues_enabled: true
 contact_links:
   - name: "Meine Integration fehlt auf dem Grundriss"
-    url: https://github.com/Chance-Konstruktion/ha-floorplan-hub/blob/main/docs/ASK_FOR_SUPPORT.md
+    url: https://github.com/Chance-Konstruktion/ha-floorplan-hub/blob/main/docs/ASK_FOR_SUPPORT.de.md
     about: >
       Das ist meistens kein Fehler hier, sondern eine Ebene, die du dir in
       zwei Minuten selbst baust (Bearbeiten → + Ebene). Und wenn du wirklich

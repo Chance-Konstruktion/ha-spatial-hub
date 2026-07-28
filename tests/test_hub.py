@@ -576,3 +576,72 @@ async def test_the_provider_keeps_the_icon_it_chose(hass, hub):
     model = await hub.async_model()
 
     assert model["nodes"][0]["icon"] == "mdi:ceiling-light"
+
+
+# ── Storeys nobody numbered ────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Dach", 90),
+        ("Dachboden", 90),
+        ("Dachgeschoss", 90),
+        ("Spitzboden", 90),
+        ("Attic", 90),
+        ("Keller", -1),
+        ("Basement", -1),
+        ("Tiefgarage", -2),
+        ("Erdgeschoss", 0),
+        ("EG", 0),
+        ("Ground Floor", 0),
+        ("1. OG", 1),
+        ("2. OG", 2),
+        ("3rd Floor", 3),
+        ("Etage 4", 4),
+        ("Wohnbereich", None),
+    ],
+)
+def test_a_floor_nobody_numbered_is_read_from_its_name(name, expected):
+    """Home Assistant's level field is optional, and most people skip it."""
+    from custom_components.floorplan_hub.discovery import floor_level
+
+    assert floor_level(name) == expected
+
+
+def test_a_stated_level_always_wins():
+    """Including zero: the user filled the field in, and that settles it."""
+    from custom_components.floorplan_hub.discovery import floor_level
+
+    assert floor_level("Dach", 0) == 0, "a stated ground floor called Dach"
+    assert floor_level("Keller", 7) == 7
+    assert floor_level("Wohnbereich", -3) == -3
+
+
+@pytest.mark.asyncio
+async def test_the_roof_does_not_end_up_on_the_ground(hass):
+    """Found by looking at the sandwich: the attic was lying in the garden.
+
+    Every floor without a level counted as level 0, so an attic sorted
+    against the ground floor by name -- and "Dach" comes before
+    "Erdgeschoss". The house came out with its roof underneath it.
+    """
+    _house(
+        hass,
+        [
+            FakeFloor("dach", "Dach", level=None),
+            FakeFloor("eg", "Erdgeschoss", level=None),
+            FakeFloor("keller", "Keller", level=None),
+        ],
+        [
+            FakeArea("boden", "Speicher", floor_id="dach"),
+            FakeArea("wohnen", "Wohnzimmer", floor_id="eg"),
+            FakeArea("heizung", "Heizung", floor_id="keller"),
+        ],
+    )
+
+    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+
+    assert [floor["id"] for floor in model["floors"]] == ["keller", "eg", "dach"], (
+        "bottom-up: the cellar is under the house and the roof is on top"
+    )

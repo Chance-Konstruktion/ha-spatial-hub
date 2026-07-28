@@ -117,6 +117,10 @@ class FloorplanHubPanel extends HTMLElement {
     this._layerDialog = null; // the custom layer being written
     this._areaDialog = null; // the area whose kind is being set
     this._showEntities = false; // the device's entity list, in the popup
+    // The legend starts folded away. It is a reference, not a destination:
+    // the first thing somebody wants to see is their house, not a list of
+    // the layers it is made of. One click opens it and it stays open.
+    this._legendOpen = false;
     this._facets = null;
     // The camera. One per view, shared by the stacked and the single
     // floor: zooming in, switching tabs and finding the same magnification
@@ -519,7 +523,7 @@ class FloorplanHubPanel extends HTMLElement {
       ${this._headerHtml()}
       <div class="body">
         <main>${this._stageHtml()}</main>
-        <section class="dock">${this._sidebarHtml()}</section>
+        ${this._legendHtml()}
       </div>
       ${this._showDiagnostics ? this._diagnosticsHtml() : ""}
       ${this._floorDialog ? this._floorDialogHtml() : ""}
@@ -1109,6 +1113,28 @@ class FloorplanHubPanel extends HTMLElement {
         <span class="dot">${icon}</span>
         <span class="label">${escapeHtml(node.label)}</span>
       </button>`;
+  }
+
+  /** The legend, folded away until somebody asks for it.
+   *
+   *  Collapsed is the honest default: layers and providers are how you
+   *  adjust the plan once you already trust it, and a wall of chips under
+   *  a house nobody has looked at yet is noise on the one screen that is
+   *  supposed to say "this is my home".
+   */
+  _legendHtml() {
+    const open = this._legendOpen;
+    return `
+      <section class="legend ${open ? "open" : ""}">
+        <button class="legend-toggle" data-legend
+                aria-expanded="${open ? "true" : "false"}">
+          <ha-icon icon="${
+            open ? "mdi:chevron-down" : "mdi:chevron-right"
+          }"></ha-icon>
+          <span>Legende</span>
+        </button>
+        ${open ? `<div class="dock">${this._sidebarHtml()}</div>` : ""}
+      </section>`;
   }
 
   _sidebarHtml() {
@@ -2274,6 +2300,12 @@ class FloorplanHubPanel extends HTMLElement {
       return;
     }
 
+    if (hit("data-legend")) {
+      this._legendOpen = !this._legendOpen;
+      this._render();
+      return;
+    }
+
     if (hit("data-undo")) {
       this._undoStep();
       return;
@@ -2695,6 +2727,11 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
    ist das Einzige, was Breite wirklich braucht. */
 .body { flex:1; display:flex; flex-direction:column; gap:16px; padding:16px; overflow:auto; }
 main { flex:1; min-width:0; }
+/* Eingeklappt: erst das Haus, dann die Erklärung dazu. */
+.legend-toggle { display:flex; align-items:center; gap:6px; border:0;
+                 background:transparent; color:var(--secondary-text-color,#727272);
+                 font:inherit; cursor:pointer; padding:4px 0; border-radius:8px; }
+.legend-toggle:hover { color:var(--primary-text-color,#212121); }
 .dock { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start;
         background:var(--card-background-color,#fff); border-radius:12px;
         padding:4px 16px 14px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
