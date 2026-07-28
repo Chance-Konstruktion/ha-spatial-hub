@@ -6,8 +6,8 @@ nicht in einem Container verloren gehen, der abgeräumt wird.
 
 | | |
 |---|---|
-| `ha-floorplan-zwave` | Z-Wave-Mesh: Controller, Nodes, RSSI |
-| `ha-floorplan-esphome` | ESPHome-Boards: ein Punkt pro Platine, nicht pro Entität |
+| `ha-spatial-zwave` | Z-Wave-Mesh: Controller, Nodes, RSSI |
+| `ha-spatial-esphome` | ESPHome-Boards: ein Punkt pro Platine, nicht pro Entität |
 
 ## Warum sie nicht im Hub sind
 

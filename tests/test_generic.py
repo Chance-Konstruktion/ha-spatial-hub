@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.floorplan_hub import generic
-from custom_components.floorplan_hub.hub import FloorplanHub
-from custom_components.floorplan_hub.registry import Provider
-from custom_components.floorplan_hub.storage import LayoutStore
+from custom_components.spatial_hub import generic
+from custom_components.spatial_hub.hub import SpatialHub
+from custom_components.spatial_hub.registry import Provider
+from custom_components.spatial_hub.storage import LayoutStore
 
 from conftest import FakeArea, FakeDevice, FakeEntity
 
@@ -132,7 +132,7 @@ async def test_a_custom_layer_becomes_nodes_on_the_plan(house):
     ]})
     generic.GenericProviders(house, store).async_sync()
 
-    model = await FloorplanHub(house, store).async_model()
+    model = await SpatialHub(house, store).async_model()
 
     assert [node["id"] for node in model["nodes"]] == [
         "custom_lights:light.kueche",
@@ -153,7 +153,7 @@ def test_each_layer_is_its_own_provider_so_it_toggles_on_its_own(house):
     ]})
     generic.GenericProviders(house, store).async_sync()
 
-    assert set(house.data["floorplan_hub_providers"]) == {
+    assert set(house.data["spatial_hub_providers"]) == {
         "custom_lights",
         "custom_sensors",
     }
@@ -166,11 +166,11 @@ def test_syncing_twice_changes_nothing(house):
     ]})
     providers = generic.GenericProviders(house, store)
     providers.async_sync()
-    first = house.data["floorplan_hub_providers"]["custom_lights"]
+    first = house.data["spatial_hub_providers"]["custom_lights"]
 
     providers.async_sync()
 
-    assert house.data["floorplan_hub_providers"]["custom_lights"] is first, (
+    assert house.data["spatial_hub_providers"]["custom_lights"] is first, (
         "an untouched layer must not blink out and back on every layout change"
     )
 
@@ -186,7 +186,7 @@ def test_deleting_a_layer_withdraws_its_registration(house):
     store.update("settings", "view", {"custom_layers": []})
     providers.async_sync()
 
-    assert house.data["floorplan_hub_providers"] == {}
+    assert house.data["spatial_hub_providers"] == {}
 
 
 def test_editing_a_layer_re_registers_it(house):
@@ -202,7 +202,7 @@ def test_editing_a_layer_re_registers_it(house):
     ]})
     providers.async_sync()
 
-    assert house.data["floorplan_hub_providers"]["custom_l"]["name"] == "Neu"
+    assert house.data["spatial_hub_providers"]["custom_l"]["name"] == "Neu"
 
 
 def test_unloading_takes_the_custom_layers_with_it(house):
@@ -215,7 +215,7 @@ def test_unloading_takes_the_custom_layers_with_it(house):
 
     providers.async_stop()
 
-    assert house.data["floorplan_hub_providers"] == {}
+    assert house.data["spatial_hub_providers"] == {}
 
 
 def test_garbage_in_the_stored_config_is_stepped_over(house):
@@ -225,7 +225,7 @@ def test_garbage_in_the_stored_config_is_stepped_over(house):
     ]})
     generic.GenericProviders(house, store).async_sync()
 
-    assert set(house.data["floorplan_hub_providers"]) == {"custom_ok"}
+    assert set(house.data["spatial_hub_providers"]) == {"custom_ok"}
 
 
 # ── Facets ────────────────────────────────────────────────
@@ -279,9 +279,9 @@ async def test_a_custom_layer_is_isolated_like_any_other_provider(house):
     def explode():
         raise RuntimeError("boom")
 
-    house.data["floorplan_hub_providers"]["custom_lights"]["data"] = explode
+    house.data["spatial_hub_providers"]["custom_lights"]["data"] = explode
 
-    model = await FloorplanHub(house, store).async_model()
+    model = await SpatialHub(house, store).async_model()
 
     assert model["nodes"] == []
     assert len(model["providers"]) == 1, "it fails alone, like anyone else"
@@ -320,7 +320,7 @@ def _house_with_a_controller(hass):
 
 
 def test_the_via_device_graph_becomes_edges(hass):
-    from custom_components.floorplan_hub.generic import VIA_PREFIX, topology
+    from custom_components.spatial_hub.generic import VIA_PREFIX, topology
 
     result = topology(hass, _house_with_a_controller(hass))
 
@@ -332,7 +332,7 @@ def test_the_via_device_graph_becomes_edges(hass):
 
 
 def test_a_device_with_no_parent_draws_no_edge(hass):
-    from custom_components.floorplan_hub.generic import topology
+    from custom_components.spatial_hub.generic import topology
 
     result = topology(hass, _house_with_a_controller(hass))
 
@@ -341,7 +341,7 @@ def test_a_device_with_no_parent_draws_no_edge(hass):
 
 def test_the_controller_claims_no_state_it_cannot_know(hass):
     """It often has no entity at all. Green would be a guess drawn in colour."""
-    from custom_components.floorplan_hub.generic import topology
+    from custom_components.spatial_hub.generic import topology
 
     controller = topology(hass, _house_with_a_controller(hass))["nodes"][0]
 
@@ -352,7 +352,7 @@ def test_the_controller_claims_no_state_it_cannot_know(hass):
 
 def test_the_relation_is_stated_not_measured(hass):
     """Home Assistant says the link exists, never how good it is."""
-    from custom_components.floorplan_hub.generic import topology
+    from custom_components.spatial_hub.generic import topology
 
     result = topology(hass, _house_with_a_controller(hass))
 
@@ -360,7 +360,7 @@ def test_the_relation_is_stated_not_measured(hass):
 
 
 def test_topology_is_off_unless_the_layer_asks(hass):
-    from custom_components.floorplan_hub.generic import registration
+    from custom_components.spatial_hub.generic import registration
 
     _house_with_a_controller(hass)
     plain = registration(hass, {"id": "l", "name": "L", "domains": ["light"]})
@@ -370,7 +370,7 @@ def test_topology_is_off_unless_the_layer_asks(hass):
 
 
 def test_a_layer_that_asks_for_topology_gets_both(hass):
-    from custom_components.floorplan_hub.generic import VIA_PREFIX, registration
+    from custom_components.spatial_hub.generic import VIA_PREFIX, registration
 
     _house_with_a_controller(hass)
     layer = registration(
@@ -387,8 +387,8 @@ def test_a_layer_that_asks_for_topology_gets_both(hass):
 
 def test_topology_takes_no_shortcut_into_the_hub_either(hass):
     """Same public contract, same validation, no exceptions."""
-    from custom_components.floorplan_hub.generic import registration
-    from custom_components.floorplan_hub.registry import Provider
+    from custom_components.spatial_hub.generic import registration
+    from custom_components.spatial_hub.registry import Provider
 
     _house_with_a_controller(hass)
     provider = Provider.from_registration(
@@ -404,7 +404,7 @@ def test_no_integration_is_named_anywhere_in_the_adapter():
     from pathlib import Path
 
     source = Path(
-        "custom_components/floorplan_hub/generic.py"
+        "custom_components/spatial_hub/generic.py"
     ).read_text().lower()
     code = "\n".join(
         line for line in source.splitlines()
@@ -421,8 +421,8 @@ def test_no_integration_is_named_anywhere_in_the_adapter():
 
 
 def test_a_fresh_install_already_has_layers(hass):
-    from custom_components.floorplan_hub.generic import DEFAULT_LAYERS, effective_layers
-    from custom_components.floorplan_hub.storage import LayoutStore
+    from custom_components.spatial_hub.generic import DEFAULT_LAYERS, effective_layers
+    from custom_components.spatial_hub.storage import LayoutStore
 
     layers, are_default = effective_layers(LayoutStore(hass))
 
@@ -436,8 +436,8 @@ def test_deleting_every_layer_is_respected(hass):
     Bringing the defaults back on the next restart would be the hub
     arguing with a user who meant it.
     """
-    from custom_components.floorplan_hub.generic import effective_layers
-    from custom_components.floorplan_hub.storage import LayoutStore
+    from custom_components.spatial_hub.generic import effective_layers
+    from custom_components.spatial_hub.storage import LayoutStore
 
     store = LayoutStore(hass)
     store.update("settings", "view", {"custom_layers": []})
@@ -449,8 +449,8 @@ def test_deleting_every_layer_is_respected(hass):
 
 
 def test_the_users_own_layers_replace_the_defaults_entirely(hass):
-    from custom_components.floorplan_hub.generic import effective_layers
-    from custom_components.floorplan_hub.storage import LayoutStore
+    from custom_components.spatial_hub.generic import effective_layers
+    from custom_components.spatial_hub.storage import LayoutStore
 
     store = LayoutStore(hass)
     store.update(
@@ -467,7 +467,7 @@ def test_the_defaults_name_no_integration():
     """They are rules. A Z-Wave house and an ESPHome house get the same four."""
     import json
 
-    from custom_components.floorplan_hub.generic import DEFAULT_LAYERS
+    from custom_components.spatial_hub.generic import DEFAULT_LAYERS
 
     text = json.dumps(DEFAULT_LAYERS).lower()
     for integration in ("zwave", "esphome", "zigbee", "hue", "matter", "shelly"):
@@ -476,7 +476,7 @@ def test_the_defaults_name_no_integration():
 
 def test_the_defaults_are_bounded(hass):
     """"All sensors" in a real house is four hundred dots and no floor plan."""
-    from custom_components.floorplan_hub.generic import DEFAULT_LAYERS
+    from custom_components.spatial_hub.generic import DEFAULT_LAYERS
 
     sensors = next(layer for layer in DEFAULT_LAYERS if layer["id"] == "zugang")
 
@@ -487,8 +487,8 @@ def test_the_defaults_are_bounded(hass):
 
 
 def test_the_defaults_register_like_anybody_else(hass):
-    from custom_components.floorplan_hub.generic import DEFAULT_LAYERS, registration
-    from custom_components.floorplan_hub.registry import Provider
+    from custom_components.spatial_hub.generic import DEFAULT_LAYERS, registration
+    from custom_components.spatial_hub.registry import Provider
 
     for layer in DEFAULT_LAYERS:
         provider = Provider.from_registration(registration(hass, layer))

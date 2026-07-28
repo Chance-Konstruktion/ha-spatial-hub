@@ -30,7 +30,7 @@ from playwright.async_api import async_playwright
 _PANEL = """
 const deep = (root, out = []) => {
   for (const el of root.querySelectorAll('*')) {
-    if (el.tagName.toLowerCase() === 'floorplan-hub-panel') out.push(el);
+    if (el.tagName.toLowerCase() === 'spatial-hub-panel') out.push(el);
     if (el.shadowRoot) deep(el.shadowRoot, out);
   }
   return out;
@@ -114,7 +114,7 @@ async def run(args) -> int:
 
         await page.add_init_script(
             f"localStorage.setItem('hassTokens', {json.dumps(json.dumps(token))})")
-        await page.goto(f"{args.url}/floorplan", wait_until="domcontentloaded")
+        await page.goto(f"{args.url}/spatial", wait_until="domcontentloaded")
         await page.wait_for_timeout(args.settle)
 
         walk = Walk(page)
@@ -239,7 +239,7 @@ def main() -> int:
     parser.add_argument("--password", required=True)
     parser.add_argument("--chromium", default="")
     parser.add_argument("--settle", type=int, default=9000)
-    parser.add_argument("--out", default="floorplan-edit.png")
+    parser.add_argument("--out", default="spatial-edit.png")
     return asyncio.run(run(parser.parse_args()))
 
 

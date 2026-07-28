@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vendor the Floorplan-Hub provider files into an integration.
+"""Vendor the Spatial Hub provider files into an integration.
 
     python3 sdk/install.py --into ../my-integration/custom_components/mine
 
@@ -27,8 +27,8 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SHIM = "floorplan_hub_provider.py"
-KIT = "floorplan_hub_conformance.py"
+SHIM = "spatial_hub_provider.py"
+KIT = "spatial_hub_conformance.py"
 
 
 def _sdk_version() -> int:
@@ -83,9 +83,9 @@ def install(target: Path, tests: Path | None) -> int:
 NEXT_STEPS = """
 ── Add this to async_setup_entry, in __init__.py ──────────────────
 
-    from .floorplan_hub_provider import floorplan_provider
+    from .spatial_hub_provider import spatial_provider
 
-    floorplan_provider(
+    spatial_provider(
         hass,
         entry,
         name="{domain}",
@@ -103,9 +103,9 @@ and edge() only when you have more to say than an entity id.
 
 ── And this in {tests} ────────────────────────────
 
-    from .floorplan_hub_conformance import FakeHass, FloorplanHubConformance
+    from .spatial_hub_conformance import FakeHass, SpatialHubConformance
 
-    class TestFloorplanHub(FloorplanHubConformance):
+    class TestSpatialHub(SpatialHubConformance):
         def build_registration(self):
             hass = FakeHass()
             my_setup(hass, entry, coordinator)
@@ -122,7 +122,7 @@ a dispatcher signal, and both cost nothing when nobody is listening.
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Vendor the Floorplan-Hub provider files.",
+        description="Vendor the Spatial Hub provider files.",
     )
     parser.add_argument(
         "--into", required=True, type=Path,

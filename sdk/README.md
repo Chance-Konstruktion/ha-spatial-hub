@@ -1,7 +1,7 @@
 # Provider SDK
 
 You maintain a Home Assistant integration and somebody asked you to
-support Floorplan-Hub. This page is the whole answer.
+support Spatial Hub. This page is the whole answer.
 
 ## The short version
 
@@ -14,9 +14,9 @@ Two files copied, and it prints the code to add. Then, in
 `async_setup_entry`:
 
 ```python
-from .floorplan_hub_provider import floorplan_provider
+from .spatial_hub_provider import spatial_provider
 
-floorplan_provider(
+spatial_provider(
     hass,
     entry,
     name="My Integration",
@@ -36,7 +36,7 @@ an MQTT subscription, anything push-shaped fires its own dispatcher signals
 instead. Name them and the hub listens along:
 
 ```python
-floorplan_provider(hass, entry, name="ESPEasy P2P", data=data,
+spatial_provider(hass, entry, name="ESPEasy P2P", data=data,
                    signals=[SIGNAL_NODE_DISCOVERED, SIGNAL_NODE_AVAILABILITY])
 ```
 
@@ -72,19 +72,19 @@ say no.
 
 The one thing a package would have bought you — knowing your copy is old —
 is handled without it. The shim stamps `SDK_VERSION` into its registration,
-and the hub reports it in `floorplan_hub/diagnostics`, flagging a copy that
+and the hub reports it in `spatial_hub/diagnostics`, flagging a copy that
 is behind. Nothing calls home; the hub simply knows what it ships.
 
 If your copy is old, it keeps working. You are told, not punished.
 
 ## Checking that it is right
 
-`floorplan_hub_conformance.py` goes in your test folder:
+`spatial_hub_conformance.py` goes in your test folder:
 
 ```python
-from .floorplan_hub_conformance import FakeHass, FloorplanHubConformance
+from .spatial_hub_conformance import FakeHass, SpatialHubConformance
 
-class TestFloorplanHub(FloorplanHubConformance):
+class TestSpatialHub(SpatialHubConformance):
     def build_registration(self):
         hass = FakeHass()
         async_setup_my_provider(hass, entry, coordinator)

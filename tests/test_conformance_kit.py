@@ -22,14 +22,14 @@ def _load(name: str):
     return module
 
 
-kit = _load("floorplan_hub_conformance")
-shim = _load("floorplan_hub_provider")
+kit = _load("spatial_hub_conformance")
+shim = _load("spatial_hub_provider")
 
 
 def _registration(**overrides):
     """A well-behaved provider, built the way a developer would build it."""
     hass = kit.FakeHass()
-    provider = shim.FloorplanHubProvider(
+    provider = shim.SpatialHubProvider(
         hass,
         provider_id="demo",
         name="Demo",
@@ -55,7 +55,7 @@ def test_a_correct_provider_passes_cleanly():
 def test_the_shim_output_is_conformant_by_construction():
     """Whatever the documented shim produces must satisfy the kit."""
 
-    class TestSuite(kit.FloorplanHubConformance):
+    class TestSuite(kit.SpatialHubConformance):
         def build_registration(self):
             return _registration()
 

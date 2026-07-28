@@ -7,7 +7,7 @@ body:
       value: |
         Wenn Daten einer Integration fehlen oder verworfen wurden, sagt die
         **Diagnose** meistens direkt, warum: im Panel oben rechts, oder über
-        `floorplan_hub/diagnostics`. Sie zeigt pro Provider, was geliefert
+        `spatial_hub/diagnostics`. Sie zeigt pro Provider, was geliefert
         und was mit welcher Begründung verworfen wurde. Bitte hier einfügen.
   - type: textarea
     id: what
@@ -24,7 +24,7 @@ body:
     id: versions
     attributes:
       label: Versionen
-      placeholder: "Home Assistant 2026.7.0, Floorplan-Hub 0.x"
+      placeholder: "Home Assistant 2026.7.0, Spatial Hub 0.x"
     validations:
       required: true
   - type: input

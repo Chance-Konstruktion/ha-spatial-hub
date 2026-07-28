@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from custom_components.floorplan_hub.const import (
+from custom_components.spatial_hub.const import (
     API_VERSION,
     AREA_KIND_ALIASES,
     CURRENT_SDK_VERSION,
@@ -28,9 +28,9 @@ from custom_components.floorplan_hub.const import (
 SPEC = Path(__file__).resolve().parents[1] / "docs" / "SPECIFICATION.md"
 PANEL_JS = (
     Path(__file__).resolve().parents[1]
-    / "custom_components" / "floorplan_hub" / "www" / "floorplan-hub-panel.js"
+    / "custom_components" / "spatial_hub" / "www" / "spatial-hub-panel.js"
 )
-SHIM = Path(__file__).resolve().parents[1] / "sdk" / "floorplan_hub_provider.py"
+SHIM = Path(__file__).resolve().parents[1] / "sdk" / "spatial_hub_provider.py"
 
 
 @pytest.fixture(scope="module")
@@ -91,12 +91,12 @@ def test_an_unknown_stored_kind_is_reported_not_swallowed(hass, caplog):
     from homeassistant.helpers import area_registry as ar, floor_registry as fr
 
     from conftest import FakeArea, FakeFloor
-    from custom_components.floorplan_hub.hub import FloorplanHub
-    from custom_components.floorplan_hub.storage import LayoutStore
+    from custom_components.spatial_hub.hub import SpatialHub
+    from custom_components.spatial_hub.storage import LayoutStore
 
     fr.async_get(hass).floors = [FakeFloor("eg", "Erdgeschoss", level=0)]
     ar.async_get(hass).areas = [FakeArea("buero", "Büro", floor_id="eg")]
-    hub = FloorplanHub(hass, LayoutStore(hass))
+    hub = SpatialHub(hass, LayoutStore(hass))
     hub.store.update("areas", "buero", {"kind": "somewhere_else"})
 
     import asyncio
@@ -140,7 +140,7 @@ def test_the_apron_the_specification_documents_is_the_one_in_the_code(spec):
 
 def test_the_node_fields_the_specification_lists_all_exist():
     """A provider following the document must not hit an unknown field."""
-    from custom_components.floorplan_hub.models import Node
+    from custom_components.spatial_hub.models import Node
 
     documented = set(
         re.findall(r"^\| `(\w+)` \|", SPEC.read_text().split("## § Node", 1)[1]

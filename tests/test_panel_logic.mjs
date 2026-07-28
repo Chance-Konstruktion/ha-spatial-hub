@@ -29,10 +29,10 @@ globalThis.window = { addEventListener() {}, removeEventListener() {},
                       confirm: () => true };
 
 const here = dirname(fileURLToPath(import.meta.url));
-const { FloorplanHubPanel, HA_COLOURS } = await import(
+const { SpatialHubPanel, HA_COLOURS } = await import(
   pathToFileURL(
-    join(here, "..", "custom_components", "floorplan_hub", "www",
-         "floorplan-hub-panel.js"),
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
   ).href
 );
 
@@ -118,7 +118,7 @@ const model = (overrides = {}) => ({
 // view" has to say so -- pass floor:null for the stack.
 function panel(data = model(), { admin = true, edit = false,
                                  floor = "eg" } = {}) {
-  const instance = new FloorplanHubPanel();
+  const instance = new SpatialHubPanel();
   instance._floorId = floor === null ? "__all__" : floor;
   instance._model = data;
   instance._edit = edit;
@@ -1135,8 +1135,8 @@ test("the camera exposes its zoom so nodes can keep their screen size", () => {
 
 test("node markup counter-scales with the camera", () => {
   const source = readFileSync(
-    join(here, "..", "custom_components", "floorplan_hub", "www",
-         "floorplan-hub-panel.js"),
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
     "utf8",
   );
   assert.match(source, /scale\(calc\(var\(--node-scale,1\) \/ var\(--camera-zoom,1\)\)\)/);
@@ -1163,7 +1163,7 @@ test("no search means no opinion", () => {
 test("a drag can be taken back", async () => {
   const view = panel(model(), { edit: true });
   const written = [];
-  view._setLayout = FloorplanHubPanel.prototype._setLayout;
+  view._setLayout = SpatialHubPanel.prototype._setLayout;
   view._hass.callWS = async (message) => {
     written.push([message.section, message.key, message.values]);
     return {};
@@ -1342,8 +1342,8 @@ test("the floor tabs stay on one line however many storeys there are", () => {
   // A house with a dozen floors used to wrap the header into four rows,
   // so the tabs moved under the user between one render and the next.
   const source = readFileSync(
-    join(here, "..", "custom_components", "floorplan_hub", "www",
-         "floorplan-hub-panel.js"),
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
     "utf8",
   );
   const tabs = source.slice(source.indexOf(".tabs {"));
@@ -1424,8 +1424,8 @@ test("an item whose provider has no layers is drawn normally", () => {
 
 test("layer opacity and the search dimming multiply", () => {
   const source = readFileSync(
-    join(here, "..", "custom_components", "floorplan_hub", "www",
-         "floorplan-hub-panel.js"),
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
     "utf8",
   );
   // Inline opacity would beat a class outright, so a dimmed node in a

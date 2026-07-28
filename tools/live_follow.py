@@ -12,7 +12,7 @@ area over the websocket API while the panel sits open, and watches.
     python3 tools/live_follow.py --password secret
 
 It cleans up after itself: everything it creates, it deletes again. If it
-crashes half way, the leftovers are named "Floorplan-Hub Test …" so you
+crashes half way, the leftovers are named "Spatial Hub Test …" so you
 can find them.
 """
 
@@ -27,14 +27,14 @@ import aiohttp
 from playwright.async_api import async_playwright
 
 # Named so that a leftover is obviously ours and obviously disposable.
-FLOOR = "Floorplan-Hub Testetage"
-AREA = "Floorplan-Hub Testbereich"
-RENAMED = "Floorplan-Hub Testbereich (umbenannt)"
+FLOOR = "Spatial Hub Testetage"
+AREA = "Spatial Hub Testbereich"
+RENAMED = "Spatial Hub Testbereich (umbenannt)"
 
 _PANEL = """
 const deep = (root, out = []) => {
   for (const el of root.querySelectorAll('*')) {
-    if (el.tagName.toLowerCase() === 'floorplan-hub-panel') out.push(el);
+    if (el.tagName.toLowerCase() === 'spatial-hub-panel') out.push(el);
     if (el.shadowRoot) deep(el.shadowRoot, out);
   }
   return out;
@@ -114,7 +114,7 @@ async def run(args) -> int:
                 await page.add_init_script(
                     "localStorage.setItem('hassTokens', %s)"
                     % json.dumps(json.dumps(token)))
-                await page.goto(f"{args.url}/floorplan",
+                await page.goto(f"{args.url}/spatial",
                                 wait_until="domcontentloaded")
                 await page.wait_for_timeout(args.settle)
 
@@ -195,7 +195,7 @@ def main() -> int:
     parser.add_argument("--settle", type=int, default=9000)
     parser.add_argument("--patience", type=int, default=8,
                         help="how many 1.5s rounds to wait; the hub debounces")
-    parser.add_argument("--out", default="floorplan-follow.png")
+    parser.add_argument("--out", default="spatial-follow.png")
     return asyncio.run(run(parser.parse_args()))
 
 

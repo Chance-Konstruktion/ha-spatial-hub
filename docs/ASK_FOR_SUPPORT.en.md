@@ -1,4 +1,4 @@
-# "Any chance of Floorplan-Hub support?"
+# "Any chance of Spatial Hub support?"
 
 You use an integration that is missing from your floor plan. This page is
 the text you file in its repository — and a few requests about how.
@@ -35,12 +35,12 @@ Copy everything below. Replace the square brackets.
 
 ---
 
-**Title:** Support for Floorplan-Hub (optional, ~20 lines, no dependency)
+**Title:** Support for Spatial Hub (optional, ~20 lines, no dependency)
 
 Hi — thanks for this integration, I use it daily.
 
 There is a fairly new project called
-[Floorplan-Hub](https://github.com/Chance-Konstruktion/ha-floorplan-hub): a
+[Spatial Hub](https://github.com/Chance-Konstruktion/ha-spatial-hub): a
 service that collects spatial data from arbitrary integrations and merges it
 into *one* floor plan, instead of every integration shipping its own
 dashboard. Floors and areas come from Home Assistant, the user arranges
@@ -50,9 +50,9 @@ I am not asking for a timeline and would not be disappointed by a no. But
 the effort looks small enough to be worth mentioning:
 
 ```python
-from .floorplan_hub_provider import floorplan_provider
+from .spatial_hub_provider import spatial_provider
 
-floorplan_provider(
+spatial_provider(
     hass,
     entry,
     name="[integration name]",
@@ -86,9 +86,9 @@ Setup that does the copying for you:
 python3 sdk/install.py --into custom_components/[domain] --tests tests
 ```
 
-Everything about it: [sdk/README.md](https://github.com/Chance-Konstruktion/ha-floorplan-hub/blob/main/sdk/README.md).
+Everything about it: [sdk/README.md](https://github.com/Chance-Konstruktion/ha-spatial-hub/blob/main/sdk/README.md).
 A complete example integration lives in
-[examples/](https://github.com/Chance-Konstruktion/ha-floorplan-hub/tree/main/examples/example_provider) —
+[examples/](https://github.com/Chance-Konstruktion/ha-spatial-hub/tree/main/examples/example_provider) —
 not snippets, but a whole file that runs inside their own test suite.
 
 If you like, I will open the PR. Just say the word.

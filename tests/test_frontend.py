@@ -14,17 +14,17 @@ from pathlib import Path
 
 import pytest
 
-from custom_components.floorplan_hub import (
+from custom_components.spatial_hub import (
     async_setup_entry,
     async_unload_entry,
 )
-from custom_components.floorplan_hub.const import (
+from custom_components.spatial_hub.const import (
     CONF_PANEL,
     PANEL_ICON,
     PANEL_TITLE,
     PANEL_URL_PATH,
 )
-from custom_components.floorplan_hub.frontend import (
+from custom_components.spatial_hub.frontend import (
     PANEL_MODULE,
     URL_BASE,
     panel_version,
@@ -37,7 +37,7 @@ from conftest import FakeConfigEntry
 PANEL_JS = (
     Path(__file__).resolve().parents[1]
     / "custom_components"
-    / "floorplan_hub"
+    / "spatial_hub"
     / "www"
     / PANEL_MODULE
 )
@@ -77,7 +77,7 @@ def test_the_cache_key_follows_the_file_it_caches(tmp_path, monkeypatch):
     help, because the URL never changed. Deriving it from the file is the
     only version of this that cannot be forgotten.
     """
-    from custom_components.floorplan_hub import frontend
+    from custom_components.spatial_hub import frontend
 
     before = frontend.panel_version()
     assert before == frontend.panel_version(), "same file, same key"
@@ -96,7 +96,7 @@ def test_the_cache_key_follows_the_file_it_caches(tmp_path, monkeypatch):
 
 def test_a_missing_panel_never_breaks_the_cache_key(monkeypatch):
     """No renderer is a problem; a traceback during setup is a worse one."""
-    from custom_components.floorplan_hub import frontend
+    from custom_components.spatial_hub import frontend
 
     monkeypatch.setattr(frontend, "PANEL_MODULE", "not-a-file.js")
     assert frontend.panel_version() == "unknown"
@@ -133,7 +133,7 @@ async def test_bringing_your_own_renderer_switches_ours_off(hass):
     await async_setup_entry(hass, entry)
 
     assert "_panels" not in hass.data or PANEL_URL_PATH not in hass.data["_panels"]
-    assert hass.data["floorplan_hub_hub"] is not None, (
+    assert hass.data["spatial_hub_hub"] is not None, (
         "no panel does not mean no hub -- the websocket API is the product"
     )
     await async_unload_entry(hass, entry)
@@ -161,7 +161,7 @@ async def test_a_broken_panel_does_not_break_the_hub(hass, monkeypatch):
     monkeypatch.setattr(hass.http, "async_register_static_paths", explode)
 
     assert await async_setup_entry(hass, FakeConfigEntry()) is True
-    assert hass.data["floorplan_hub_hub"] is not None
+    assert hass.data["spatial_hub_hub"] is not None
 
 
 def test_removing_a_panel_that_was_never_there_is_not_an_error(hass):

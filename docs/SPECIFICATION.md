@@ -30,7 +30,7 @@ ist der Grund für fast jede Entscheidung weiter unten.
 
 ## Transport
 
-Provider und Hub sind über **ein Dict in `hass.data["floorplan_hub_providers"]`
+Provider und Hub sind über **ein Dict in `hass.data["spatial_hub_providers"]`
 plus drei Dispatcher-Signale** gekoppelt. Kein Import in irgendeine Richtung,
 keine Ladereihenfolge. Renderer sprechen ausschließlich Websocket-Kommandos
 (§ Websocket).
@@ -299,15 +299,15 @@ und behandelt nie eine Integration namentlich als Sonderfall.
 
 | Kommando | Zweck |
 |---|---|
-| `floorplan_hub/model` | das komplette räumliche Modell |
-| `floorplan_hub/providers` | wer registriert ist, und was er kann |
-| `floorplan_hub/subscribe` | Push-Hinweis bei Änderungen (nur der Grund, nie das Modell) |
-| `floorplan_hub/layout/set` | Nutzeranordnung speichern |
-| `floorplan_hub/layout/reset` | Overrides eines Objekts verwerfen |
-| `floorplan_hub/history` | Zeitreihe zu Node oder Edge |
-| `floorplan_hub/action` | Provider-Action ausführen (Admin) |
-| `floorplan_hub/diagnostics` | was jeder Provider geliefert hat, inklusive Fehler |
-| `floorplan_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
+| `spatial_hub/model` | das komplette räumliche Modell |
+| `spatial_hub/providers` | wer registriert ist, und was er kann |
+| `spatial_hub/subscribe` | Push-Hinweis bei Änderungen (nur der Grund, nie das Modell) |
+| `spatial_hub/layout/set` | Nutzeranordnung speichern |
+| `spatial_hub/layout/reset` | Overrides eines Objekts verwerfen |
+| `spatial_hub/history` | Zeitreihe zu Node oder Edge |
+| `spatial_hub/action` | Provider-Action ausführen (Admin) |
+| `spatial_hub/diagnostics` | was jeder Provider geliefert hat, inklusive Fehler |
+| `spatial_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
 
 Ein **lesender** Renderer braucht davon zwei: `model` und `subscribe`.
 
