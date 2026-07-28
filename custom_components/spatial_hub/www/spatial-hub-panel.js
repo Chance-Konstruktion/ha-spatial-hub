@@ -63,10 +63,12 @@ const inFrame = (value, frame) => ((value - frame.min) / frame.span) * 100;
  *  `preserveAspectRatio="none"` is the point: it is a label for "this is
  *  not a room", not a picture of a cloud that has to stay round.
  */
+const CLOUD_PATH = "M26 52 C12 52 5 44 5 35 C5 26 12 19 21 19 " +
+  "C24 9 33 3 43 3 C56 3 66 12 68 24 C79 24 88 30 88 39 " +
+  "C88 47 80 52 70 52 Z";
+
 const CLOUD_SVG = `<svg class="cloud" viewBox="0 0 100 60"
-  preserveAspectRatio="none" aria-hidden="true"><path d="M26 52
-  C12 52 5 44 5 35 C5 26 12 19 21 19 C24 9 33 3 43 3 C56 3 66 12 68 24
-  C79 24 88 30 88 39 C88 47 80 52 70 52 Z"/></svg>`;
+  preserveAspectRatio="none" aria-hidden="true"><path d="${CLOUD_PATH}"/></svg>`;
 
 /** The three area kinds, frozen. Specification § Area Type.
  *
@@ -594,7 +596,18 @@ class SpatialHubPanel extends HTMLElement {
       ${this._areaDialog ? this._areaDialogHtml() : ""}
       ${this._popupHtml()}
     `;
-    this._applyCamera();
+    // The very first plan a user ever sees must be the whole plan. The
+    // stacked view is square and taller than any 16:9 window, so without
+    // this it opened with the lower storeys already below the fold -- on
+    // the one screen that is supposed to say "this is my home". Once only:
+    // after that the camera is theirs, and a plan that snapped back to
+    // fit on every refresh would be unusable.
+    if (!this._fitted) {
+      this._fitted = true;
+      this._fitToScreen();
+    } else {
+      this._applyCamera();
+    }
     this._revealCurrentTab();
   }
 
@@ -642,11 +655,28 @@ class SpatialHubPanel extends HTMLElement {
    *  from their rooms the deeper you zoomed, and why it looked right in
    *  Firefox and wrong in Chromium. An attribute has one meaning.
    */
+  /** The factor that keeps a marker its own size, never larger.
+   *
+   *  Capped at 1 on purpose. Counter-scaling in both directions is
+   *  symmetrical and wrong: zoomed *out* to see the whole house it blows
+   *  every label up to full size over a plan drawn at half, and twenty
+   *  devices turn into one smear of overlapping words. Zoomed in it does
+   *  its job. Zoomed out, letting the lettering shrink with the plan is
+   *  what makes the house readable at all.
+   */
+  get _counterScale() {
+    return Math.min(1, 1 / this._view.zoom);
+  }
+
   _holdStackIconSize(canvas) {
     // No real DOM (first paint, or a headless test): nothing drawn yet.
     if (!canvas || typeof canvas.querySelectorAll !== "function") return;
-    const counter = 1 / this._view.zoom;
-    for (const marker of canvas.querySelectorAll(".stack-node")) {
+    const counter = this._counterScale;
+    // Markers *and* lettering. Room names are drawn in the same user
+    // units as the plan, so without this a room called "Ender3pKE" grows
+    // into a billboard across the storey the moment anybody zooms in --
+    // the text ends up shouting over the very thing it labels.
+    for (const marker of canvas.querySelectorAll("[data-at-x]")) {
       const x = marker.getAttribute("data-at-x");
       const y = marker.getAttribute("data-at-y");
       if (x === null || y === null) continue;
@@ -676,9 +706,15 @@ class SpatialHubPanel extends HTMLElement {
       // against, and guessing would be worse than leaving it alone.
       if (!extent || !size) return null;
       const scaled = size * view.zoom;
-      return scaled >= extent
-        ? [extent - scaled, 0] // bigger than the window: no gap at either end
-        : [0, extent - scaled]; // smaller: stays inside it
+      if (scaled >= extent) {
+        return [extent - scaled, 0]; // bigger than the window: no gap at either end
+      }
+      // Smaller than the window: pinned to the middle rather than allowed
+      // to roam. A house drawn at 55 % in the top-left corner of a wide
+      // monitor looks like a rendering accident, and there is nothing for
+      // the user to do about it -- there is no direction left to drag.
+      const middle = (extent - scaled) / 2;
+      return [middle, middle];
     };
     const clamp = (value, range) =>
       range === null ? value : Math.min(range[1], Math.max(range[0], value));
@@ -939,7 +975,10 @@ class SpatialHubPanel extends HTMLElement {
             at, frame.min, frame.min + frame.span,
           )}"/>`
         : "";
-      const label = this._project(at, 0, 0);
+      // Hung off the storey's left-most corner, not its top-left one.
+      // The plan is skewed, so "top left" is a third of the way into the
+      // drawing -- the name landed on the rooms it was labelling.
+      const label = this._project(at, 0, 1);
       const rooms = this._model.areas
         .filter(
           (area) =>
@@ -951,8 +990,10 @@ class SpatialHubPanel extends HTMLElement {
         ${apron}
         <polygon class="storey" points="${outline(at, 0, 1)}"/>
         ${rooms}
-        <text class="storey-name" x="${label.x - 34}" y="${label.y - 6}"
-          >${escapeHtml(floor.name)}</text>
+        <g data-at-x="${label.x - 12}" data-at-y="${label.y}"
+           transform="translate(${label.x - 12},${label.y}) scale(${
+             this._counterScale
+           })"><text class="storey-name">${escapeHtml(floor.name)}</text></g>
       </g>`;
     });
 
@@ -973,6 +1014,7 @@ class SpatialHubPanel extends HTMLElement {
       })
       .join("");
 
+    const shell = this._shellHtml(floors);
     const matches = this._matches;
     const nodes = this._visibleNodes
       .map((node) => {
@@ -982,7 +1024,7 @@ class SpatialHubPanel extends HTMLElement {
           this._selected.id === node.id;
         const crowded = this._visibleNodes.filter(
           (other) => planeOf(other) === planeOf(node),
-        ).length > 8;
+        ).length > 5;
         const dimmed = matches && !matches.has(node.id);
         return `<g class="stack-node ${selected ? "on" : ""}
                    ${crowded ? "crowded" : ""} ${dimmed ? "dimmed" : ""}
@@ -992,7 +1034,7 @@ class SpatialHubPanel extends HTMLElement {
                    style="--layer-opacity:${this._providerOpacity(node.id)}"
                    data-at-x="${at.x}" data-at-y="${at.y}"
                    transform="translate(${at.x},${at.y}) scale(${
-                     1 / this._view.zoom
+                     this._counterScale
                    })">
           <circle r="14" fill="${this._nodeColour(node)}"/>
           ${this._stackIconHtml(node)}
@@ -1003,8 +1045,9 @@ class SpatialHubPanel extends HTMLElement {
 
     return `${this._viewportHtml(`<div class="stack">
       <svg viewBox="0 0 1000 1000">
-        ${this._shellHtml(floors)}
+        ${shell.behind}
         ${plans.join("")}
+        ${shell.front}
         ${edges}
         ${nodes}
       </svg>
@@ -1029,7 +1072,7 @@ class SpatialHubPanel extends HTMLElement {
    */
   _shellHtml(floors) {
     const solid = floors.filter((floor) => !floor.virtual && !floor.unassigned);
-    if (solid.length < 2) return "";
+    if (solid.length < 2) return { behind: "", front: "" };
     const top = floors.indexOf(solid[0]);
     const base = floors.indexOf(solid[solid.length - 1]);
 
@@ -1058,24 +1101,37 @@ class SpatialHubPanel extends HTMLElement {
       )
       .join("");
 
-    // A gable over the top storey, ridged along the same axis the plan is
-    // skewed on, so it sits on the house instead of across it.
-    const middle = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-    const rise = Math.max(40, (lower[0].y - upper[0].y) * 0.22);
-    const ridgeFrom = middle(upper[0], upper[3]);
-    const ridgeTo = middle(upper[1], upper[2]);
-    const peak = (point) => ({ x: point.x, y: point.y - rise });
-    const roof = `
-      <polygon class="shell-roof" points="${points([
-        upper[0], upper[1], peak(ridgeTo), peak(ridgeFrom),
-      ])}"/>
-      <polygon class="shell-roof" points="${points([
-        upper[3], upper[2], peak(ridgeTo), peak(ridgeFrom),
-      ])}"/>
-      <line class="shell-ridge" x1="${peak(ridgeFrom).x}" y1="${peak(ridgeFrom).y}"
-            x2="${peak(ridgeTo).x}" y2="${peak(ridgeTo).y}"/>`;
+    // A hipped roof: four slopes from the top storey's walls to one apex
+    // above the middle of it.
+    //
+    // The rise has to clear the *depth* of the plan, not a fraction of the
+    // storey spacing. A plan drawn in this projection is 300 units deep,
+    // so a roof that rose by 70 had its ridge sitting inside the top floor
+    // -- geometrically a roof, visually a stripe across the attic.
+    const depth = upper[3].y - upper[0].y;
+    const apex = {
+      x: (upper[0].x + upper[1].x + upper[2].x + upper[3].x) / 4,
+      y: (upper[0].y + upper[1].y + upper[2].y + upper[3].y) / 4
+        - (depth * 0.5 + 80),
+    };
+    const roof = upper
+      .map((corner, index) => {
+        const next = upper[(index + 1) % upper.length];
+        return `<polygon class="shell-roof" points="${points([
+          corner, next, apex,
+        ])}"/>`;
+      })
+      .join("");
 
-    return `<g class="shell" aria-hidden="true">${walls}${posts}${roof}</g>`;
+    // The walls go behind the storeys, the roof in front of them. With a
+    // cloud plane above the top floor the roof sits exactly where the
+    // clouds are drawn, and behind everything it simply vanished -- so
+    // the one part that says "house" was the one part nobody could see.
+    // It is translucent, so being in front costs the plan nothing.
+    return {
+      behind: `<g class="shell" aria-hidden="true">${walls}${posts}</g>`,
+      front: `<g class="shell" aria-hidden="true">${roof}</g>`,
+    };
   }
 
   /** The icon in the stack, in the same shape as on a single floor.
@@ -1118,9 +1174,33 @@ class SpatialHubPanel extends HTMLElement {
       .map((point) => `${point.x},${point.y}`)
       .join(" ");
     const label = this._project(plane, x0, y0);
-    return `<polygon class="room" points="${points}"/>
-      <text class="room-label" x="${label.x + 6}" y="${label.y + 16}"
-        >${escapeHtml(area.name)}</text>`;
+
+    // A virtual area is a cloud here too. It was a cloud on its own tab
+    // and a rectangle in the house view, so the two views disagreed about
+    // what the thing *is* -- and the house view is the one people open.
+    let shape = `<polygon class="room" points="${points}"/>`;
+    if (kindOf(area) === AREA_KIND.VIRTUAL) {
+      // The plan is skewed, so the cloud is skewed with it: two edges of
+      // the projected room are the axes it is drawn along.
+      const origin = this._project(plane, x0, y0);
+      const alongX = this._project(plane, x0 + width, y0);
+      const alongY = this._project(plane, x0, y0 + height);
+      const matrix = [
+        (alongX.x - origin.x) / 100, (alongX.y - origin.y) / 100,
+        (alongY.x - origin.x) / 60, (alongY.y - origin.y) / 60,
+        origin.x, origin.y,
+      ]
+        .map((value) => value.toFixed(4))
+        .join(",");
+      shape = `<path class="stack-cloud" transform="matrix(${matrix})"
+        d="${CLOUD_PATH}"/>`;
+    }
+
+    return `${shape}
+      <g data-at-x="${label.x + 6}" data-at-y="${label.y + 16}"
+         transform="translate(${label.x + 6},${label.y + 16}) scale(${
+           this._counterScale
+         })"><text class="room-label">${escapeHtml(area.name)}</text></g>`;
   }
 
   _stageHtml() {
@@ -1169,6 +1249,7 @@ class SpatialHubPanel extends HTMLElement {
                ? `background-image:url('${escapeHtml(background)}')`
                : ""
            }">
+        ${this._buildingLineHtml()}
         ${this._ghostsHtml()}
         ${this._areasHtml()}
         <svg class="edges" viewBox="0 0 1000 1000" preserveAspectRatio="none">
@@ -1201,6 +1282,31 @@ class SpatialHubPanel extends HTMLElement {
             )}“. <button class="link" data-cancel-place="1">Abbrechen</button></p>`
           : ""
       }`;
+  }
+
+  /** Where the building stops and the garden starts.
+   *
+   *  The apron already worked -- outdoor areas really were arranged in a
+   *  ring around the rooms. It just did not *look* like one, because
+   *  nothing on screen said where the house ended, so a garden tile and a
+   *  living room were two rectangles of slightly different green. Drawing
+   *  the building line is the whole difference between "a grid of boxes"
+   *  and "my house, with the garden around it".
+   *
+   *  Only on a floor that has a garden: without one the building line is
+   *  the edge of the drawing, and a rectangle around everything says
+   *  nothing.
+   */
+  _buildingLineHtml() {
+    const floor = this._floor;
+    if (!floor || !floor.has_outdoor || !floor.outline) return "";
+    const frame = this._frame;
+    const box = floor.outline;
+    return `<div class="building-line" style="
+      left:${inFrame(box.x, frame)}%;
+      top:${inFrame(box.y, frame)}%;
+      width:${(box.width / frame.span) * 100}%;
+      height:${(box.height / frame.span) * 100}%;"></div>`;
   }
 
   /** The strip under the house: everything still waiting for a room.
@@ -1420,6 +1526,20 @@ class SpatialHubPanel extends HTMLElement {
     return (provider && provider.icon) || "mdi:shape-outline";
   }
 
+  /** Is this node sharing its room with enough others to stack labels?
+   *
+   *  Counted per area, not per floor: a spread-out storey with twelve
+   *  devices reads fine, and one living room with five does not.
+   */
+  _crowded(node) {
+    if ((this._theme.labels || "always") !== "always") return false;
+    if (!node.area_id) return false;
+    const together = this._visibleNodes.filter(
+      (other) => other.area_id === node.area_id,
+    ).length;
+    return together > 3;
+  }
+
   _nodeHtml(node) {
     const custom = this._customIcon(node);
     const colour = this._nodeColour(node);
@@ -1437,6 +1557,7 @@ class SpatialHubPanel extends HTMLElement {
     const frame = this._frame;
     return `
       <button class="node ${selected ? "on" : ""} ${node.floor_id ? "" : "floorless"}
+        ${this._crowded(node) ? "crowded" : ""}
         ${matches && !matches.has(node.id) ? "dimmed" : ""}
         ${matches && matches.has(node.id) ? "found" : ""}"
         data-node="${escapeHtml(node.id)}"
@@ -3130,15 +3251,19 @@ main { flex:1; min-width:0; }
    die Wände decken, verdecken sie den Grundriss, und der ist der Grund,
    warum jemand hinschaut. Rein dekorativ, daher pointer-events:none. */
 .shell { pointer-events:none; }
-.shell-wall { fill:var(--fp-shell, rgba(128,145,170,.07)); stroke:none; }
+.shell-wall { fill:var(--fp-shell, rgba(128,145,170,.09)); stroke:none; }
 .shell-post { stroke:var(--fp-shell-line, rgba(128,145,170,.45)); stroke-width:2; }
-.shell-roof { fill:var(--fp-shell, rgba(128,145,170,.10));
-              stroke:var(--fp-shell-line, rgba(128,145,170,.45)); stroke-width:2;
+.shell-roof { fill:var(--fp-shell, rgba(128,145,170,.16));
+              stroke:var(--fp-shell-line, rgba(128,145,170,.6)); stroke-width:2.5;
               stroke-linejoin:round; }
 .shell-ridge { stroke:var(--fp-shell-line, rgba(128,145,170,.6)); stroke-width:2.5;
                stroke-linecap:round; }
 .storey { fill:none; stroke:var(--divider-color,rgba(128,128,128,.45)); stroke-width:2; }
 .storey-name { font-size:26px; fill:currentColor; opacity:.65; text-anchor:end; }
+.stack-cloud { fill:var(--fp-virtual, rgba(120,144,180,.16));
+               stroke:var(--fp-virtual-line, rgba(120,144,180,.7));
+               stroke-width:1.5; vector-effect:non-scaling-stroke;
+               stroke-dasharray:7 5; }
 .stack .room { fill:rgba(128,128,128,.10);
                stroke:var(--divider-color,rgba(128,128,128,.35)); stroke-width:1.5; }
 .stack .room-label { font-size:17px; fill:currentColor; opacity:.5; }
@@ -3206,7 +3331,7 @@ main { flex:1; min-width:0; }
              color:var(--secondary-text-color,#727272); display:flex; align-items:center; gap:4px; }
 
 .node { position:absolute; opacity:var(--layer-opacity,1);
-        transform:translate(-50%,-50%) scale(calc(var(--node-scale,1) / var(--camera-zoom,1)));
+        transform:translate(-50%,-50%) scale(calc(var(--node-scale,1) * min(1, 1 / var(--camera-zoom,1))));
         border:0; background:transparent; cursor:pointer; padding:0;
         display:flex; flex-direction:column; align-items:center; gap:2px; }
 .node .dot { width:36px; height:36px; border-radius:50%; display:flex;
@@ -3217,6 +3342,13 @@ main { flex:1; min-width:0; }
 .node.on .dot { box-shadow:0 0 0 4px var(--node-color); }
 .node .label { font-size:11px; white-space:nowrap; color:var(--primary-text-color,#212121);
                background:var(--card-background-color,#fff); border-radius:4px; padding:0 4px; }
+/* Fünf Geräte in einem Wohnzimmer ergaben fünf Namen übereinander --
+   "HKV L HKV Wohnz Plug Fibaro 1" liest niemand. Auf einem vollen Raum
+   erscheint der Name beim Zeigen und für das ausgewählte Gerät; der Punkt
+   bleibt sichtbar, und ein Klick sagt weiterhin, was es ist. */
+.node.crowded .label { opacity:0; transition:opacity .12s; }
+.node.crowded:hover .label, .node.crowded.on .label { opacity:1; }
+.node.crowded:hover, .node.crowded.on { z-index:3; }
 .custom-icon svg { width:22px; height:22px; fill:currentColor; }
 
 h3 { margin:12px 0 6px; font-size:14px; }
@@ -3311,6 +3443,12 @@ select { font:inherit; padding:6px; border-radius:8px;
                   outline:2px dashed var(--warning-color,#ff9800); outline-offset:1px; }
 .tray-item .dot ha-icon { --mdc-icon-size:16px; }
 .tray-item .custom-icon svg { width:16px; height:16px; fill:currentColor; }
+/* Die Bauflucht: die Linie, an der das Haus aufhört und der Garten
+   anfängt. Ohne sie ist der Grundriss ein Raster aus Kästen, in dem der
+   Garten zufällig auch ein Kasten ist. */
+.building-line { position:absolute; pointer-events:none; border-radius:6px;
+                 border:2px solid var(--fp-shell-line, rgba(128,145,170,.55));
+                 background:var(--fp-shell, rgba(128,145,170,.06)); }
 .stage.with-apron { outline:none; }
 .node.dimmed { opacity:calc(var(--layer-opacity,1) * .25); }
 .node.found .dot { box-shadow:0 0 0 4px var(--fp-accent, var(--primary-color,#03a9f4)); }

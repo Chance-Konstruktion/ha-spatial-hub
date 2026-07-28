@@ -1161,7 +1161,21 @@ test("node markup counter-scales with the camera", () => {
          "spatial-hub-panel.js"),
     "utf8",
   );
-  assert.match(source, /scale\(calc\(var\(--node-scale,1\) \/ var\(--camera-zoom,1\)\)\)/);
+  assert.match(source, /var\(--node-scale,1\) \* min\(1, 1 \/ var\(--camera-zoom,1\)\)/);
+});
+
+test("counter-scaling never makes a marker bigger than it is", () => {
+  // Zoomed out to see the whole house, symmetrical counter-scaling blew
+  // every label up to full size over a plan drawn at half -- twenty
+  // devices came out as one smear of overlapping words.
+  const view = panel(model(), { floor: null });
+
+  view._view.zoom = 4;
+  assert.equal(view._counterScale, 0.25, "zoomed in it does its job");
+  view._view.zoom = 0.5;
+  assert.equal(view._counterScale, 1, "zoomed out it stops, it does not invert");
+  view._view.zoom = 1;
+  assert.equal(view._counterScale, 1);
 });
 
 test("the stacked view scales its markers about their own anchor", () => {
@@ -1371,13 +1385,16 @@ test("the plan cannot be shoved out of the window", () => {
   assert.equal(view._view.y, 0);
 });
 
-test("a plan smaller than the window stays inside it", () => {
+test("a plan smaller than the window is centred in it", () => {
+  // Drawn at 55 % in the top-left corner of a wide monitor it looks like
+  // a rendering accident -- and there is nothing the user can do, because
+  // there is no direction left to drag.
   const view = framed(panel(), { viewport: 1000, canvas: 1000 });
   view._view = { zoom: 0.5, x: -400, y: 900 };
   view._applyCamera();
 
-  assert.equal(view._view.x, 0, "not off the left edge");
-  assert.equal(view._view.y, 500, "and no further than its own height allows");
+  assert.equal(view._view.x, 250, "half the slack on either side");
+  assert.equal(view._view.y, 250);
 });
 
 test("panning within the plan is left alone", () => {
@@ -1635,7 +1652,7 @@ test("one storey gets no body", () => {
   });
   const view = panel(data, { floor: null });
 
-  assert.equal(view._shellHtml(view._stackFloors), "");
+  assert.deepEqual(view._shellHtml(view._stackFloors), { behind: "", front: "" });
 });
 
 test("the body is hung off the house, never off the garden", () => {
@@ -1667,9 +1684,9 @@ test("the cloud and the homeless storey are not part of the building", () => {
   });
   const view = panel(data, { floor: null });
 
-  assert.equal(
+  assert.deepEqual(
     view._shellHtml(view._stackFloors),
-    "",
+    { behind: "", front: "" },
     "one real storey plus a cloud is still one storey",
   );
 });
