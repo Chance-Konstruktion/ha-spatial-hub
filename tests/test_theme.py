@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.floorplan_hub import theme
-from custom_components.floorplan_hub.hub import FloorplanHub
-from custom_components.floorplan_hub.storage import LayoutStore
+from custom_components.spatial_hub import theme
+from custom_components.spatial_hub.hub import SpatialHub
+from custom_components.spatial_hub.storage import LayoutStore
 
 
 def test_nothing_stored_means_home_assistants_own_theme():
@@ -91,7 +91,7 @@ def test_only_words_from_the_vocabulary_are_accepted():
 
 @pytest.mark.asyncio
 async def test_the_model_carries_the_resolved_theme(hass):
-    hub = FloorplanHub(hass, LayoutStore(hass))
+    hub = SpatialHub(hass, LayoutStore(hass))
     hub.store.update("settings", "view", {"theme": {"preset": "neon"}})
 
     model = await hub.async_model()

@@ -1,6 +1,6 @@
 # Roadmap
 
-Wo FloorPlan-Hub steht, und was noch kommt.
+Wo Spatial Hub steht, und was noch kommt.
 
 Wohin das Ganze soll, steht in **[docs/Vision.md](docs/Vision.md)**:
 installieren, öffnen, alles ist schon da. Diese Roadmap ist die Antwort
@@ -58,7 +58,7 @@ Unsinn kosten den eigenen Layer für genau einen Refresh.
 Die vollständige Anbindung ist **ein Aufruf**:
 
 ```python
-floorplan_provider(hass, entry, name="My Integration",
+spatial_provider(hass, entry, name="My Integration",
                    data=lambda: ["light.kitchen"], coordinator=coordinator)
 ```
 
@@ -67,7 +67,7 @@ benachrichtigen, Capabilities ableiten — alles darin. Eine Entity-ID ist
 ein vollständiger Node; Name, Bereich, Icon und Zustand holt der Hub aus
 Home Assistant.
 
-Dazu `floorplan_hub/diagnostics` (was wurde verworfen und warum, inklusive
+Dazu `spatial_hub/diagnostics` (was wurde verworfen und warum, inklusive
 vermuteter Tippfehler in der Registrierung) und das **Conformance-Kit** —
 eine Datei zum Kopieren, nur pytest nötig, das die Fehler fängt, die
 Grundrisse im Feld zerlegen.
@@ -161,7 +161,7 @@ da. Und weil Home Assistant in `via_device` selbst führt, worüber ein Gerät
 erreicht wird, zeichnet die Licht-Ebene die Bridges und Controller gleich
 mit — echte Topologie, ohne eine Integration beim Namen zu nennen.
 
-Dazu `floorplan_hub/entities/facets`: welche Arten, Label und Geräteklassen
+Dazu `spatial_hub/entities/facets`: welche Arten, Label und Geräteklassen
 es in diesem Haus wirklich gibt. Ohne das müsste der Editor raten — und
 Raten endet in einer fest verdrahteten Liste von Integrationsnamen.
 
@@ -179,7 +179,7 @@ Also ein **Vendoring-SDK**:
   mit der Domain schon eingesetzt. Läuft auf einem nackten Python, ohne
   Home Assistant, ohne Hub, ohne Netz.
 - Der Shim stempelt eine `SDK_VERSION` in seine Registrierung. Der Hub
-  meldet in `floorplan_hub/diagnostics`, wenn eine Kopie veraltet ist — das
+  meldet in `spatial_hub/diagnostics`, wenn eine Kopie veraltet ist — das
   Einzige, was ein Paket überhaupt gebracht hätte. Eine alte Kopie
   funktioniert weiter; ihr Autor wird informiert, nicht bestraft.
 - `examples/example_provider/` ist eine **ganze** Integration, keine

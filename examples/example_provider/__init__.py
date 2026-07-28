@@ -1,4 +1,4 @@
-"""A complete Floorplan-Hub provider, start to finish.
+"""A complete Spatial Hub provider, start to finish.
 
 Not a snippet -- this is the whole thing. If you are a maintainer deciding
 whether this is worth your afternoon, the answer is in the twenty lines of
@@ -7,7 +7,7 @@ tree standing in for whatever your integration actually talks to.
 
 Three things worth noticing:
 
-* Nothing imports ``floorplan_hub``. The shim next door writes a dict into
+* Nothing imports ``spatial_hub``. The shim next door writes a dict into
   ``hass.data`` and fires a signal. With the hub not installed, this
   integration behaves exactly as it would without any of this code.
 * Positions are absent on purpose. The hub puts each node in the middle of
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .floorplan_hub_provider import edge, floorplan_provider, node
+from .spatial_hub_provider import edge, spatial_provider, node
 
 # Stand-in for whatever your integration actually polls.
 _DEVICES = [
@@ -35,7 +35,7 @@ async def async_setup_entry(hass, entry) -> bool:
     """Set up the integration -- and put it on the floor plan."""
     coordinator = await _async_build_coordinator(hass, entry)
 
-    floorplan_provider(
+    spatial_provider(
         hass,
         entry,
         name="Example Provider",

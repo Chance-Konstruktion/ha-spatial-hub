@@ -15,7 +15,7 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "custom_components" / "floorplan_hub"
+SOURCE = ROOT / "custom_components" / "spatial_hub"
 DIRECTORY = ROOT / "docs" / "PROVIDERS.md"
 TEMPLATES = ROOT / ".github" / "ISSUE_TEMPLATE"
 
@@ -118,7 +118,7 @@ def test_both_translations_tell_the_same_story():
     english = (ROOT / "docs" / "ASK_FOR_SUPPORT.en.md").read_text()
 
     for shared in (
-        "from .floorplan_hub_provider import floorplan_provider",
+        "from .spatial_hub_provider import spatial_provider",
         "python3 sdk/install.py --into custom_components/",
     ):
         assert shared in german and shared in english, (

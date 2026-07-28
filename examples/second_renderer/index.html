@@ -1,6 +1,6 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Floorplan-Hub — Übersicht</title>
+<title>Spatial Hub — Übersicht</title>
 <!--
   A second renderer, deliberately unlike the first.
 
@@ -8,7 +8,7 @@
   time and lets you rearrange it. This one is a single file you open from
   your desktop, shows every floor at once, and cannot edit anything. It
   shares no code with the hub -- not a line -- and it asks for exactly two
-  websocket commands: `floorplan_hub/model` and `floorplan_hub/subscribe`.
+  websocket commands: `spatial_hub/model` and `spatial_hub/subscribe`.
 
   That is the claim Phase 11 had to prove: the built-in renderer has no
   privileged access. Anything it can draw, a stranger can draw, through
@@ -59,12 +59,12 @@
 
 <script type="module">
   const $ = (id) => document.getElementById(id);
-  const SAVED = "floorplan-hub-second-renderer";
+  const SAVED = "spatial-hub-second-renderer";
 
   // Only ever read. This renderer has no edit mode, so it never sends
   // layout/set -- the user's arrangement is not its business.
-  const COMMANDS = { model: "floorplan_hub/model",
-                     subscribe: "floorplan_hub/subscribe" };
+  const COMMANDS = { model: "spatial_hub/model",
+                     subscribe: "spatial_hub/subscribe" };
 
   const saved = JSON.parse(localStorage.getItem(SAVED) || "{}");
   $("url").value = saved.url || "";

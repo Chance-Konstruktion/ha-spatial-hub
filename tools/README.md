@@ -18,13 +18,13 @@ python3 -m venv hass-venv && ./hass-venv/bin/pip install homeassistant playwrigh
 
 Dann in `~/hass-test`:
 
-- `custom_components/floorplan_hub` — dieses Repo hineinkopieren oder verlinken
+- `custom_components/spatial_hub` — dieses Repo hineinkopieren oder verlinken
 - `custom_components/example_provider` — aus [`examples/`](../examples/), damit
   überhaupt Nodes auf dem Plan liegen
 - `configuration.yaml`: `frontend:`, `http:` und `example_provider:`
 
 Integration hinzufügen wie ein Nutzer: **Einstellungen → Geräte & Dienste →
-Floorplan-Hub**.
+Spatial Hub**.
 
 ## Das Testhaus bauen
 
@@ -108,7 +108,7 @@ aufgeräumt
 ```
 
 Es **räumt hinter sich auf**: Was es anlegt, löscht es wieder. Bricht es
-mittendrin ab, heißen die Reste `Floorplan-Hub Test…` und sind damit
+mittendrin ab, heißen die Reste `Spatial Hub Test…` und sind damit
 auffindbar. Nach der Erfahrung mit `live_edit.py` — das beim ersten Versuch
 still einen Provider dauerhaft abgeschaltet hat — ist das keine Höflichkeit,
 sondern Pflicht.

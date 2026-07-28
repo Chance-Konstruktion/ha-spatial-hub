@@ -1,12 +1,12 @@
-# FP-Hub Vision
+# Spatial Hub Vision
 
 ## The Goal
 
-FP-Hub should become the **default spatial interface for Home Assistant**.
+Spatial Hub should become the **default spatial interface for Home Assistant**.
 
 The user should never have to build dashboards manually again.
 
-Instead of creating Lovelace dashboards, YAML layouts or custom cards, the user simply installs FP-Hub and immediately receives a complete interactive visualization of the home.
+Instead of creating Lovelace dashboards, YAML layouts or custom cards, the user simply installs Spatial Hub and immediately receives a complete interactive visualization of the home.
 
 The guiding principle is simple:
 
@@ -24,17 +24,17 @@ No documentation required.
 
 # Philosophy
 
-FP-Hub is **not another dashboard**.
+Spatial Hub is **not another dashboard**.
 
-FP-Hub is the spatial layer of Home Assistant.
+Spatial Hub is the spatial layer of Home Assistant.
 
 Every integration may optionally provide spatial information.
 
-FP-Hub organizes and visualizes that information inside one coherent interface.
+Spatial Hub organizes and visualizes that information inside one coherent interface.
 
 Providers describe the world.
 
-FP-Hub organizes it.
+Spatial Hub organizes it.
 
 Renderers visualize it.
 
@@ -69,7 +69,7 @@ Install Matter
 
 ↓
 
-Open FP-Hub
+Open Spatial Hub
 
 ↓
 
@@ -169,7 +169,7 @@ The result should always look like one coherent building.
 
 # The Editor
 
-The editor is one of the most important parts of FP-Hub.
+The editor is one of the most important parts of Spatial Hub.
 
 It must be
 
@@ -333,9 +333,9 @@ Every provider should be able to contribute
 - Animations
 - Custom Panels
 
-without FP-Hub knowing the provider by name.
+without Spatial Hub knowing the provider by name.
 
-No provider-specific code belongs inside FP-Hub.
+No provider-specific code belongs inside Spatial Hub.
 
 ---
 
@@ -363,7 +363,7 @@ Many visualizations.
 
 # Design Goals
 
-FP-Hub should feel
+Spatial Hub should feel
 
 - fast
 - modern
@@ -386,7 +386,7 @@ Not
 A completely new Home Assistant user should experience something like this.
 
 ```text
-Install FP-Hub
+Install Spatial Hub
 
 ↓
 
@@ -449,13 +449,13 @@ Every proposed feature should answer one simple question.
 
 If the answer is no,
 
-it probably does not belong inside FP-Hub.
+it probably does not belong inside Spatial Hub.
 
 ---
 
 # Long-Term Vision
 
-FP-Hub should eliminate the need for individual dashboards.
+Spatial Hub should eliminate the need for individual dashboards.
 
 Every integration becomes spatially aware.
 
@@ -465,13 +465,13 @@ Developers no longer create dashboards.
 
 They simply describe their devices.
 
-FP-Hub does the rest.
+Spatial Hub does the rest.
 
 ---
 
 # Success
 
-FP-Hub succeeds when users stop thinking about dashboards.
+Spatial Hub succeeds when users stop thinking about dashboards.
 
 Instead they simply open Home Assistant...
 

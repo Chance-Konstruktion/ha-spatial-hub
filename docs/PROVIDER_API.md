@@ -11,9 +11,9 @@ Wie eine Integration auf den Grundriss kommt. Lesezeit: zwei Minuten.
 ## Die Kurzfassung
 
 ```python
-from .floorplan_hub_provider import floorplan_provider
+from .spatial_hub_provider import spatial_provider
 
-floorplan_provider(
+spatial_provider(
     hass,
     entry,
     name="My Integration",
@@ -43,11 +43,11 @@ Ein Aufruf erledigt das Kopieren und sagt dir, was noch zu tun ist:
 python3 sdk/install.py --into custom_components/<domain> --tests tests
 ```
 
-Oder von Hand: [`sdk/floorplan_hub_provider.py`](../sdk/floorplan_hub_provider.py)
+Oder von Hand: [`sdk/spatial_hub_provider.py`](../sdk/spatial_hub_provider.py)
 in deinen Integrationsordner **kopieren**. Nicht importieren.
 
 Der Grund: Der Hub ist keine Abhängigkeit. Die Datei importiert nichts aus
-`floorplan_hub`, sie schreibt ein Dict in `hass.data` und feuert ein
+`spatial_hub`, sie schreibt ein Dict in `hass.data` und feuert ein
 Dispatcher-Signal. Beides kostet nichts, wenn niemand zuhört. Deine
 Integration verhält sich ohne installierten Hub exakt wie vorher — und die
 Ladereihenfolge ist egal, weil beide Seiten das Dict anlegen können.
@@ -59,7 +59,7 @@ ein MQTT-Abo, alles Push-Förmige feuert stattdessen eigene
 Dispatcher-Signale. Nenne sie, und der Hub hört mit:
 
 ```python
-floorplan_provider(
+spatial_provider(
     hass, entry, name="ESPEasy P2P",
     data=lambda: {...},
     signals=[SIGNAL_NODE_DISCOVERED, SIGNAL_NODE_AVAILABILITY],
@@ -87,7 +87,7 @@ Wenn du mehr zu sagen hast, nimm `node()`. Alles, was du zusätzlich
 übergibst, landet in den Metadaten und erscheint im Popup:
 
 ```python
-from .floorplan_hub_provider import node, edge, action
+from .spatial_hub_provider import node, edge, action
 
 data=lambda: {
     "nodes": [
@@ -139,7 +139,7 @@ Payload. Liefere also lieber unvollständige Daten als eine Exception.
 Damit das kein Ratespiel wird, sagt dir der Hub, was er verworfen hat:
 
 ```js
-await hass.connection.sendMessagePromise({ type: "floorplan_hub/diagnostics" })
+await hass.connection.sendMessagePromise({ type: "spatial_hub/diagnostics" })
 ```
 
 Pro Provider: Anzahl gelieferter Nodes/Edges, verworfene Objekte mit
@@ -149,13 +149,13 @@ stillschweigend ignoriert).
 
 ## Prüfen, ob es stimmt
 
-[`sdk/floorplan_hub_conformance.py`](../sdk/floorplan_hub_conformance.py) in deine
+[`sdk/spatial_hub_conformance.py`](../sdk/spatial_hub_conformance.py) in deine
 Tests kopieren, eine Klasse schreiben, fertig:
 
 ```python
-from .floorplan_hub_conformance import FakeHass, FloorplanHubConformance
+from .spatial_hub_conformance import FakeHass, SpatialHubConformance
 
-class TestFloorplanHub(FloorplanHubConformance):
+class TestSpatialHub(SpatialHubConformance):
     def build_registration(self):
         hass = FakeHass()
         async_setup_my_provider(hass, entry, coordinator)
@@ -279,15 +279,15 @@ zurück.
 
 | Command | Zweck |
 |---|---|
-| `floorplan_hub/model` | das komplette räumliche Modell |
-| `floorplan_hub/providers` | wer registriert ist, und was er kann |
-| `floorplan_hub/subscribe` | Push-Hinweis bei Änderungen |
-| `floorplan_hub/layout/set` | Nutzeranordnung speichern |
-| `floorplan_hub/layout/reset` | Overrides eines Objekts verwerfen |
-| `floorplan_hub/history` | Zeitreihe zu Node oder Edge |
-| `floorplan_hub/action` | Provider-Action ausführen (Admin) |
-| `floorplan_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
-| `floorplan_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
+| `spatial_hub/model` | das komplette räumliche Modell |
+| `spatial_hub/providers` | wer registriert ist, und was er kann |
+| `spatial_hub/subscribe` | Push-Hinweis bei Änderungen |
+| `spatial_hub/layout/set` | Nutzeranordnung speichern |
+| `spatial_hub/layout/reset` | Overrides eines Objekts verwerfen |
+| `spatial_hub/history` | Zeitreihe zu Node oder Edge |
+| `spatial_hub/action` | Provider-Action ausführen (Admin) |
+| `spatial_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
+| `spatial_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
 
 Eigene Ebenen können zusätzlich `topology: true` setzen. Dann zeichnet der
 Hub die `via_device`-Beziehungen aus der Device-Registry als Kanten — die

@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SECOND = ROOT / "examples" / "second_renderer" / "index.html"
-PANEL = ROOT / "custom_components" / "floorplan_hub" / "www" / "floorplan-hub-panel.js"
+PANEL = ROOT / "custom_components" / "spatial_hub" / "www" / "spatial-hub-panel.js"
 
 # Everything a renderer is allowed to send, from docs/PROVIDER_API.md.
 DOCUMENTED = {
@@ -36,7 +36,7 @@ def _code_only() -> str:
 
 
 def _commands(source: str) -> set[str]:
-    return set(re.findall(r"floorplan_hub/([a-z/]+)", source))
+    return set(re.findall(r"spatial_hub/([a-z/]+)", source))
 
 
 def test_it_only_speaks_the_documented_api():
@@ -60,8 +60,8 @@ def test_it_never_writes_the_users_arrangement():
 def test_it_shares_no_code_with_the_hub():
     """A second renderer that imports ours proves nothing about anything."""
     source = SECOND.read_text()
-    for smell in ("floorplan_hub_frontend", "../custom_components",
-                  "floorplan-hub-panel"):
+    for smell in ("spatial_hub_frontend", "../custom_components",
+                  "spatial-hub-panel"):
         assert smell not in source, (
             f"it reaches into the hub's own files ({smell}) -- then it is not "
             "an independent renderer, it is the first one wearing a hat"
@@ -75,7 +75,7 @@ def test_it_reimplements_no_theme_preset():
     them: it gets `model["theme"]` fully resolved, and a sixth preset added
     next year must reach it without anybody touching this file.
     """
-    from custom_components.floorplan_hub.theme import PRESETS
+    from custom_components.spatial_hub.theme import PRESETS
 
     source = _code_only().lower()
     for preset in PRESETS:

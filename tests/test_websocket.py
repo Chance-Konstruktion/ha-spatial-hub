@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.floorplan_hub import websocket as ws
-from custom_components.floorplan_hub.const import DATA_HUB, MAX_BACKGROUND_BYTES
-from custom_components.floorplan_hub.hub import FloorplanHub
-from custom_components.floorplan_hub.storage import LayoutStore
+from custom_components.spatial_hub import websocket as ws
+from custom_components.spatial_hub.const import DATA_HUB, MAX_BACKGROUND_BYTES
+from custom_components.spatial_hub.hub import SpatialHub
+from custom_components.spatial_hub.storage import LayoutStore
 
 
 @pytest.fixture
 def hub(hass):
-    instance = FloorplanHub(hass, LayoutStore(hass))
+    instance = SpatialHub(hass, LayoutStore(hass))
     hass.data[DATA_HUB] = instance
-    hass.data["floorplan_hub_providers"] = {
+    hass.data["spatial_hub_providers"] = {
         "demo": {
             "provider_id": "demo",
             "name": "Demo",
@@ -132,7 +132,7 @@ def test_subscribe_pushes_a_reason_not_the_model(hass, hub, connection):
 
 
 async def test_diagnostics_tells_a_developer_what_went_wrong(hass, hub, connection):
-    hass.data["floorplan_hub_providers"]["broken"] = {
+    hass.data["spatial_hub_providers"]["broken"] = {
         "provider_id": "broken",
         "name": "Broken",
         "capabilties": {"nodes": True},  # deliberate typo
@@ -154,7 +154,7 @@ async def test_diagnostics_reports_a_raising_provider(hass, hub, connection):
     def explode():
         raise RuntimeError("boom")
 
-    hass.data["floorplan_hub_providers"]["broken"] = {
+    hass.data["spatial_hub_providers"]["broken"] = {
         "provider_id": "broken", "name": "Broken", "data": explode,
     }
 

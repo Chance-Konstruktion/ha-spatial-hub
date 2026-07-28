@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Spatial Hub",
+        "description": "Floors, areas and providers are detected automatically. There is nothing to configure."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Spatial Hub is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Spatial Hub options",
+        "data": {
+          "auto_areas": "Arrange areas automatically",
+          "panel": "Show the floor plan in the sidebar"
+        },
+        "data_description": {
+          "auto_areas": "Off: areas you have not placed yourself wait in a tray instead of being arranged on a grid.",
+          "panel": "Off: the hub keeps serving its data, but brings no panel of its own."
+        }
+      }
+    }
+  }
+}

@@ -1,4 +1,4 @@
-# „Wann FloorPlan-Hub?"
+# „Wann Spatial Hub?"
 
 Du benutzt eine Integration, die auf deinem Grundriss fehlt. Diese Seite
 ist der Text, den du in deren Repository einreichst — und ein paar Bitten
@@ -40,11 +40,11 @@ Alles ab hier kopieren. Die eckigen Klammern ersetzen.
 
 ---
 
-**Titel:** Support für FloorPlan-Hub (optional, ~20 Zeilen, keine Abhängigkeit)
+**Titel:** Support für Spatial Hub (optional, ~20 Zeilen, keine Abhängigkeit)
 
 Hi — danke für diese Integration, ich benutze sie täglich.
 
-Es gibt seit Kurzem [FloorPlan-Hub](https://github.com/Chance-Konstruktion/ha-floorplan-hub):
+Es gibt seit Kurzem [Spatial Hub](https://github.com/Chance-Konstruktion/ha-spatial-hub):
 ein Dienst, der räumliche Daten aus beliebigen Integrationen einsammelt und
 in *einem* Grundriss zusammenführt, statt dass jede Integration ihr eigenes
 Dashboard mitbringt. Etagen und Bereiche kommen aus Home Assistant, die
@@ -54,9 +54,9 @@ Ich frage nicht nach einem Termin und wäre über ein Nein nicht enttäuscht.
 Aber der Aufwand ist klein genug, dass ich es für erwähnenswert halte:
 
 ```python
-from .floorplan_hub_provider import floorplan_provider
+from .spatial_hub_provider import spatial_provider
 
-floorplan_provider(
+spatial_provider(
     hass,
     entry,
     name="[Name der Integration]",
@@ -90,9 +90,9 @@ Setup, das die Handarbeit abnimmt:
 python3 sdk/install.py --into custom_components/[domain] --tests tests
 ```
 
-Alles dazu: [sdk/README.md](https://github.com/Chance-Konstruktion/ha-floorplan-hub/blob/main/sdk/README.md).
+Alles dazu: [sdk/README.md](https://github.com/Chance-Konstruktion/ha-spatial-hub/blob/main/sdk/README.md).
 Ein vollständiges Beispiel-Integration liegt in
-[examples/](https://github.com/Chance-Konstruktion/ha-floorplan-hub/tree/main/examples/example_provider) —
+[examples/](https://github.com/Chance-Konstruktion/ha-spatial-hub/tree/main/examples/example_provider) —
 keine Schnipsel, sondern eine ganze Datei, die in deren Testsuite mitläuft.
 
 Wenn du magst, mache ich den PR. Sag einfach Bescheid.

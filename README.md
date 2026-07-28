@@ -1,8 +1,8 @@
-# Floorplan-Hub
+# Spatial Hub
 
-> *„Ein Floorplan, der nicht malt, was du konfigurierst. Er malt, was dein Haus wirklich ist."*
+> *„Ein Grundriss, der nicht malt, was du konfigurierst. Er malt, was dein Haus wirklich ist."*
 
-Floorplan-Hub ist **keine Karte**. Es ist ein Systemdienst in Home
+Spatial Hub ist **keine Karte**. Es ist ein Systemdienst in Home
 Assistant, der räumliche Daten aus beliebigen Integrationen einsammelt, mit
 den Stockwerken und Bereichen von Home Assistant zusammenführt und daraus
 **ein** Modell bereitstellt — das jeder Renderer zeichnen kann.
@@ -14,7 +14,7 @@ einzige Zeile geändert wird.
 
 ## Status
 
-  >>> comming soon <<<<
+  >>> coming soon <<<<
 
 **Die Roadmap ist durch — Phase 1–12:** Datenmodell, Provider-Registry,
 Event-System, Storage, Config-Flow, die komplette Websocket-API, ein
@@ -40,7 +40,7 @@ Drei Dokumente, drei Fragen:
 
 ## Der Renderer
 
-Nach der Einrichtung steht **Floorplan** in der Seitenleiste. Kein
+Nach der Einrichtung steht **Spatial Hub** in der Seitenleiste. Kein
 Dashboard anlegen, keine Karte konfigurieren, kein YAML:
 
 - **Haus**: alle Etagen übereinander, als Erstes und voreingestellt — die
@@ -88,7 +88,7 @@ geöffnet, ohne eine geteilte Zeile Code, mit genau zwei Kommandos.
 
 ```
 Integration A ─┐
-Integration B ─┼─► hass.data["floorplan_hub_providers"] ─► Hub ─► Websocket ─► Renderer
+Integration B ─┼─► hass.data["spatial_hub_providers"] ─► Hub ─► Websocket ─► Renderer
 Integration C ─┘                                            ▲
                           HA Floors + Areas ────────────────┤
                           Nutzer-Anordnung (Storage) ───────┘
@@ -135,7 +135,7 @@ ist — schaut niemand hin, ist nichts zu aktualisieren.
 
 ## Ohne Adapter: eigene Ebenen
 
-Die meisten Integrationen werden nie einen Floorplan-Hub-Provider
+Die meisten Integrationen werden nie einen Spatial Hub-Provider
 schreiben. Das ist kein Versäumnis, sondern der Normalfall — und eine
 Plattform, die nur für die Eingeweihten funktioniert, funktioniert nicht.
 
@@ -186,9 +186,9 @@ Kopiert zwei Dateien und druckt den Code, der noch fehlt. Die vollständige
 Anbindung ist ein Aufruf:
 
 ```python
-from .floorplan_hub_provider import floorplan_provider   # kopierte Datei
+from .spatial_hub_provider import spatial_provider   # kopierte Datei
 
-floorplan_provider(
+spatial_provider(
     hass,
     entry,
     name="My Integration",
@@ -208,7 +208,7 @@ mehr zu sagen hat, nimmt die Builder `node()` / `edge()` / `action()` —
 alles Zusätzliche landet automatisch in den Metadaten und damit im Popup.
 
 **Und ein Conformance-Kit**, das Entwickler in ihre eigene Testsuite
-kopieren ([sdk/floorplan_hub_conformance.py](sdk/floorplan_hub_conformance.py)):
+kopieren ([sdk/spatial_hub_conformance.py](sdk/spatial_hub_conformance.py)):
 eine Klasse, nur pytest als Abhängigkeit, kein Home Assistant und kein
 installierter Hub nötig. Es fängt die Fehler, die Grundrisse im Feld
 zerlegen — allen voran Node-IDs, die sich zwischen zwei Polls ändern und
@@ -236,22 +236,22 @@ Domain daraus im Quelltext des Hubs vorkommt.
 Provider-Code gilt dem Hub als nicht vertrauenswürdig: Wer eine Exception
 wirft, ins Timeout läuft oder Unsinn liefert, verliert seinen eigenen Layer
 für genau einen Refresh — und sonst passiert nichts. Damit das kein
-Ratespiel wird, sagt `floorplan_hub/diagnostics` pro Provider, was verworfen
+Ratespiel wird, sagt `spatial_hub/diagnostics` pro Provider, was verworfen
 wurde und warum, inklusive vermuteter Tippfehler in der Registrierung.
 
 ## Websocket-API
 
 | Command | Zweck |
 |---|---|
-| `floorplan_hub/model` | das komplette räumliche Modell |
-| `floorplan_hub/providers` | wer registriert ist, und was er kann |
-| `floorplan_hub/subscribe` | Push-Hinweis bei Änderungen |
-| `floorplan_hub/layout/set` | Nutzeranordnung speichern |
-| `floorplan_hub/layout/reset` | Overrides eines Objekts verwerfen |
-| `floorplan_hub/history` | Zeitreihe zu Node oder Edge |
-| `floorplan_hub/action` | Provider-Action ausführen (Admin) |
-| `floorplan_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
-| `floorplan_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
+| `spatial_hub/model` | das komplette räumliche Modell |
+| `spatial_hub/providers` | wer registriert ist, und was er kann |
+| `spatial_hub/subscribe` | Push-Hinweis bei Änderungen |
+| `spatial_hub/layout/set` | Nutzeranordnung speichern |
+| `spatial_hub/layout/reset` | Overrides eines Objekts verwerfen |
+| `spatial_hub/history` | Zeitreihe zu Node oder Edge |
+| `spatial_hub/action` | Provider-Action ausführen (Admin) |
+| `spatial_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
+| `spatial_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
 
 Unter `theme` steht das aufgelöste Theme — Preset plus Nutzerkorrekturen,
 fertig ausgerechnet. Ein zweiter Renderer bekommt damit dieselben Farben,
@@ -265,7 +265,7 @@ zurückzuholen. Ein einfacher Renderer zeichnet weiterhin nur `nodes`.
 
 HACS → Custom Repository → dieses Repo als *Integration* hinzufügen,
 installieren, Home Assistant neu starten, unter *Geräte & Dienste* →
-*Integration hinzufügen* → **Floorplan-Hub**. Es gibt nichts einzustellen.
+*Integration hinzufügen* → **Spatial Hub**. Es gibt nichts einzustellen.
 
 ## Tests
 

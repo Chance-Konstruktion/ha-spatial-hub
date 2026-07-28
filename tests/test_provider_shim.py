@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from custom_components.floorplan_hub.hub import FloorplanHub
-from custom_components.floorplan_hub.storage import LayoutStore
+from custom_components.spatial_hub.hub import SpatialHub
+from custom_components.spatial_hub.storage import LayoutStore
 
 from conftest import FakeArea, FakeEntity
 
-_SHIM = Path(__file__).resolve().parents[1] / "sdk" / "floorplan_hub_provider.py"
-_spec = importlib.util.spec_from_file_location("floorplan_hub_provider", _SHIM)
+_SHIM = Path(__file__).resolve().parents[1] / "sdk" / "spatial_hub_provider.py"
+_spec = importlib.util.spec_from_file_location("spatial_hub_provider", _SHIM)
 shim = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(shim)
 
@@ -56,12 +56,12 @@ def hub(hass):
     from homeassistant.helpers import area_registry as ar
 
     ar.async_get(hass).areas = [FakeArea("kitchen", "Küche")]
-    return FloorplanHub(hass, LayoutStore(hass))
+    return SpatialHub(hass, LayoutStore(hass))
 
 
 def test_one_call_is_the_whole_integration(hass):
     entry = FakeEntry()
-    shim.floorplan_provider(
+    shim.spatial_provider(
         hass, entry, name="Demo", data=lambda: ["light.kitchen"]
     )
 
@@ -79,13 +79,13 @@ def test_coordinator_updates_notify_the_hub(hass, hub):
     hub.async_start()
     hub.async_add_listener(seen.append)
 
-    shim.floorplan_provider(
+    shim.spatial_provider(
         hass, entry, name="Demo", data=lambda: [], coordinator=coordinator
     )
     seen.clear()  # the registration signal itself
     coordinator.refreshed()
 
-    assert seen == ["floorplan_hub_data_updated:demo"]
+    assert seen == ["spatial_hub_data_updated:demo"]
 
     entry.unload()
     coordinator.refreshed()
@@ -94,7 +94,7 @@ def test_coordinator_updates_notify_the_hub(hass, hub):
 
 def test_capabilities_are_inferred_from_what_was_passed(hass):
     entry = FakeEntry()
-    shim.floorplan_provider(
+    shim.spatial_provider(
         hass, entry, name="Demo", data=lambda: [],
         history=lambda kind, item, hours: [],
     )
@@ -114,7 +114,7 @@ async def test_entity_ids_alone_produce_a_complete_node(hass, hub):
     )
     hass.states.set("light.kitchen", "on", friendly_name="Küchenlicht")
 
-    shim.floorplan_provider(
+    shim.spatial_provider(
         hass, FakeEntry(), name="Demo", data=lambda: ["light.kitchen"]
     )
     node = (await hub.async_model())["nodes"][0]
@@ -134,7 +134,7 @@ async def test_what_the_provider_states_beats_the_registry(hass, hub):
     )
     hass.states.set("light.kitchen", "on")
 
-    shim.floorplan_provider(
+    shim.spatial_provider(
         hass,
         FakeEntry(),
         name="Demo",
@@ -152,7 +152,7 @@ async def test_what_the_provider_states_beats_the_registry(hass, hub):
 
 
 async def test_builders_produce_what_the_hub_expects(hass, hub):
-    shim.floorplan_provider(
+    shim.spatial_provider(
         hass,
         FakeEntry(),
         name="Demo",
@@ -178,7 +178,7 @@ async def test_builders_produce_what_the_hub_expects(hass, hub):
 def test_the_shim_works_with_no_hub_installed(hass):
     """Nothing here may depend on the hub being set up."""
     entry = FakeEntry()
-    provider = shim.floorplan_provider(
+    provider = shim.spatial_provider(
         hass, entry, name="Demo", data=lambda: ["light.kitchen"]
     )
     provider.async_notify()
@@ -188,7 +188,7 @@ def test_the_shim_works_with_no_hub_installed(hass):
 def test_switching_a_provider_off_stops_the_chatter(hass, hub):
     """Unregistering mid-run must drop the coordinator listener too."""
     coordinator = FakeCoordinator()
-    provider = shim.floorplan_provider(
+    provider = shim.spatial_provider(
         hass, FakeEntry(), name="Demo", data=lambda: [], coordinator=coordinator
     )
     provider.async_unregister()

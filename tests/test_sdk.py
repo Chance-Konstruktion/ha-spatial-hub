@@ -14,16 +14,16 @@ from pathlib import Path
 
 import pytest
 
-from custom_components.floorplan_hub.const import CURRENT_SDK_VERSION
-from custom_components.floorplan_hub.hub import FloorplanHub
-from custom_components.floorplan_hub.registry import Provider
-from custom_components.floorplan_hub.storage import LayoutStore
+from custom_components.spatial_hub.const import CURRENT_SDK_VERSION
+from custom_components.spatial_hub.hub import SpatialHub
+from custom_components.spatial_hub.registry import Provider
+from custom_components.spatial_hub.storage import LayoutStore
 
 ROOT = Path(__file__).resolve().parents[1]
 SDK = ROOT / "sdk"
 EXAMPLE = ROOT / "examples" / "example_provider"
-SHIM = "floorplan_hub_provider.py"
-KIT = "floorplan_hub_conformance.py"
+SHIM = "spatial_hub_provider.py"
+KIT = "spatial_hub_conformance.py"
 
 
 class FakeEntry:
@@ -66,7 +66,7 @@ async def test_the_example_puts_itself_on_the_floor_plan(hass, example):
 
     assert await example.async_setup_entry(hass, FakeEntry()) is True
 
-    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
 
     assert [node["id"] for node in model["nodes"]] == [
         "example_provider:hub",
@@ -85,7 +85,7 @@ async def test_the_example_puts_itself_on_the_floor_plan(hass, example):
 @pytest.mark.asyncio
 async def test_the_example_satisfies_the_public_contract(hass, example):
     await example.async_setup_entry(hass, FakeEntry())
-    registration = hass.data["floorplan_hub_providers"]["example_provider"]
+    registration = hass.data["spatial_hub_providers"]["example_provider"]
 
     provider = Provider.from_registration(registration)
 
@@ -106,7 +106,7 @@ async def test_the_example_passes_the_conformance_kit(hass, example):
     spec.loader.exec_module(kit)
 
     await example.async_setup_entry(hass, FakeEntry())
-    registration = hass.data["floorplan_hub_providers"]["example_provider"]
+    registration = hass.data["spatial_hub_providers"]["example_provider"]
 
     assert kit.check(registration) == []
 
@@ -138,7 +138,7 @@ def test_the_installer_vendors_both_files(tmp_path):
     assert (target / SHIM).is_file()
     assert (tests / KIT).is_file()
     assert "mine" in result.stdout, "the printed snippet is filled in for you"
-    assert "from .floorplan_hub_provider import floorplan_provider" in result.stdout
+    assert "from .spatial_hub_provider import spatial_provider" in result.stdout
 
 
 def test_the_installer_reads_the_domain_from_the_manifest(tmp_path):
@@ -220,7 +220,7 @@ async def test_an_old_copy_is_noted_but_never_punished(hass):
     """It keeps working. The author just finds out a newer one exists."""
     # In this test the hub has moved on to revision 2, so a copy stamped 1
     # is behind and a copy stamped 2 is current.
-    hass.data["floorplan_hub_providers"] = {
+    hass.data["spatial_hub_providers"] = {
         "old": {"provider_id": "old", "name": "Old", "sdk_version": 1,
                 "data": lambda: ["light.a"]},
         "new": {"provider_id": "new", "name": "New", "sdk_version": 2,
@@ -228,9 +228,9 @@ async def test_an_old_copy_is_noted_but_never_punished(hass):
         "handwritten": {"provider_id": "handwritten", "name": "By hand",
                         "data": lambda: ["light.c"]},
     }
-    hub = FloorplanHub(hass, LayoutStore(hass))
+    hub = SpatialHub(hass, LayoutStore(hass))
 
-    import custom_components.floorplan_hub.hub as hub_module
+    import custom_components.spatial_hub.hub as hub_module
 
     original = hub_module.CURRENT_SDK_VERSION
     hub_module.CURRENT_SDK_VERSION = 2
@@ -299,7 +299,7 @@ async def test_a_push_integration_can_name_its_own_signals(hass):
     shim = _shim()
     entry = FakeEntry()
 
-    shim.floorplan_provider(hass, entry, name="Push", data=lambda: ["light.a"],
+    shim.spatial_provider(hass, entry, name="Push", data=lambda: ["light.a"],
                             signals=["my_thing_node_seen", "my_thing_gone"])
 
     from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -307,7 +307,7 @@ async def test_a_push_integration_can_name_its_own_signals(hass):
     told: list[str] = []
     from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-    async_dispatcher_connect(hass, "floorplan_hub_data_updated", told.append)
+    async_dispatcher_connect(hass, "spatial_hub_data_updated", told.append)
 
     async_dispatcher_send(hass, "my_thing_node_seen")
     async_dispatcher_send(hass, "my_thing_gone")
@@ -321,7 +321,7 @@ async def test_a_push_integration_can_name_its_own_signals(hass):
 @pytest.mark.asyncio
 async def test_one_signal_may_be_given_without_a_list(hass):
     shim = _shim()
-    shim.floorplan_provider(hass, FakeEntry(), name="Push",
+    shim.spatial_provider(hass, FakeEntry(), name="Push",
                             data=lambda: ["light.a"], signals="just_the_one")
 
     from homeassistant.helpers.dispatcher import (
@@ -330,7 +330,7 @@ async def test_one_signal_may_be_given_without_a_list(hass):
     )
 
     told: list[str] = []
-    async_dispatcher_connect(hass, "floorplan_hub_data_updated", told.append)
+    async_dispatcher_connect(hass, "spatial_hub_data_updated", told.append)
     async_dispatcher_send(hass, "just_the_one")
 
     assert told == [FakeEntry.domain]
@@ -340,7 +340,7 @@ async def test_one_signal_may_be_given_without_a_list(hass):
 async def test_the_signals_are_dropped_when_the_provider_withdraws(hass):
     """Otherwise an unloaded integration keeps waking the hub forever."""
     shim = _shim()
-    provider = shim.floorplan_provider(hass, FakeEntry(), name="Push",
+    provider = shim.spatial_provider(hass, FakeEntry(), name="Push",
                                        data=lambda: ["light.a"],
                                        signals=["something_happened"])
 
@@ -350,7 +350,7 @@ async def test_the_signals_are_dropped_when_the_provider_withdraws(hass):
     )
 
     told: list[str] = []
-    async_dispatcher_connect(hass, "floorplan_hub_data_updated", told.append)
+    async_dispatcher_connect(hass, "spatial_hub_data_updated", told.append)
     provider.async_unregister()
     async_dispatcher_send(hass, "something_happened")
 
@@ -367,7 +367,7 @@ async def test_a_coordinator_that_cannot_be_listened_to_says_so(hass, caplog):
     """
     shim = _shim()
 
-    shim.floorplan_provider(hass, FakeEntry(), name="Push",
+    shim.spatial_provider(hass, FakeEntry(), name="Push",
                             data=lambda: ["light.a"], coordinator=_OwnLoop())
 
     assert "async_add_listener" in caplog.text
@@ -379,7 +379,7 @@ async def test_a_real_coordinator_is_still_just_passed_in(hass, caplog):
     shim = _shim()
     coordinator = _FakeCoordinator()
 
-    shim.floorplan_provider(hass, FakeEntry(), name="Push",
+    shim.spatial_provider(hass, FakeEntry(), name="Push",
                             data=lambda: ["light.a"], coordinator=coordinator)
 
     assert len(coordinator.listeners) == 1
@@ -391,7 +391,7 @@ async def test_signals_alongside_a_foreign_coordinator_is_not_a_warning(hass, ca
     """Saying `signals=` *is* the answer, so it must not be nagged at."""
     shim = _shim()
 
-    shim.floorplan_provider(hass, FakeEntry(), name="Push",
+    shim.spatial_provider(hass, FakeEntry(), name="Push",
                             data=lambda: ["light.a"], coordinator=_OwnLoop(),
                             signals=["fine"])
 
@@ -407,7 +407,7 @@ async def test_a_signal_carrying_a_payload_does_not_explode(hass):
     TypeError on the first packet -- in production, not in a test.
     """
     shim = _shim()
-    shim.floorplan_provider(hass, FakeEntry(), name="Push",
+    shim.spatial_provider(hass, FakeEntry(), name="Push",
                             data=lambda: ["light.a"], signals=["with_payload"])
 
     from homeassistant.helpers.dispatcher import (
@@ -416,7 +416,7 @@ async def test_a_signal_carrying_a_payload_does_not_explode(hass):
     )
 
     told: list[str] = []
-    async_dispatcher_connect(hass, "floorplan_hub_data_updated", told.append)
+    async_dispatcher_connect(hass, "spatial_hub_data_updated", told.append)
 
     async_dispatcher_send(hass, "with_payload", 42, {"anything": True})
 

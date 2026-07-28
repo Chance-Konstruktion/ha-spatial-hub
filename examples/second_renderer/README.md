@@ -20,8 +20,8 @@ einen gibt. Diese Datei ist der Beleg:
 - Sie teilt **keine Zeile Code** mit dem Hub.
 - Sie läuft **außerhalb** von Home Assistant, also ohne jeden Sonderzugang,
   den ein eingebautes Panel noch haben könnte.
-- Sie benutzt genau **zwei** Websocket-Kommandos: `floorplan_hub/model` und
-  `floorplan_hub/subscribe`. Mehr braucht ein lesender Renderer nicht.
+- Sie benutzt genau **zwei** Websocket-Kommandos: `spatial_hub/model` und
+  `spatial_hub/subscribe`. Mehr braucht ein lesender Renderer nicht.
 - Sie kennt **keine Integration** beim Namen und **kein Theme-Preset**.
 
 `tests/test_second_renderer.py` hält jeden dieser Punkte fest.

@@ -1,6 +1,6 @@
 # Wer mitmacht
 
-Integrationen, die einen Floorplan-Hub-Adapter mitbringen. Die Liste steht
+Integrationen, die einen Spatial Hub-Adapter mitbringen. Die Liste steht
 hier, damit Nutzer sehen, was es schon gibt — und Maintainer sehen, dass sie
 nicht die Ersten sind.
 
@@ -29,7 +29,7 @@ PR auf diese Datei, eine Zeile. Bedingungen:
 
 - Der Adapter ist im Repository der Integration **released**, nicht nur in
   einem Branch.
-- Er besteht das Conformance-Kit ([`sdk/floorplan_hub_conformance.py`](../sdk/floorplan_hub_conformance.py))
+- Er besteht das Conformance-Kit ([`sdk/spatial_hub_conformance.py`](../sdk/spatial_hub_conformance.py))
   in der eigenen Testsuite. Bitte den Test mit verlinken.
 
 Es gibt keine Freigabe von uns und keine Prüfung durch uns. Wir sind nicht

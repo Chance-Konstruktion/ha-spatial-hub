@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.floorplan_hub.const import UNASSIGNED_FLOOR_ID
-from custom_components.floorplan_hub.hub import FloorplanHub
-from custom_components.floorplan_hub.storage import LayoutStore
+from custom_components.spatial_hub.const import UNASSIGNED_FLOOR_ID
+from custom_components.spatial_hub.hub import SpatialHub
+from custom_components.spatial_hub.storage import LayoutStore
 
 from conftest import FakeArea, FakeFloor
 
@@ -24,7 +24,7 @@ def hub(hass):
         FakeArea("kueche", "Küche", floor_id="eg"),
         FakeArea("schlafzimmer", "Schlafzimmer", floor_id="og"),
     ]
-    return FloorplanHub(hass, LayoutStore(hass))
+    return SpatialHub(hass, LayoutStore(hass))
 
 
 def _register(hass, provider_id="demo", **overrides):
@@ -38,7 +38,7 @@ def _register(hass, provider_id="demo", **overrides):
                          "edges": []},
     }
     registration.update(overrides)
-    hass.data.setdefault("floorplan_hub_providers", {})[provider_id] = registration
+    hass.data.setdefault("spatial_hub_providers", {})[provider_id] = registration
     return registration
 
 
@@ -235,11 +235,11 @@ def test_provider_signals_reach_listeners(hass, hub):
     hub.async_start()
     hub.async_add_listener(seen.append)
 
-    async_dispatcher_send(hass, "floorplan_hub_data_updated", "demo")
-    assert seen == ["floorplan_hub_data_updated:demo"]
+    async_dispatcher_send(hass, "spatial_hub_data_updated", "demo")
+    assert seen == ["spatial_hub_data_updated:demo"]
 
     hub.async_stop()
-    async_dispatcher_send(hass, "floorplan_hub_data_updated", "demo")
+    async_dispatcher_send(hass, "spatial_hub_data_updated", "demo")
     assert len(seen) == 1
 
 
@@ -293,7 +293,7 @@ async def test_an_area_without_a_floor_gets_a_storey_of_its_own(hass):
         [FakeArea("bad", "Bad", floor_id="eg"), FakeArea("kueche", "Küche")],
     )
 
-    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
 
     assert [floor["id"] for floor in model["floors"]] == ["eg", UNASSIGNED_FLOOR_ID], (
         "the storey for the homeless areas is missing, or is not sorted last"
@@ -312,7 +312,7 @@ async def test_a_house_without_any_floors_gets_no_unassigned_tab(hass):
     """Then *everything* is unassigned, which tells the user nothing."""
     _house(hass, [], [FakeArea("kueche", "Küche"), FakeArea("bad", "Bad")])
 
-    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
 
     assert [floor["id"] for floor in model["floors"]] == ["default"]
     assert all(not area["floor_id"] for area in model["areas"]), (
@@ -328,7 +328,7 @@ async def test_a_node_follows_its_area_onto_the_unassigned_storey(hass):
         [FakeFloor("eg", "Erdgeschoss", level=0)],
         [FakeArea("bad", "Bad", floor_id="eg"), FakeArea("kueche", "Küche")],
     )
-    hass.data["floorplan_hub_providers"] = {
+    hass.data["spatial_hub_providers"] = {
         "p": {
             "provider_id": "p",
             "name": "P",
@@ -338,7 +338,7 @@ async def test_a_node_follows_its_area_onto_the_unassigned_storey(hass):
         }
     }
 
-    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
 
     assert model["nodes"][0]["floor_id"] == UNASSIGNED_FLOOR_ID
 
@@ -352,7 +352,7 @@ async def test_the_unassigned_storey_says_that_it_is_one(hass):
         [FakeArea("kueche", "Küche")],
     )
 
-    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
 
     assert model["floors"][-1]["unassigned"] is True
     assert all(
@@ -371,12 +371,12 @@ async def test_many_area_less_nodes_do_not_land_on_one_another(hass):
     0.035 circle: one dot, nineteen labels, nothing clickable.
     """
     _house(hass, [], [])
-    hass.data["floorplan_hub_providers"] = {
+    hass.data["spatial_hub_providers"] = {
         "p": {"provider_id": "p", "name": "P",
               "data": lambda: [f"light.lamp_{i}" for i in range(19)]}
     }
 
-    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
     spots = [(n["position"]["x"], n["position"]["y"]) for n in model["nodes"]]
 
     assert len(set(spots)) == 19, "two nodes share a spot"
@@ -391,12 +391,12 @@ async def test_many_area_less_nodes_do_not_land_on_one_another(hass):
 async def test_a_lone_node_still_sits_in_the_middle_of_its_room(hass):
     """The grid must not push the simple case off-centre."""
     _house(hass, [FakeFloor("eg", "EG")], [FakeArea("bad", "Bad", floor_id="eg")])
-    hass.data["floorplan_hub_providers"] = {
+    hass.data["spatial_hub_providers"] = {
         "p": {"provider_id": "p", "name": "P",
               "data": lambda: [{"id": "one", "label": "One", "area_id": "bad"}]}
     }
 
-    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
 
     assert model["nodes"][0]["position"]["x"] == 0.5
     assert model["nodes"][0]["position"]["y"] == 0.5
@@ -407,7 +407,7 @@ async def test_nodes_in_a_room_stay_inside_it(hass):
     """A spread that leaks into the neighbouring room is worse than none."""
     _house(hass, [FakeFloor("eg", "EG")],
            [FakeArea("a", "A", floor_id="eg"), FakeArea("b", "B", floor_id="eg")])
-    hass.data["floorplan_hub_providers"] = {
+    hass.data["spatial_hub_providers"] = {
         "p": {"provider_id": "p", "name": "P",
               "data": lambda: [
                   {"id": f"n{i}", "label": f"N{i}", "area_id": "a"}
@@ -415,7 +415,7 @@ async def test_nodes_in_a_room_stay_inside_it(hass):
               ]}
     }
 
-    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
     area = next(a for a in model["areas"] if a["id"] == "a")
     half_w = area["size"]["width"] / 2
     half_h = area["size"]["height"] / 2
@@ -507,7 +507,7 @@ async def test_the_user_overrules_the_guess(hass, hub):
 
 @pytest.mark.asyncio
 async def test_a_virtual_area_gets_a_plane_of_its_own(hass, hub):
-    from custom_components.floorplan_hub.const import VIRTUAL_FLOOR_ID
+    from custom_components.spatial_hub.const import VIRTUAL_FLOOR_ID
     from homeassistant.helpers import area_registry as ar
 
     ar.async_get(hass).areas.append(FakeArea("cloud", "Cloud", floor_id="eg"))
@@ -604,14 +604,14 @@ async def test_the_provider_keeps_the_icon_it_chose(hass, hub):
 )
 def test_a_floor_nobody_numbered_is_read_from_its_name(name, expected):
     """Home Assistant's level field is optional, and most people skip it."""
-    from custom_components.floorplan_hub.discovery import floor_level
+    from custom_components.spatial_hub.discovery import floor_level
 
     assert floor_level(name) == expected
 
 
 def test_a_stated_level_always_wins():
     """Including zero: the user filled the field in, and that settles it."""
-    from custom_components.floorplan_hub.discovery import floor_level
+    from custom_components.spatial_hub.discovery import floor_level
 
     assert floor_level("Dach", 0) == 0, "a stated ground floor called Dach"
     assert floor_level("Keller", 7) == 7
@@ -640,7 +640,7 @@ async def test_the_roof_does_not_end_up_on_the_ground(hass):
         ],
     )
 
-    model = await FloorplanHub(hass, LayoutStore(hass)).async_model()
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
 
     assert [floor["id"] for floor in model["floors"]] == ["keller", "eg", "dach"], (
         "bottom-up: the cellar is under the house and the roof is on top"

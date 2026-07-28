@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.floorplan_hub.registry import (
+from custom_components.spatial_hub.registry import (
     Provider,
     ProviderError,
     async_load_providers,
@@ -136,7 +136,7 @@ async def test_async_data_callable_is_awaited():
 
 
 def test_load_providers_skips_the_invalid_ones(hass):
-    hass.data["floorplan_hub_providers"] = {
+    hass.data["spatial_hub_providers"] = {
         "demo": _registration(),
         "broken": {"provider_id": "broken"},  # no data callable
     }

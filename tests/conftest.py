@@ -347,7 +347,7 @@ class FakeConfigEntry:
         self.options = options or {}
         self.data: dict = {}
         self.entry_id = "hub"
-        self.domain = "floorplan_hub"
+        self.domain = "spatial_hub"
         self._unloads: list = []
 
     def async_on_unload(self, callback_):

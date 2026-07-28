@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.floorplan_hub.hub import FloorplanHub
-from custom_components.floorplan_hub.storage import LayoutStore
-from custom_components.floorplan_hub.watch import DEBOUNCE_SECONDS, ModelWatcher
+from custom_components.spatial_hub.hub import SpatialHub
+from custom_components.spatial_hub.storage import LayoutStore
+from custom_components.spatial_hub.watch import DEBOUNCE_SECONDS, ModelWatcher
 
 from conftest import FakeArea, FakeEntity
 
@@ -22,7 +22,7 @@ def hub(hass):
     from homeassistant.helpers import area_registry as ar
 
     ar.async_get(hass).areas = [FakeArea("wohnzimmer", "Wohnzimmer", floor_id="eg")]
-    return FloorplanHub(hass, LayoutStore(hass))
+    return SpatialHub(hass, LayoutStore(hass))
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def _fire_timer(hass):
 
 
 def _register(hass, entity_id="light.kitchen"):
-    hass.data.setdefault("floorplan_hub_providers", {})["demo"] = {
+    hass.data.setdefault("spatial_hub_providers", {})["demo"] = {
         "provider_id": "demo",
         "name": "Demo",
         "data": lambda: [entity_id],
@@ -161,7 +161,7 @@ async def test_an_unchanged_entity_set_is_not_resubscribed(hass, hub, watcher):
 
 @pytest.mark.asyncio
 async def test_a_plan_with_no_entities_tracks_nothing(hass, hub, watcher):
-    hass.data.setdefault("floorplan_hub_providers", {})["demo"] = {
+    hass.data.setdefault("spatial_hub_providers", {})["demo"] = {
         "provider_id": "demo",
         "name": "Demo",
         "data": lambda: {"nodes": [{"id": "a", "area_id": "wohnzimmer"}]},
