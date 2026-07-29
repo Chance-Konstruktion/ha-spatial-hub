@@ -49,12 +49,53 @@ const ZOOM = { min: 0.4, max: 6, step: 1.15 };
  *  directions. That is what makes the garden surround the ground floor
  *  instead of becoming a storey underneath it.
  */
+/** How strongly the building itself is drawn, 0.2 … 1.6.
+ *
+ *  Clamped rather than trusted: a stored zero would erase the house and
+ *  leave a panel that looks broken, with the setting that did it three
+ *  dialogs away.
+ */
+/** How wide the house itself is, in metres. The one number everything
+ *  else is measured against -- and the only one anybody has to know. */
+const houseMetres = (floor) => {
+  const value = Number((floor || {}).metres);
+  if (!Number.isFinite(value) || value <= 0) return 12;
+  return Math.min(200, Math.max(1, value));
+};
+
+const metre = (value) => value.toFixed(1).replace(".", ",");
+
+const houseWeight = (theme) => {
+  const value = Number((theme || {}).house_weight);
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(1.6, Math.max(0.2, value));
+};
+
 const frameOf = (floor) => {
   // Sky gets the same room as garden. A cloud belongs *around* the house,
   // not squeezed into its footprint -- the internet is not a room on the
   // second floor, and a plane exactly as wide as the walls says it is.
   const wide = floor && (floor.has_outdoor || floor.virtual);
-  const margin = wide ? floor.outdoor_margin || 0.28 : 0;
+  let margin = wide ? floor.outdoor_margin || 0.28 : 0;
+  // A drawn plot decides how much surroundings there are. Everybody's
+  // garden is a different size, and a fixed apron would mean the boundary
+  // either stops at an invisible wall or is drawn outside the picture --
+  // so the window grows to hold whatever was drawn, and the house keeps
+  // its place in the middle of it.
+  const plot = floor && Array.isArray(floor.plot) ? floor.plot : null;
+  if (plot && plot.length >= 3) {
+    for (const point of plot) {
+      if (!point || typeof point.x !== "number" || typeof point.y !== "number") {
+        continue;
+      }
+      margin = Math.max(
+        margin,
+        -point.x, point.x - 1,
+        -point.y, point.y - 1,
+      );
+    }
+    margin = Math.min(margin + 0.04, 4);
+  }
   return { min: margin ? -margin : 0, span: 1 + 2 * margin };
 };
 
@@ -164,6 +205,15 @@ class SpatialHubPanel extends HTMLElement {
     this._unsubscribe = null;
     this._pending = false;
     this._edit = false;
+    // Bearbeiten heißt zweierlei, und beides gleichzeitig heißt keins von
+    // beiden: Wände ziehen zwischen zwanzig Gerätepunkten trifft immer den
+    // Punkt, und ein Gerät einsortieren zwischen lauter Anfassern trifft
+    // immer den Anfasser. Also nacheinander -- Räume oder Geräte.
+    this._editWhat = "rooms";
+    // Maße sind für die, die es genau wollen -- und für niemanden sonst.
+    // Ohne sie bleibt der Editor eine Zeichnung, die auch ein Kind
+    // bedienen kann: ziehen, bis es aussieht wie zu Hause.
+    this._meters = false;
     this._drag = null; // live pointer drag, never persisted until release
     this._dragged = false; // suppresses the click that follows a drag
     this._floorDialog = false;
@@ -525,6 +575,15 @@ class SpatialHubPanel extends HTMLElement {
     if (theme.accent) parts.push(`--fp-accent:${theme.accent}`);
     if (theme.surface) parts.push(`--fp-surface:${theme.surface}`);
     if (theme.ink) parts.push(`--fp-ink:${theme.ink}`);
+    // Wie deutlich das Haus selbst da ist. Ein Grundriss ohne Innenwände
+    // ist eine Fläche mit Punkten darauf und sagt nicht mehr, wo man
+    // steht; ein Grundriss mit vollen Wänden erschlägt die Geräte, um die
+    // es eigentlich geht. Wo dazwischen es richtig ist, weiß nur der, der
+    // hinsieht -- deshalb ein Regler und keine Entscheidung.
+    // Nur wenn jemand daran gedreht hat: ein Standardwert, den die Seite
+    // trotzdem setzt, ist eine Vorgabe, die man nicht mehr erben kann.
+    const house = houseWeight(theme);
+    if (house !== 1) parts.push(`--fp-house:${house}`);
     return parts.join(";");
   }
 
@@ -647,6 +706,24 @@ class SpatialHubPanel extends HTMLElement {
   }
 
   _render() {
+    // Never rebuild the plan out from under a hand that is holding it.
+    //
+    // A drag moves one element by writing straight to its style, and the
+    // hub pushes a refresh whenever any provider so much as blinks. Redraw
+    // in the middle and the held element is replaced by a fresh one: the
+    // room stops dead where it was, every further move writes to a node
+    // that is no longer in the document -- so it also vanishes -- and it
+    // only reappears when the button comes up and the next render puts it
+    // back. That was reported as "the room stops after a second and is
+    // suddenly hidden", and it is exactly this.
+    //
+    // The redraw is not dropped, only deferred: whatever arrived while the
+    // hand was down is drawn the moment it lets go.
+    if (this._drag || this._pan) {
+      this._renderWanted = true;
+      return;
+    }
+    this._renderWanted = false;
     this._renderShell();
     const model = this._model;
     if (this._error && !model) {
@@ -882,6 +959,7 @@ class SpatialHubPanel extends HTMLElement {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       this._pan = null;
+      this._flushRender();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -921,6 +999,16 @@ class SpatialHubPanel extends HTMLElement {
       touches[0].clientX - touches[1].clientX,
       touches[0].clientY - touches[1].clientY,
     );
+  }
+
+  /** Editing the building itself: walls, corners, the plot. */
+  get _editRooms() {
+    return this._edit && this._editWhat === "rooms";
+  }
+
+  /** Editing where the devices sit. Rooms hold still, dots move. */
+  get _editIcons() {
+    return this._edit && this._editWhat === "icons";
   }
 
   _inViewport(event) {
@@ -980,7 +1068,19 @@ class SpatialHubPanel extends HTMLElement {
         }
         ${
           this._edit
-            ? `<button class="icon-btn" data-undo="1" title="Rückgängig"
+            ? `<div class="mode" role="group" aria-label="Was wird bearbeitet">
+                 <button class="chip ${this._editWhat === "rooms" ? "on" : ""}"
+                         data-edit-what="rooms"
+                         title="Räume: Wände ziehen, Ecken setzen, Grundstück">
+                   <ha-icon icon="mdi:floor-plan"></ha-icon> Räume
+                 </button>
+                 <button class="chip ${this._editWhat === "icons" ? "on" : ""}"
+                         data-edit-what="icons"
+                         title="Geräte: Punkte in ihre Räume sortieren">
+                   <ha-icon icon="mdi:shape-plus-outline"></ha-icon> Geräte
+                 </button>
+               </div>
+               <button class="icon-btn" data-undo="1" title="Rückgängig"
                        ${this._undo.length ? "" : "disabled"}>
                  <ha-icon icon="mdi:undo"></ha-icon>
                </button>
@@ -995,7 +1095,7 @@ class SpatialHubPanel extends HTMLElement {
                  <ha-icon icon="mdi:image-outline"></ha-icon>
                </button>
                ${
-                 this._stacked
+                 this._stacked || !this._editRooms
                    ? ""
                    : `<button class="icon-btn ${this._corners ? "on" : ""}"
                               data-toggle-corners="1"
@@ -1014,6 +1114,27 @@ class SpatialHubPanel extends HTMLElement {
                                   : "Grundstück zeichnen: die Grenze um Haus und Garten"
                               }">
                         <ha-icon icon="mdi:map-marker-path"></ha-icon>
+                      </button>
+                      ${
+                        this._plot
+                          ? `<button class="icon-btn" data-plot-scale="1.12"
+                                     title="Grundstück vergrößern">
+                               <ha-icon icon="mdi:arrow-expand-all"></ha-icon>
+                             </button>
+                             <button class="icon-btn" data-plot-scale="0.89"
+                                     title="Grundstück verkleinern">
+                               <ha-icon icon="mdi:arrow-collapse-all"></ha-icon>
+                             </button>`
+                          : ""
+                      }
+                      <button class="icon-btn ${this._meters ? "on" : ""}"
+                              data-toggle-meters="1"
+                              title="${
+                                this._meters
+                                  ? "Maße ausblenden"
+                                  : "Maße in Metern (Expertenmodus)"
+                              }">
+                        <ha-icon icon="mdi:tape-measure"></ha-icon>
                       </button>`
                }
                ${
@@ -1365,7 +1486,7 @@ class SpatialHubPanel extends HTMLElement {
 
     const stage = `
       <div class="stage ${this._placing ? "placing" : ""} ${
-        this._edit ? "editing" : ""
+        this._edit ? `editing editing-${this._editWhat}` : ""
       } ${floor && floor.has_outdoor ? "with-apron" : ""}
         shape-${escapeHtml(this._theme.node_shape || "circle")}
         labels-${escapeHtml(this._theme.labels || "always")}
@@ -1395,20 +1516,8 @@ class SpatialHubPanel extends HTMLElement {
       ${banner}
       ${this._viewportHtml(stage)}
       ${this._trayHtml()}
-      ${
-        this._edit && !this._placing
-          ? this._corners
-            ? `<p class="hint">Ecken-Modus: eine Ecke ziehen verschiebt sie,
-               ein Klick auf den kleinen Punkt in der Wandmitte setzt eine
-               neue — so entstehen Nischen und Wandversätze.
-               <b>Alt</b>+Klick entfernt eine Ecke wieder, die letzte macht
-               den Raum zurück zum Rechteck. <b>Shift</b> hält das Raster
-               aus.</p>`
-            : `<p class="hint">Ziehen ordnet an; an den Wänden und Ecken eines
-               Bereichs ändert sich seine Größe. <b>Shift</b> hält gedrückt das
-               Raster aus.</p>`
-          : ""
-      }
+      ${this._editHintHtml()}
+      ${this._metersHtml()}
       ${
         this._placing
           ? `<p class="hint">Klick auf den Grundriss setzt „${escapeHtml(
@@ -1416,6 +1525,69 @@ class SpatialHubPanel extends HTMLElement {
             )}“. <button class="link" data-cancel-place="1">Abbrechen</button></p>`
           : ""
       }`;
+  }
+
+  /** One sentence that says what this mode does with a drag.
+   *
+   *  Three modes, three answers, and the wrong one is worse than none:
+   *  somebody told to drag walls while the device mode is on drags a
+   *  device and concludes the editor is broken.
+   */
+  _editHintHtml() {
+    if (!this._edit || this._placing) return "";
+    if (this._editIcons) {
+      return `<p class="hint">Geräte-Modus: Punkte ziehen sortiert sie in
+        ihre Räume. Die Wände bleiben, wo sie sind — für die gibt es oben
+        <b>Räume</b>.</p>`;
+    }
+    if (this._corners) {
+      return `<p class="hint">Ecken-Modus: eine Ecke ziehen verschiebt sie,
+        das <b>+</b> in der Wandmitte setzt eine neue — so entstehen
+        Nischen und Wandversätze. Das <b>×</b> an einer Ecke entfernt sie;
+        bleiben weniger als vier übrig, ist der Raum wieder ein Rechteck.
+        <b>Shift</b> hält das Raster aus.</p>`;
+    }
+    return `<p class="hint">Räume-Modus: ziehen ordnet an, an Wänden und
+      Ecken eines Bereichs ändert sich seine Größe. <b>Shift</b> hält
+      gedrückt das Raster aus.</p>`;
+  }
+
+  /** The expert's answer, and only when asked for.
+   *
+   *  Everything else in this editor works by eye: drag until it looks
+   *  like home, and a child can do it. Some people know their house to
+   *  the centimetre and want to type that in -- so the metres are a
+   *  second layer over the same drawing, never a field you must fill in
+   *  before anything works.
+   */
+  _metersHtml() {
+    if (!this._meters || !this._editRooms || this._placing) return "";
+    const floor = this._floor;
+    if (!floor) return "";
+    const across = houseMetres(floor);
+    const plot = this._plot;
+    const size = plot
+      ? (() => {
+          const xs = plot.map((point) => point.x);
+          const ys = plot.map((point) => point.y);
+          return {
+            width: (Math.max(...xs) - Math.min(...xs)) * across,
+            height: (Math.max(...ys) - Math.min(...ys)) * across,
+          };
+        })()
+      : null;
+    return `<p class="hint meters">
+      <label>Haus breit
+        <input type="number" min="1" max="200" step="0.1" value="${across}"
+               data-house-metres="1"> m
+      </label>
+      <span class="muted">Alles andere rechnet sich daraus.</span>
+      ${
+        size
+          ? `<b>Grundstück ${metre(size.width)} × ${metre(size.height)} m</b>`
+          : `<span class="muted">Kein Grundstück gezeichnet.</span>`
+      }
+    </p>`;
   }
 
   /** Where the building stops and the garden starts.
@@ -1529,7 +1701,10 @@ class SpatialHubPanel extends HTMLElement {
       .map(
         (point, index) => `<span class="corner" style="${at(point)}"
             data-corner-area="${id}" data-corner-index="${index}"
-            title="Ecke ziehen · Alt+Klick entfernt sie"></span>`,
+            title="Ecke ziehen"
+            ><button class="corner-drop" data-corner-drop="${id}"
+                     data-corner-index="${index}"
+                     title="Diese Ecke entfernen">×</button></span>`,
       )
       .join("");
     // Only worth offering while there is still a corner to spare: below
@@ -1540,7 +1715,7 @@ class SpatialHubPanel extends HTMLElement {
         const middle = { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 };
         return `<span class="corner add" style="${at(middle)}"
             data-corner-add="${id}" data-corner-index="${index}"
-            title="Ecke einfügen"></span>`;
+            title="Hier eine neue Ecke setzen">+</span>`;
       })
       .join("");
     return corners + adders;
@@ -1603,6 +1778,32 @@ class SpatialHubPanel extends HTMLElement {
     if (drawing) this._corners = true;
   }
 
+  /** Grow or shrink the whole plot around its own middle.
+   *
+   *  Corner by corner is right for the *shape* of a boundary and wrong for
+   *  its size: nobody whose garden is simply bigger than the default wants
+   *  to drag eight corners outwards one at a time and hope they stay in
+   *  proportion. One press moves all of them and keeps the shape.
+   */
+  _scalePlot(factor) {
+    const plot = this._plot;
+    if (!plot) return;
+    const middle = plot.reduce(
+      (sum, point) => ({ x: sum.x + point.x / plot.length,
+                         y: sum.y + point.y / plot.length }),
+      { x: 0, y: 0 },
+    );
+    // The window follows the plot rather than the plot the window, so the
+    // only limit is one that keeps the house from becoming a dot: four
+    // house-widths of garden in every direction is already a park.
+    const reach = (value) => Math.min(4, Math.max(-4, Number(value.toFixed(4))));
+    const grown = plot.map((point) => ({
+      x: reach(middle.x + (point.x - middle.x) * factor),
+      y: reach(middle.y + (point.y - middle.y) * factor),
+    }));
+    this._writePlot(grown);
+  }
+
   _plotHtml() {
     const plot = this._plot;
     if (!plot) return "";
@@ -1622,12 +1823,14 @@ class SpatialHubPanel extends HTMLElement {
       )
       .join(",");
     const grips =
-      this._edit && this._corners
+      this._editRooms && this._corners
         ? plot
             .map(
               (point, index) => `<span class="corner plot-corner"
                   style="${spot(point)}" data-plot-index="${index}"
-                  title="Grundstücksecke ziehen · Alt+Klick entfernt sie"></span>`,
+                  title="Grundstücksecke ziehen"
+                  ><button class="corner-drop" data-plot-drop="${index}"
+                           title="Diese Ecke entfernen">×</button></span>`,
             )
             .join("") +
           plot
@@ -1636,7 +1839,8 @@ class SpatialHubPanel extends HTMLElement {
               return `<span class="corner add plot-corner" style="${spot({
                 x: (point.x + next.x) / 2,
                 y: (point.y + next.y) / 2,
-              })}" data-plot-add="${index}" title="Ecke einfügen"></span>`;
+              })}" data-plot-add="${index}"
+                 title="Hier eine neue Ecke setzen">+</span>`;
             })
             .join("")
         : "";
@@ -1764,7 +1968,7 @@ class SpatialHubPanel extends HTMLElement {
    *  the lines are clutter over a plan nobody is changing.
    */
   _ghostFloors() {
-    if (!this._edit || this._stacked) return [];
+    if (!this._editRooms || this._stacked) return [];
     const current = this._floor;
     if (!current) return [];
     return this._floors.filter(
@@ -1835,7 +2039,16 @@ class SpatialHubPanel extends HTMLElement {
             ${escapeHtml(area.name)}
           </span>
           ${
-            this._edit
+            this._meters && this._editRooms && area.size
+              ? `<span class="area-dim">${metre(
+                  area.size.width * houseMetres(this._floor),
+                )} × ${metre(
+                  area.size.height * houseMetres(this._floor),
+                )} m</span>`
+              : ""
+          }
+          ${
+            this._editRooms
               ? `${this._areaHandlesHtml(area)}
                  <button class="area-config" data-area-dialog="${escapeHtml(
                    area.id,
@@ -2452,6 +2665,15 @@ class SpatialHubPanel extends HTMLElement {
           <input type="range" min="0.4" max="3" step="0.05"
                  value="${theme.node_size || 1}" data-theme-size="1">
         </label>
+        <label class="field">
+          <span>Haus <b data-house-value>${houseWeight(theme).toFixed(2)}×</b></span>
+          <input type="range" min="0.2" max="1.6" step="0.05"
+                 value="${houseWeight(theme)}" data-theme-house="1">
+        </label>
+        <p class="note">Außenwände, Innenwände und Etagenplatten zusammen.
+        Ganz links bleibt fast nur der Umriss und die Geräte stehen für
+        sich; ganz rechts ist es ein Bauplan, in dem man sieht, welcher
+        Raum welcher ist.</p>
         ${swatches("state-color", theme.state_colors, "Zustände")}
         ${swatches("quality-color", theme.quality_colors, "Qualität")}
         <button class="link" data-reset-theme="1">Auf Standard zurücksetzen</button>
@@ -2789,7 +3011,14 @@ class SpatialHubPanel extends HTMLElement {
       // Alt on a corner means "remove this one", which the click handler
       // deals with. Starting a drag as well would move it first.
       !(anyGrip && (event.altKey || event.metaKey)) &&
-      !find("data-corner-add") && !find("data-plot-add");
+      // The × sits on top of its own corner. Dragging it would move the
+      // corner first and delete it second, which is one gesture too many.
+      !find("data-corner-drop") && !find("data-plot-drop") &&
+      !find("data-corner-add") && !find("data-plot-add") &&
+      // Two editing modes, two sets of things that move. Rooms hold still
+      // while devices are sorted, and devices hold still while walls are
+      // dragged -- otherwise every grab in a busy room hits the wrong one.
+      (nodeElement ? this._editIcons : this._editRooms);
 
     if (!draggable) {
       // Everything that is not being arranged pans the view, in every
@@ -3007,9 +3236,19 @@ class SpatialHubPanel extends HTMLElement {
     drag.element.style.top = `${inFrame(drag.value.y, frame)}%`;
   }
 
+  /** Draw whatever arrived while a hand was on the plan. */
+  _flushRender() {
+    if (this._renderWanted) this._render();
+  }
+
   _onPointerUp() {
     const drag = this._drag;
     this._drag = null;
+    this._storeDrag(drag);
+    this._flushRender();
+  }
+
+  _storeDrag(drag) {
     if (!drag || !drag.value) return;
     const round = (value) => Number(value.toFixed(4));
     if (drag.mode === "plot") {
@@ -3133,6 +3372,30 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
+    if (attribute("data-house-metres") !== null) {
+      const floor = this._floor;
+      if (committed && floor) {
+        this._setLayout(
+          "floors",
+          floor.id,
+          { metres: Number(input.value) || null },
+          { metres: floor.metres ?? null },
+        );
+      }
+      return;
+    }
+
+    if (attribute("data-theme-house") !== null) {
+      const label = this._root.querySelector("[data-house-value]");
+      if (label) label.textContent = `${Number(input.value).toFixed(2)}×`;
+      // Live auf die Variable, damit der Regler das Haus sofort bewegt --
+      // ein Regler, dessen Wirkung erst beim Loslassen kommt, wird blind
+      // hin und her geschoben.
+      this._root.style.setProperty("--fp-house", String(Number(input.value)));
+      if (committed) this._setTheme({ house_weight: Number(input.value) });
+      return;
+    }
+
     const layerToggle = attribute("data-layer-toggle");
     if (layerToggle !== null && this._layerDialog) {
       this._layerDialog[layerToggle] = input.checked;
@@ -3227,6 +3490,7 @@ class SpatialHubPanel extends HTMLElement {
         labels: theme.labels,
         edge_style: theme.edge_style,
         room_style: theme.room_style,
+        house_weight: theme.house_weight,
         state_colors: { ...theme.state_colors },
         quality_colors: { ...theme.quality_colors },
         ...patch,
@@ -3298,6 +3562,35 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
+    const editWhat = hit("data-edit-what");
+    if (editWhat) {
+      this._editWhat = editWhat.getAttribute("data-edit-what");
+      // Ecken sind Räume-Werkzeug. Wer zu den Geräten wechselt, will
+      // keine Anfasser mehr sehen, auch nicht die von vorhin.
+      if (this._editWhat !== "rooms") this._corners = false;
+      this._selected = null;
+      this._render();
+      return;
+    }
+
+    const plotScale = hit("data-plot-scale");
+    if (plotScale) {
+      this._scalePlot(Number(plotScale.getAttribute("data-plot-scale")));
+      return;
+    }
+
+    if (hit("data-toggle-meters")) {
+      this._meters = !this._meters;
+      this._render();
+      return;
+    }
+
+    const plotDrop = hit("data-plot-drop");
+    if (plotDrop) {
+      this._dropPlotCorner(Number(plotDrop.getAttribute("data-plot-drop")));
+      return;
+    }
+
     const plotCorner = hit("data-plot-index");
     if (plotCorner && (event.altKey || event.metaKey)) {
       this._dropPlotCorner(Number(plotCorner.getAttribute("data-plot-index")));
@@ -3307,6 +3600,15 @@ class SpatialHubPanel extends HTMLElement {
     const plotAdder = hit("data-plot-add");
     if (plotAdder) {
       this._addPlotCorner(Number(plotAdder.getAttribute("data-plot-add")));
+      return;
+    }
+
+    const cornerDrop = hit("data-corner-drop");
+    if (cornerDrop) {
+      this._dropCorner(
+        cornerDrop.getAttribute("data-corner-drop"),
+        Number(cornerDrop.getAttribute("data-corner-index")),
+      );
       return;
     }
 
@@ -3769,6 +4071,25 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
        flex:0 0 auto; white-space:nowrap; }
 .tab.on { background:rgba(255,255,255,.85); color:var(--primary-color,#03a9f4); }
 .spacer { flex:0 1 0; min-width:0; }
+/* Auf einem schmalen Bildschirm gewinnt kein Werkzeug gegen die Etagen.
+   Eine einzige Zeile bedeutet dort, dass Suche und Zoom die Reiterleiste
+   zusammendrücken, bis die letzten Etagen unter dem Suchfeld liegen und
+   nicht mehr erreichbar sind. Ab hier bekommen die Reiter deshalb eine
+   eigene Zeile -- die oberste, weil "welche Etage" die erste Frage ist
+   und alles andere Werkzeug dazu. */
+@media (max-width: 760px) {
+  header { flex-wrap:wrap; row-gap:8px; }
+  .tabs { flex:1 0 100%; order:-1; }
+  .spacer { flex:1 1 auto; }
+  .search input { width:88px; }
+}
+@media (max-width: 420px) {
+  /* Noch schmaler: das Suchfeld schrumpft auf die Lupe und wächst erst
+     wieder, wenn jemand hineintippt. Ein Zoomknopf, der nicht mehr auf
+     den Schirm passt, ist schlimmer als ein kurzes Suchfeld. */
+  .search input { width:0; padding:0; }
+  .search:focus-within input { width:110px; }
+}
 .icon-btn { border:0; background:transparent; color:inherit; cursor:pointer;
             border-radius:50%; padding:6px; display:flex; }
 .icon-btn.on { background:rgba(255,255,255,.25); }
@@ -3822,7 +4143,8 @@ main { flex:1; min-width:0; }
    die Wände decken, verdecken sie den Grundriss, und der ist der Grund,
    warum jemand hinschaut. Rein dekorativ, daher pointer-events:none. */
 .shell { pointer-events:none; }
-.shell-wall { fill:var(--fp-shell, rgba(128,145,170,.09)); stroke:none; }
+.shell-wall { fill:var(--fp-shell, rgba(128,145,170,.09)); stroke:none;
+              opacity:var(--fp-house,1); }
 .shell-post { stroke:var(--fp-shell-line, rgba(128,145,170,.45)); stroke-width:2; }
 /* Nur die Kante. Gefüllt lagen vier Flächen wie ein Deckel über dem
    Dachgeschoss und verdeckten genau die Etage, die man sehen will. */
@@ -3831,14 +4153,23 @@ main { flex:1; min-width:0; }
               stroke-linejoin:round; }
 .shell-ridge { stroke:var(--fp-shell-line, rgba(128,145,170,.6)); stroke-width:2.5;
                stroke-linecap:round; }
-.storey { fill:none; stroke:var(--divider-color,rgba(128,128,128,.45)); stroke-width:2; }
+.storey { fill:none; stroke:var(--divider-color,rgba(128,128,128,.45));
+          stroke-width:calc(2px * var(--fp-house,1)); }
 .storey-name { font-size:26px; fill:currentColor; opacity:.65; text-anchor:end; }
 .stack-cloud { fill:var(--fp-virtual, rgba(120,144,180,.16));
                stroke:var(--fp-virtual-line, rgba(120,144,180,.7));
                stroke-width:1.5; vector-effect:non-scaling-stroke;
                stroke-dasharray:7 5; }
-.stack .room { fill:rgba(128,128,128,.10);
-               stroke:var(--divider-color,rgba(128,128,128,.35)); stroke-width:1.5; }
+/* Innenwaende. Vorher eine Andeutung, die auf einem hellen Hintergrund
+   praktisch verschwand -- und damit war das Haus im Sandwich eine leere
+   Platte mit Punkten darauf. Jetzt eine Wand: sichtbar, aber immer noch
+   leiser als die Aussenwand, die sie umschliesst. Der Regler bewegt
+   beide, damit das Verhaeltnis stimmt. */
+.stack .room { fill:rgba(128,128,128,calc(.10 * var(--fp-house,1)));
+               stroke:var(--fp-shell-line, rgba(128,145,170,.55));
+               stroke-width:calc(1.5px * var(--fp-house,1));
+               stroke-opacity:calc(.85 * var(--fp-house,1));
+               vector-effect:non-scaling-stroke; }
 .stack .room-label { font-size:17px; fill:currentColor; opacity:.5; }
 .stack-edge { stroke-linecap:round; opacity:var(--layer-opacity,1); }
 /* A connection between two storeys is the whole reason this view exists. */
@@ -3924,14 +4255,59 @@ main { flex:1; min-width:0; }
              outline:1px solid var(--fp-outdoor-line, rgba(76,175,80,.6)); }
 /* Ecken-Modus: ein Griff je Ecke, ein kleinerer in jeder Wandmitte zum
    Einfügen. Damit werden Nischen und Wandversätze gezeichnet. */
-.corner { position:absolute; width:12px; height:12px; margin:-6px 0 0 -6px;
-          border-radius:50%; cursor:move; z-index:3;
+/* Anfasser sind so gross wie ein Finger, nicht so gross wie ein Punkt.
+   Zwoelf Pixel trifft eine Maus mit Muehe und ein Daumen gar nicht --
+   und eine Ecke, die man dreimal antippen muss, fuehlt sich kaputt an,
+   nicht praezise. Der sichtbare Punkt bleibt klein, das Ziel darum
+   herum ist gross: ein Kreis mit unsichtbarem Rand. */
+.corner { position:absolute; width:16px; height:16px; margin:-8px 0 0 -8px;
+          border-radius:50%; cursor:move; z-index:4; touch-action:none;
+          display:flex; align-items:center; justify-content:center;
           background:var(--primary-color,#03a9f4);
-          box-shadow:0 0 0 2px var(--card-background-color,#fff); }
-.corner.add { width:8px; height:8px; margin:-4px 0 0 -4px; cursor:copy;
+          box-shadow:0 0 0 3px var(--card-background-color,#fff),
+                     0 1px 4px rgba(0,0,0,.35); }
+.corner::before { content:""; position:absolute; width:38px; height:38px;
+                  border-radius:50%; }
+.corner:hover { transform:scale(1.15); }
+/* Die Ecke einfuegen ist ein Plus und die Ecke entfernen ein Kreuz --
+   beides steht dran. Vorher hiess "entfernen" Alt+Klick, was niemand
+   sieht und auf einem Tablet nicht einmal existiert. */
+.corner.add { width:18px; height:18px; margin:-9px 0 0 -9px; cursor:copy;
+              font:600 13px/1 system-ui,sans-serif;
+              color:var(--primary-color,#03a9f4);
               background:var(--card-background-color,#fff);
-              box-shadow:0 0 0 2px var(--primary-color,#03a9f4); }
-.corner.add:hover { background:var(--primary-color,#03a9f4); }
+              box-shadow:0 0 0 2px var(--primary-color,#03a9f4),
+                         0 1px 4px rgba(0,0,0,.3); }
+.corner.add:hover { background:var(--primary-color,#03a9f4); color:#fff; }
+.corner-drop { position:absolute; top:-14px; right:-14px; width:18px; height:18px;
+               border:0; border-radius:50%; cursor:pointer; padding:0;
+               font:600 13px/1 system-ui,sans-serif;
+               background:var(--error-color,#db4437); color:#fff;
+               box-shadow:0 1px 4px rgba(0,0,0,.35);
+               opacity:0; pointer-events:none; transition:opacity .12s; }
+/* Erst sichtbar, wenn diese Ecke gemeint ist -- acht Kreuze gleichzeitig
+   waeren ein Minenfeld auf dem eigenen Grundriss. */
+.corner:hover .corner-drop, .corner:focus-within .corner-drop {
+  opacity:1; pointer-events:auto; }
+/* Im Raum-Modus sind die Geraete weg. Zwanzig Punkte ueber den Waenden,
+   die man gerade zieht, sind zwanzig Fehlgriffe -- und die Frage "wo ist
+   die Wand" beantwortet kein Punkt. Sie sind nicht geloescht, nur nicht
+   im Weg: ein Klick auf "Geraete" holt sie zurueck. */
+.stage.editing-rooms .node,
+.stage.editing-rooms .edges { display:none; }
+/* Umgekehrt: beim Sortieren halten die Raeume still und treten zurueck,
+   damit man sieht, in welchem Raum ein Punkt gerade landet. */
+.stage.editing-icons .area { opacity:.75; }
+.area-dim { position:absolute; bottom:4px; right:6px; font-size:11px;
+            font-variant-numeric:tabular-nums; pointer-events:none;
+            color:var(--secondary-text-color,#727272); }
+.hint.meters { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.hint.meters input { width:72px; font:inherit; padding:2px 6px; border-radius:6px;
+                     border:1px solid var(--divider-color,#e0e0e0);
+                     background:transparent; color:inherit; }
+.mode { display:flex; gap:4px; flex:0 0 auto; }
+.mode .chip { display:flex; align-items:center; gap:4px; white-space:nowrap;
+              border-color:rgba(255,255,255,.4); }
 .area-name { position:absolute; top:6px; left:8px; font-size:12px;
              color:var(--secondary-text-color,#727272); display:flex; align-items:center; gap:4px; }
 

@@ -42,8 +42,13 @@ _LAYER_KEYS = {"visible", "z_index", "opacity"}
 # coordinates, drawn under everything and reaching well past the walls.
 # Nothing in Home Assistant knows a plot boundary, so unlike `outline`
 # there is nothing to derive it from -- it exists only once drawn.
+# `metres` is how wide the house is in the real world. Nothing needs it:
+# the whole editor works by eye, and a plan drawn by dragging is a valid
+# plan. It exists for the people who know their house to the centimetre
+# and want the drawing to say so -- one number, and every other length on
+# the storey is measured against it.
 _FLOOR_KEYS = {"background", "aspect", "name", "order", "in_sandwich",
-               "outline", "kind", "plot"}
+               "outline", "kind", "plot", "metres"}
 # `kind` is what an area *is* (room, garden, cloud); the two sandwich
 # flags are where it may be drawn. Both are the user's to decide.
 # `shape` is the room's own outline inside its box, in box-local

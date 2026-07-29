@@ -36,6 +36,9 @@ _THEME_SCHEMA = {
     vol.Optional("quality_colors"): {str: _COLOUR},
     vol.Optional("node_shape"): vol.In(["circle", "rounded", "square"]),
     vol.Optional("node_size"): vol.All(vol.Coerce(float), vol.Range(min=0.4, max=3)),
+    vol.Optional("house_weight"): vol.All(
+        vol.Coerce(float), vol.Range(min=0.2, max=1.6)
+    ),
     vol.Optional("labels"): vol.In(["always", "hover", "never"]),
     vol.Optional("edge_style"): vol.In(["straight", "curved"]),
     vol.Optional("room_style"): vol.In(["outline", "filled", "none"]),
@@ -76,6 +79,29 @@ _OUTLINE_SCHEMA = {
     vol.Required("width"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=3)),
     vol.Required("height"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=3)),
 }
+
+# A room's own outline inside its box, and the plot the house stands on.
+# Both are lists of corners rather than rectangles, and both were missing
+# here: the editor drew them, sent them, and this schema rejected the
+# whole write -- so every corner snapped back the moment the hub answered.
+# The two live in different frames, which is why the limits differ.
+#
+# `shape` is box-local: 0 is one wall, 1 is the opposite one, and a corner
+# outside that would be a room bigger than itself.
+_SHAPE_POINT = {
+    vol.Required("x"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1)),
+    vol.Required("y"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1)),
+}
+# `plot` is in floor coordinates and deliberately roomy: everybody's
+# garden is a different size, and a boundary that stopped at the walls
+# would not be a boundary.
+_PLOT_POINT = {
+    vol.Required("x"): vol.All(vol.Coerce(float), vol.Range(min=-4, max=5)),
+    vol.Required("y"): vol.All(vol.Coerce(float), vol.Range(min=-4, max=5)),
+}
+# Three corners is a triangle, the smallest thing that encloses anything.
+_SHAPE_SCHEMA = vol.All([_SHAPE_POINT], vol.Length(min=3, max=64))
+_PLOT_SCHEMA = vol.All([_PLOT_POINT], vol.Length(min=3, max=64))
 
 _POSITION_SCHEMA = {
     vol.Required("x"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=2)),
@@ -166,6 +192,12 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
             vol.Optional("name"): vol.Any(None, str),
             vol.Optional("order"): vol.Any(None, vol.Coerce(int)),
             vol.Optional("outline"): vol.Any(None, _OUTLINE_SCHEMA),
+            vol.Optional("shape"): vol.Any(None, _SHAPE_SCHEMA),
+            vol.Optional("plot"): vol.Any(None, _PLOT_SCHEMA),
+            # How wide the house is in metres -- the expert's one number.
+            vol.Optional("metres"): vol.Any(
+                None, vol.All(vol.Coerce(float), vol.Range(min=1, max=200))
+            ),
             # What an area is, and where it may be drawn.
             vol.Optional("kind"): vol.Any(None, vol.In(list(AREA_KINDS))),
             vol.Optional("in_sandwich"): vol.Any(None, bool),
