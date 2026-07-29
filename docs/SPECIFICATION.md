@@ -158,6 +158,43 @@ Ein Renderer DARF Etagen **nicht** zur Deckungsgleichheit zwingen. Eine
 Terrasse, ein Erker, ein zurückgesetztes Dachgeschoss sind der Normalfall,
 kein Fehler; die Kontur ist eine Auskunft, keine Vorschrift.
 
+### Räume, die keine Rechtecke sind
+
+Ein Bereich DARF eine eigene Kontur `shape` tragen: eine Liste von mindestens
+drei Punkten `{x, y}` in **Koordinaten seines eigenen Kastens** — `0,0` ist die
+linke obere Ecke, `1,1` die rechte untere. Fehlt sie, ist der Bereich ein
+Rechteck.
+
+Bewusst kastenlokal: Der Kasten bleibt, was er war — er wird verschoben, an
+seinen Wänden vergrößert und in der Hausansicht projiziert. Die Kontur fährt
+darin mit, sodass ein breiter gezogener Raum seine Nische mitzieht, statt sie
+von den Wänden zu reißen.
+
+- Ein Renderer MUSS dieselbe Kontur in **jeder** Ansicht zeichnen. Eine Nische,
+  die nur auf einem Reiter sichtbar ist, ist derselbe Fehler wie ein Raum, der
+  in der einen Ansicht ein Rechteck und in der anderen eine Wolke ist.
+- Eine unlesbare Kontur — zu wenige Punkte, keine Zahlen — fällt auf das
+  Rechteck zurück. Ein Grundriss, der wegen einer kaputten Ecke nicht mehr
+  zeichnet, ist das schlechtere Ergebnis.
+- Keine Kontur ist **nicht** dasselbe wie ein Rechteck aus vier Punkten. Wer
+  die letzte Ecke entfernt, löscht `shape` und gibt den Raum an die
+  Wandgriffe zurück.
+
+### Grundstück
+
+Eine Etage DARF ein `plot` tragen: eine Liste von mindestens drei Punkten
+`{x, y}` in **Etagenkoordinaten**, also derselben Ebene wie `position` — und
+damit ausdrücklich auch außerhalb von `0..1`, dort, wo der Garten liegt.
+
+Anders als die `outline` wird nichts davon abgeleitet. Home Assistant kennt
+Räume, und ein Raum ist im Gebäude; wo das Grundstück endet, steht dort
+nirgends. Ein `plot` existiert deshalb erst, wenn ihn jemand gezeichnet hat,
+und `null` bedeutet: kein Grundstück, nicht "unbekannt".
+
+Ein Renderer SOLL es **unter allem anderen** zeichnen. Es ist der Grund, auf
+dem das Haus steht, und Nebengebäude — Garage, Gartenhütte — sind Außenbereiche
+darauf, keine Geschosse.
+
 ## § Popup
 
 Was beim Anklicken erscheint. Ein Renderer SOLL es **mittig über dem
@@ -343,6 +380,22 @@ Pro Bereich und pro Etage:
 
 Eine ausgeklammerte Etage nimmt ihre Nodes mit; sonst schwebten sie über der
 darunterliegenden und läsen sich, als gehörten sie dorthin.
+
+### Der Himmel
+
+Eine virtuelle Etage ist keine Etage, sondern der Himmel über dem Haus.
+
+- Sie wird **zuoberst** gezeichnet, unabhängig von der Reihenfolge, die Home
+  Assistant gemeldet hat. Eine Wolkenebene, die ihre Höhe aus der Etagenliste
+  erbt, landet zwischen zwei Geschossen — und das Internet ist nicht im ersten
+  Stock.
+- Sie MUSS **frei über dem Dach** schweben, nicht auf dem obersten Geschoss
+  liegen. Der First steht über der obersten Ebene; eine Wolkenebene als
+  gewöhnliche Platte landet darin statt darüber.
+- Sie bekommt **dieselbe Weite wie der Garten** (`-margin … 1+margin`). In den
+  Grundriss gequetscht liest sich eine Wolke als Raum im Dachgeschoss.
+- Sie trägt **keine Bodenplatte und keinen Rand**. Dort oben sind die Wolken
+  die ganze Ebene.
 
 ---
 

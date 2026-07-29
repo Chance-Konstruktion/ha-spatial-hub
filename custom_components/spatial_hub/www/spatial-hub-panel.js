@@ -50,11 +50,51 @@ const ZOOM = { min: 0.4, max: 6, step: 1.15 };
  *  instead of becoming a storey underneath it.
  */
 const frameOf = (floor) => {
-  const margin = floor && floor.has_outdoor ? floor.outdoor_margin || 0.28 : 0;
+  // Sky gets the same room as garden. A cloud belongs *around* the house,
+  // not squeezed into its footprint -- the internet is not a room on the
+  // second floor, and a plane exactly as wide as the walls says it is.
+  const wide = floor && (floor.has_outdoor || floor.virtual);
+  const margin = wide ? floor.outdoor_margin || 0.28 : 0;
   return { min: margin ? -margin : 0, span: 1 + 2 * margin };
 };
 
 const inFrame = (value, frame) => ((value - frame.min) / frame.span) * 100;
+
+/** A room is a rectangle until somebody says otherwise.
+ *
+ *  Real homes have niches, chimney breasts and walls that step -- an
+ *  L-shaped living room drawn as a rectangle is simply the wrong room. So
+ *  an area may carry a `shape`: its own outline, in coordinates *local to
+ *  its box*, where 0,0 is the top-left corner and 1,1 the bottom-right.
+ *
+ *  Local on purpose. The box keeps doing everything it did before -- it
+ *  is what gets dragged, what gets resized by the eight wall handles, and
+ *  what the sandwich projects. The shape rides inside it, so widening a
+ *  room widens its niche too instead of tearing the outline off the walls.
+ */
+const RECTANGLE = Object.freeze([
+  Object.freeze({ x: 0, y: 0 }), Object.freeze({ x: 1, y: 0 }),
+  Object.freeze({ x: 1, y: 1 }), Object.freeze({ x: 0, y: 1 }),
+]);
+
+/** An area's outline, always at least a rectangle.
+ *
+ *  Anything that is not a usable polygon -- absent, too few corners,
+ *  a number that is not a number -- falls back rather than throwing. A
+ *  plan that refuses to draw because one stored corner is a string is a
+ *  worse outcome than a room that is briefly a rectangle again.
+ */
+const shapeOf = (area) => {
+  const shape = area && area.shape;
+  if (!Array.isArray(shape) || shape.length < 3) return RECTANGLE;
+  const points = shape
+    .map((point) => ({ x: Number(point && point.x), y: Number(point && point.y) }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  return points.length >= 3 ? points : RECTANGLE;
+};
+
+/** Whether an area has an outline of its own worth mentioning. */
+const hasShape = (area) => shapeOf(area) !== RECTANGLE;
 
 /** The outline every virtual area is drawn in.
  *
@@ -144,6 +184,9 @@ class SpatialHubPanel extends HTMLElement {
     // read as a lid rather than a house; an outline says "building"
     // without covering the floor underneath it.
     this._roof = true;
+    // Corner editing, off by default: most rooms really are rectangles,
+    // and eight wall handles are the right answer until one is not.
+    this._corners = false;
     this._facets = null;
     // The camera. One per view, shared by the stacked and the single
     // floor: zooming in, switching tabs and finding the same magnification
@@ -339,8 +382,29 @@ class SpatialHubPanel extends HTMLElement {
    */
   get _stackFloors() {
     const floors = this._floors.filter((floor) => this._inSandwich(floor));
-    const real = floors.filter((floor) => !floor.unassigned).reverse();
-    return [...real, ...floors.filter((floor) => floor.unassigned)];
+    const real = floors.filter(
+      (floor) => !floor.unassigned && !floor.virtual,
+    ).reverse();
+    // Sky first, whatever order Home Assistant gave it. A cloud plane
+    // that inherits its position from a floor list ends up between two
+    // storeys, and the internet is not on the first floor.
+    return [
+      ...floors.filter((floor) => floor.virtual && !floor.unassigned),
+      ...real,
+      ...floors.filter((floor) => floor.unassigned),
+    ];
+  }
+
+  /** How far above the storeys a plane floats.
+   *
+   *  Only the sky floats, and it has to clear the roof: the ridge sits
+   *  roughly half the plan's depth above the top storey, so a cloud plane
+   *  drawn as just another slab lands *inside* the roof rather than over
+   *  it. This is the difference between weather and an attic.
+   */
+  _planeLift(floorIndex) {
+    const floor = this._stackFloors[floorIndex];
+    return floor && floor.virtual ? STACK.depth * 0.5 + 130 : 0;
   }
 
   /** Where a point on a given floor lands in the stacked drawing.
@@ -352,14 +416,21 @@ class SpatialHubPanel extends HTMLElement {
     const frame = this._frame;
     const nx = (x - frame.min) / frame.span;
     const ny = (y - frame.min) / frame.span;
+    // Headroom for the sky, added to everything so the lift pushes the
+    // clouds up *within* the drawing instead of off the top of it.
+    const sky = Math.max(
+      0,
+      ...this._stackFloors.map((_floor, at) => this._planeLift(at)),
+    );
     const gap = Math.min(
       STACK.gap,
-      (1000 - STACK.top - STACK.depth) /
+      (1000 - STACK.top - sky - STACK.depth) /
         Math.max(1, this._stackFloors.length - 1),
     );
     return {
       x: STACK.pad + nx * STACK.width + (1 - ny) * STACK.skew,
-      y: STACK.top + floorIndex * gap + ny * STACK.depth,
+      y: STACK.top + sky + floorIndex * gap + ny * STACK.depth -
+        this._planeLift(floorIndex),
     };
   }
 
@@ -924,6 +995,28 @@ class SpatialHubPanel extends HTMLElement {
                  <ha-icon icon="mdi:image-outline"></ha-icon>
                </button>
                ${
+                 this._stacked
+                   ? ""
+                   : `<button class="icon-btn ${this._corners ? "on" : ""}"
+                              data-toggle-corners="1"
+                              title="${
+                                this._corners
+                                  ? "Ecken fertig — zurück zu den Wänden"
+                                  : "Ecken bearbeiten: Nischen und Wandversätze"
+                              }">
+                        <ha-icon icon="mdi:vector-polygon"></ha-icon>
+                      </button>
+                      <button class="icon-btn ${this._plot ? "on" : ""}"
+                              data-toggle-plot="1"
+                              title="${
+                                this._plot
+                                  ? "Grundstück entfernen"
+                                  : "Grundstück zeichnen: die Grenze um Haus und Garten"
+                              }">
+                        <ha-icon icon="mdi:map-marker-path"></ha-icon>
+                      </button>`
+               }
+               ${
                  this._ghostFloorCount
                    ? `<button class="icon-btn ${this._ghosts ? "on" : ""}"
                               data-toggle-ghosts="1"
@@ -1000,7 +1093,20 @@ class SpatialHubPanel extends HTMLElement {
         )
         .map((area) => this._roomPolygon(at, area))
         .join("");
-      return `<g class="plane ${floor.virtual ? "virtual" : ""}">
+      // Sky is not a storey. It got a floor slab and an outline like
+      // every other plane, which is exactly what made the cloud level
+      // read as an attic with clouds painted on it. Up there the clouds
+      // are the whole plane -- nothing under them, nothing around them.
+      if (floor.virtual) {
+        return `<g class="plane virtual">
+          ${rooms}
+          <g data-at-x="${label.x - 12}" data-at-y="${label.y}"
+             transform="translate(${label.x - 12},${label.y}) scale(${
+               this._counterScale
+             })"><text class="storey-name">${escapeHtml(floor.name)}</text></g>
+        </g>`;
+      }
+      return `<g class="plane">
         ${apron}
         <polygon class="storey" points="${outline(at, 0, 1)}"/>
         ${rooms}
@@ -1184,8 +1290,12 @@ class SpatialHubPanel extends HTMLElement {
     const height = (area.size && area.size.height) || 0.3;
     const x0 = area.position.x - width / 2;
     const y0 = area.position.y - height / 2;
-    const points = [[x0, y0], [x0 + width, y0], [x0 + width, y0 + height],
-                    [x0, y0 + height]]
+    // The same outline the single-floor view clips to, projected. The two
+    // views disagreeing about the shape of a room is the bug that made
+    // the cloud a rectangle in the house view, and a niche visible on one
+    // tab only would be the same bug wearing a different hat.
+    const points = shapeOf(area)
+      .map((point) => [x0 + point.x * width, y0 + point.y * height])
       .map(([x, y]) => this._project(plane, x, y))
       .map((point) => `${point.x},${point.y}`)
       .join(" ");
@@ -1265,6 +1375,7 @@ class SpatialHubPanel extends HTMLElement {
                ? `background-image:url('${escapeHtml(background)}')`
                : ""
            }">
+        ${this._plotHtml()}
         ${this._buildingLineHtml()}
         ${this._ghostsHtml()}
         ${this._areasHtml()}
@@ -1286,9 +1397,16 @@ class SpatialHubPanel extends HTMLElement {
       ${this._trayHtml()}
       ${
         this._edit && !this._placing
-          ? `<p class="hint">Ziehen ordnet an; an den Wänden und Ecken eines
-             Bereichs ändert sich seine Größe. <b>Shift</b> hält gedrückt das
-             Raster aus.</p>`
+          ? this._corners
+            ? `<p class="hint">Ecken-Modus: eine Ecke ziehen verschiebt sie,
+               ein Klick auf den kleinen Punkt in der Wandmitte setzt eine
+               neue — so entstehen Nischen und Wandversätze.
+               <b>Alt</b>+Klick entfernt eine Ecke wieder, die letzte macht
+               den Raum zurück zum Rechteck. <b>Shift</b> hält das Raster
+               aus.</p>`
+            : `<p class="hint">Ziehen ordnet an; an den Wänden und Ecken eines
+               Bereichs ändert sich seine Größe. <b>Shift</b> hält gedrückt das
+               Raster aus.</p>`
           : ""
       }
       ${
@@ -1374,8 +1492,13 @@ class SpatialHubPanel extends HTMLElement {
    *  is, which is what "make this room wider" means to anybody who has
    *  ever drawn a floor plan. A corner moves two walls at once.
    */
-  _areaHandlesHtml(areaId) {
-    const id = escapeHtml(areaId);
+  _areaHandlesHtml(area) {
+    const id = escapeHtml(area.id);
+    // Two different jobs, and only ever one of them at a time. Wall
+    // handles and corner handles sit in the same places and would fight
+    // over every pointer press, so the toolbar switch decides which
+    // question is being answered: how big is this room, or what shape.
+    if (this._corners) return this._cornerHandlesHtml(area);
     return ["n", "s", "e", "w", "nw", "ne", "sw", "se"]
       .map(
         (edge) => `<span class="handle handle-${edge}"
@@ -1383,6 +1506,249 @@ class SpatialHubPanel extends HTMLElement {
             title="Größe ändern"></span>`,
       )
       .join("");
+  }
+
+  /** One grip per corner, and one per wall to add a corner with.
+   *
+   *  This is the whole answer to niches and stepped walls: drag a corner
+   *  to move it, click the dot in the middle of a wall to put a new
+   *  corner there, alt-click a corner to take it away again. A rectangle
+   *  starts out with its own four corners already listed, so there is
+   *  something to drag before anything has been decided.
+   *
+   *  Positions are per cent of the box, which is exactly the coordinate
+   *  system the shape is stored in -- no conversion, and the grips follow
+   *  the room through every move and resize on their own.
+   */
+  _cornerHandlesHtml(area) {
+    const id = escapeHtml(area.id);
+    const shape = shapeOf(area);
+    const at = (point) =>
+      `left:${(point.x * 100).toFixed(2)}%;top:${(point.y * 100).toFixed(2)}%`;
+    const corners = shape
+      .map(
+        (point, index) => `<span class="corner" style="${at(point)}"
+            data-corner-area="${id}" data-corner-index="${index}"
+            title="Ecke ziehen · Alt+Klick entfernt sie"></span>`,
+      )
+      .join("");
+    // Only worth offering while there is still a corner to spare: below
+    // three points there is no polygon left to draw.
+    const adders = shape
+      .map((point, index) => {
+        const next = shape[(index + 1) % shape.length];
+        const middle = { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 };
+        return `<span class="corner add" style="${at(middle)}"
+            data-corner-add="${id}" data-corner-index="${index}"
+            title="Ecke einfügen"></span>`;
+      })
+      .join("");
+    return corners + adders;
+  }
+
+  /** The property the house stands on.
+   *
+   *  Home Assistant knows rooms, and a room is inside a building. It has
+   *  no idea where the land ends -- so unlike the building line, which is
+   *  derived from the rooms and needs no editor at all, a plot only ever
+   *  exists because somebody drew one. Until then this is null and
+   *  nothing is drawn.
+   *
+   *  Stored in floor coordinates, not box coordinates: the plot is the
+   *  one outline with nothing around it to be relative to.
+   */
+  get _plot() {
+    const floor = this._floor;
+    const plot = floor && floor.plot;
+    if (!Array.isArray(plot) || plot.length < 3) return null;
+    const points = plot
+      .map((point) => ({ x: Number(point && point.x), y: Number(point && point.y) }))
+      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+    return points.length >= 3 ? points : null;
+  }
+
+  /** A first plot to start from: the whole window, pulled in a little.
+   *
+   *  A rectangle, because every plot is a rectangle until it is not, and
+   *  because four corners are exactly what the corner handles are for.
+   *  Inset so its edges sit visibly inside the drawing and can be grabbed
+   *  rather than lying on the border of the viewport.
+   */
+  _defaultPlot() {
+    const frame = this._frame;
+    const inset = frame.span * 0.04;
+    const low = frame.min + inset;
+    const high = frame.min + frame.span - inset;
+    return [
+      { x: low, y: low }, { x: high, y: low },
+      { x: high, y: high }, { x: low, y: high },
+    ].map((point) => ({
+      x: Number(point.x.toFixed(4)),
+      y: Number(point.y.toFixed(4)),
+    }));
+  }
+
+  /** Draw or clear the plot on this floor. */
+  _togglePlot() {
+    const floor = this._floor;
+    if (!floor) return;
+    const drawing = !this._plot;
+    this._setLayout(
+      "floors",
+      floor.id,
+      { plot: drawing ? this._defaultPlot() : null },
+      { plot: floor.plot || null },
+    );
+    // A plot nobody can reshape is a rectangle, which is not the point.
+    if (drawing) this._corners = true;
+  }
+
+  _plotHtml() {
+    const plot = this._plot;
+    if (!plot) return "";
+    const frame = this._frame;
+    const spot = (point) =>
+      `left:${inFrame(point.x, frame).toFixed(2)}%;top:${inFrame(
+        point.y,
+        frame,
+      ).toFixed(2)}%`;
+    const polygon = plot
+      .map(
+        (point) =>
+          `${inFrame(point.x, frame).toFixed(2)}% ${inFrame(
+            point.y,
+            frame,
+          ).toFixed(2)}%`,
+      )
+      .join(",");
+    const grips =
+      this._edit && this._corners
+        ? plot
+            .map(
+              (point, index) => `<span class="corner plot-corner"
+                  style="${spot(point)}" data-plot-index="${index}"
+                  title="Grundstücksecke ziehen · Alt+Klick entfernt sie"></span>`,
+            )
+            .join("") +
+          plot
+            .map((point, index) => {
+              const next = plot[(index + 1) % plot.length];
+              return `<span class="corner add plot-corner" style="${spot({
+                x: (point.x + next.x) / 2,
+                y: (point.y + next.y) / 2,
+              })}" data-plot-add="${index}" title="Ecke einfügen"></span>`;
+            })
+            .join("")
+        : "";
+    return `<div class="plot" aria-hidden="true"
+                 style="clip-path:polygon(${polygon})"></div>${grips}`;
+  }
+
+  /** The area a shape edit is about, or null if it has gone away. */
+  _area(id) {
+    return (this._model.areas || []).find((area) => area.id === id) || null;
+  }
+
+  /** What is stored for a room's outline right now -- the far end of an undo.
+   *
+   *  A room that has never been shaped stores nothing, and undoing back to
+   *  that has to restore *nothing* rather than the rectangle it happened
+   *  to look like: clearing the shape is how a room goes back to being an
+   *  ordinary box, and an explicit four-corner rectangle is not the same
+   *  thing.
+   */
+  _shapeBefore(area) {
+    return { shape: Array.isArray(area.shape) ? area.shape.map((p) => ({ ...p })) : null };
+  }
+
+  /** Put a new corner in the middle of one wall.
+   *
+   *  This is the move that makes a niche: split a wall, then drag the new
+   *  corner inwards. Inserting it after the wall's first corner keeps the
+   *  polygon's winding intact, which is the whole reason the shape is an
+   *  ordered list rather than a set of points.
+   */
+  _addCorner(areaId, index) {
+    const area = this._area(areaId);
+    if (!area || !Number.isInteger(index)) return;
+    const shape = shapeOf(area).map((point) => ({ ...point }));
+    const next = shape[(index + 1) % shape.length];
+    const here = shape[index];
+    if (!here || !next) return;
+    shape.splice(index + 1, 0, {
+      x: Number(((here.x + next.x) / 2).toFixed(4)),
+      y: Number(((here.y + next.y) / 2).toFixed(4)),
+    });
+    this._setLayout("areas", areaId, { shape }, this._shapeBefore(area));
+  }
+
+  /** Take a corner away again.
+   *
+   *  Below four corners there is nothing left to shape, so the last one
+   *  removed clears the shape entirely and hands the room back to the
+   *  eight wall handles -- rather than leaving a triangle nobody asked
+   *  for or a rectangle that only looks like an ordinary room.
+   */
+  _dropCorner(areaId, index) {
+    const area = this._area(areaId);
+    if (!area || !Number.isInteger(index)) return;
+    const shape = shapeOf(area).map((point) => ({ ...point }));
+    if (index < 0 || index >= shape.length) return;
+    if (shape.length <= 4) {
+      this._setLayout("areas", areaId, { shape: null }, this._shapeBefore(area));
+      return;
+    }
+    shape.splice(index, 1);
+    this._setLayout("areas", areaId, { shape }, this._shapeBefore(area));
+  }
+
+  /** The same two moves on the plot, in floor coordinates.
+   *
+   *  Kept separate from the room versions rather than generalised: a room
+   *  corner is relative to its own walls and a plot corner is not, and a
+   *  single function pretending both are the same coordinate is how the
+   *  outline ends up in the wrong place on the one floor with a garden.
+   */
+  _writePlot(points) {
+    const floor = this._floor;
+    if (!floor) return;
+    this._setLayout(
+      "floors",
+      floor.id,
+      {
+        plot: points && points.map((point) => ({
+          x: Number(point.x.toFixed(4)),
+          y: Number(point.y.toFixed(4)),
+        })),
+      },
+      { plot: floor.plot || null },
+    );
+  }
+
+  _addPlotCorner(index) {
+    const plot = this._plot;
+    if (!plot || !Number.isInteger(index) || !plot[index]) return;
+    const next = plot[(index + 1) % plot.length];
+    const points = plot.map((point) => ({ ...point }));
+    points.splice(index + 1, 0, {
+      x: (plot[index].x + next.x) / 2,
+      y: (plot[index].y + next.y) / 2,
+    });
+    this._writePlot(points);
+  }
+
+  _dropPlotCorner(index) {
+    const plot = this._plot;
+    if (!plot || !Number.isInteger(index) || !plot[index]) return;
+    // Three corners is the least a plot can be. Below that there is no
+    // boundary left, so the answer is no boundary at all.
+    if (plot.length <= 3) {
+      this._writePlot(null);
+      return;
+    }
+    const points = plot.map((point) => ({ ...point }));
+    points.splice(index, 1);
+    this._writePlot(points);
   }
 
   /** The other storeys' outer walls, behind the one being edited.
@@ -1437,14 +1803,32 @@ class SpatialHubPanel extends HTMLElement {
       .filter((area) => area.position)
       .map((area) => {
         const size = area.size || { width: 0.3, height: 0.3 };
+        // A niche is a clip on a fill inside the box, not on the box
+        // itself: the walls, the drag and the eight handles stay exactly
+        // what they were, and the room simply stops being a rectangle
+        // within them. Clipping the box would clip its own handles away
+        // and make an L-shaped room the one room nobody can edit.
+        // A cloud has an outline of its own and ignores all of this.
+        const shaped = hasShape(area) && kindOf(area) !== AREA_KIND.VIRTUAL;
+        const fill = shaped
+          ? `<div class="area-fill" style="clip-path:polygon(${shapeOf(area)
+              .map(
+                (point) =>
+                  `${(point.x * 100).toFixed(2)}% ${(point.y * 100).toFixed(2)}%`,
+              )
+              .join(",")})"></div>`
+          : "";
         return `
         <div class="area ${
           kindOf(area) === AREA_KIND.OUTDOOR ? "outdoor" : ""
-        } ${kindOf(area) === AREA_KIND.VIRTUAL ? "virtual" : ""}" data-area="${escapeHtml(area.id)}" style="
+        } ${kindOf(area) === AREA_KIND.VIRTUAL ? "virtual" : ""} ${
+          shaped ? "shaped" : ""
+        }" data-area="${escapeHtml(area.id)}" style="
               left:${inFrame(area.position.x, frame)}%;
               top:${inFrame(area.position.y, frame)}%;
               width:${(size.width / frame.span) * 100}%;
               height:${(size.height / frame.span) * 100}%;">
+          ${fill}
           ${kindOf(area) === AREA_KIND.VIRTUAL ? CLOUD_SVG : ""}
           <span class="area-name">
             ${area.icon ? `<ha-icon icon="${escapeHtml(area.icon)}"></ha-icon>` : ""}
@@ -1452,7 +1836,7 @@ class SpatialHubPanel extends HTMLElement {
           </span>
           ${
             this._edit
-              ? `${this._areaHandlesHtml(area.id)}
+              ? `${this._areaHandlesHtml(area)}
                  <button class="area-config" data-area-dialog="${escapeHtml(
                    area.id,
                  )}" title="Bereich einstellen">
@@ -2390,13 +2774,22 @@ class SpatialHubPanel extends HTMLElement {
           element.classList.contains("stack")),
     );
 
+    const plotGrip = find("data-plot-index");
+    const cornerGrip = find("data-corner-area");
     const grip = find("data-resize-area");
     const areaElement = find("data-area");
     const nodeElement = find("data-node");
+    const anyGrip = plotGrip || cornerGrip;
     const draggable =
-      this._edit && stage && (grip || areaElement || nodeElement) &&
+      this._edit && stage &&
+      (anyGrip || grip || areaElement || nodeElement) &&
       // Buttons drawn on top of a draggable thing keep working.
-      (grip || !(find("data-hide-area") || find("data-area-dialog")));
+      (anyGrip || grip ||
+        !(find("data-hide-area") || find("data-area-dialog"))) &&
+      // Alt on a corner means "remove this one", which the click handler
+      // deals with. Starting a drag as well would move it first.
+      !(anyGrip && (event.altKey || event.metaKey)) &&
+      !find("data-corner-add") && !find("data-plot-add");
 
     if (!draggable) {
       // Everything that is not being arranged pans the view, in every
@@ -2407,7 +2800,23 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
-    const target = grip
+    const target = plotGrip
+      ? {
+          mode: "plot",
+          section: "floors",
+          key: (this._floor || {}).id,
+          index: Number(plotGrip.getAttribute("data-plot-index")),
+          element: plotGrip,
+        }
+      : cornerGrip
+      ? {
+          mode: "corner",
+          section: "areas",
+          key: cornerGrip.getAttribute("data-corner-area"),
+          index: Number(cornerGrip.getAttribute("data-corner-index")),
+          element: cornerGrip,
+        }
+      : grip
       ? {
           mode: "resize",
           section: "areas",
@@ -2427,7 +2836,15 @@ class SpatialHubPanel extends HTMLElement {
       ...target,
       stage,
       frame: this._frame,
-      before: this._layoutOf(target.section, target.key),
+      // A corner drag changes the outline, not the box, so its undo is
+      // the outline -- restoring a position here would put the shape
+      // back and leave the room somewhere else.
+      before:
+        target.mode === "corner"
+          ? this._shapeBefore(this._area(target.key) || {})
+          : target.mode === "plot"
+          ? { plot: (this._floor || {}).plot || null }
+          : this._layoutOf(target.section, target.key),
       start: this._rectOf(target.section, target.key),
       box: stage.getBoundingClientRect(),
     };
@@ -2488,6 +2905,69 @@ class SpatialHubPanel extends HTMLElement {
     const frame = drag.frame;
     const { x, y } = this._toFloor(event, drag);
 
+    if (drag.mode === "plot") {
+      // Floor coordinates straight through: the plot is the outline with
+      // nothing around it, so there is no box to be relative to. The
+      // frame is the only limit, and on a floor with a garden that is
+      // already wider than the house.
+      const plot = (this._plot || []).map((point) => ({ ...point }));
+      if (!plot[drag.index]) return;
+      plot[drag.index] = {
+        x: this._snap(x, event, frame),
+        y: this._snap(y, event, frame),
+      };
+      drag.value = { plot };
+      const shell = drag.element.parentElement &&
+        drag.element.parentElement.querySelector(".plot");
+      if (shell) {
+        shell.style.clipPath = `polygon(${plot
+          .map(
+            (point) =>
+              `${inFrame(point.x, frame).toFixed(2)}% ${inFrame(
+                point.y,
+                frame,
+              ).toFixed(2)}%`,
+          )
+          .join(",")})`;
+      }
+      drag.element.style.left = `${inFrame(plot[drag.index].x, frame).toFixed(2)}%`;
+      drag.element.style.top = `${inFrame(plot[drag.index].y, frame).toFixed(2)}%`;
+      return;
+    }
+
+    if (drag.mode === "corner" && drag.start) {
+      // The shape lives in box coordinates, so the pointer is asked
+      // where it is *within this room* -- 0 at one wall, 1 at the
+      // opposite one. A corner never leaves its own box: the box is what
+      // the walls, the label and the sandwich all agree on, and a corner
+      // outside it would be a room bigger than itself.
+      const width = drag.start.right - drag.start.left || 1;
+      const height = drag.start.bottom - drag.start.top || 1;
+      const inside = (value) => Math.min(1, Math.max(0, value));
+      const grid = (value, span) =>
+        event.shiftKey ? value : Math.round((value * span) / 0.02) * 0.02 / span;
+      const shape = shapeOf(this._area(drag.key) || {}).map((point) => ({
+        ...point,
+      }));
+      if (!shape[drag.index]) return;
+      shape[drag.index] = {
+        x: inside(grid((x - drag.start.left) / width, width)),
+        y: inside(grid((y - drag.start.top) / height, height)),
+      };
+      drag.value = { shape };
+      // Redrawn straight onto the fill, so the outline follows the
+      // pointer instead of appearing once the drag is over.
+      const fill = drag.element.parentElement &&
+        drag.element.parentElement.querySelector(".area-fill");
+      const polygon = `polygon(${shape
+        .map((point) => `${(point.x * 100).toFixed(2)}% ${(point.y * 100).toFixed(2)}%`)
+        .join(",")})`;
+      if (fill) fill.style.clipPath = polygon;
+      drag.element.style.left = `${(shape[drag.index].x * 100).toFixed(2)}%`;
+      drag.element.style.top = `${(shape[drag.index].y * 100).toFixed(2)}%`;
+      return;
+    }
+
     if (drag.mode === "resize" && drag.start) {
       // Each handle moves the wall it sits on and leaves the opposite one
       // alone -- so a room is widened rather than scaled around its middle,
@@ -2532,6 +3012,34 @@ class SpatialHubPanel extends HTMLElement {
     this._drag = null;
     if (!drag || !drag.value) return;
     const round = (value) => Number(value.toFixed(4));
+    if (drag.mode === "plot") {
+      this._setLayout(
+        "floors",
+        drag.key,
+        {
+          plot: drag.value.plot.map((point) => ({
+            x: round(point.x),
+            y: round(point.y),
+          })),
+        },
+        drag.before,
+      );
+      return;
+    }
+    if (drag.mode === "corner") {
+      this._setLayout(
+        "areas",
+        drag.key,
+        {
+          shape: drag.value.shape.map((point) => ({
+            x: round(point.x),
+            y: round(point.y),
+          })),
+        },
+        drag.before,
+      );
+      return;
+    }
     if (drag.mode === "resize") {
       this._setLayout(
         "areas",
@@ -2776,6 +3284,47 @@ class SpatialHubPanel extends HTMLElement {
     if (hit("data-toggle-roof")) {
       this._roof = !this._roof;
       this._render();
+      return;
+    }
+
+    if (hit("data-toggle-corners")) {
+      this._corners = !this._corners;
+      this._render();
+      return;
+    }
+
+    if (hit("data-toggle-plot")) {
+      this._togglePlot();
+      return;
+    }
+
+    const plotCorner = hit("data-plot-index");
+    if (plotCorner && (event.altKey || event.metaKey)) {
+      this._dropPlotCorner(Number(plotCorner.getAttribute("data-plot-index")));
+      return;
+    }
+
+    const plotAdder = hit("data-plot-add");
+    if (plotAdder) {
+      this._addPlotCorner(Number(plotAdder.getAttribute("data-plot-add")));
+      return;
+    }
+
+    const corner = hit("data-corner-area");
+    if (corner && (event.altKey || event.metaKey)) {
+      this._dropCorner(
+        corner.getAttribute("data-corner-area"),
+        Number(corner.getAttribute("data-corner-index")),
+      );
+      return;
+    }
+
+    const adder = hit("data-corner-add");
+    if (adder) {
+      this._addCorner(
+        adder.getAttribute("data-corner-add"),
+        Number(adder.getAttribute("data-corner-index")),
+      );
       return;
     }
 
@@ -3351,6 +3900,38 @@ main { flex:1; min-width:0; }
 .area { position:absolute; transform:translate(-50%,-50%);
         border:1px dashed var(--divider-color,#e0e0e0); border-radius:10px;
         background:var(--secondary-background-color,#fafafa); opacity:.7; }
+/* Ein Raum mit eigener Kontur: der Kasten selbst wird unsichtbar, die
+   Fläche darin übernimmt Rahmen und Hintergrund und wird auf das Polygon
+   beschnitten. Der Kasten bleibt, was er war -- er wird gezogen, an acht
+   Wänden verändert und in der Sandwich-Ansicht projiziert; nur sieht man
+   ihn nicht mehr. Beschnitte man den Kasten, wären auch seine eigenen
+   Griffe weg. */
+/* Das Grundstück: die Grenze um Haus und Garten. Home Assistant weiß
+   nichts davon -- es kennt Räume, und ein Raum ist im Gebäude. Deshalb
+   wird es gezeichnet und nicht abgeleitet, liegt unter allem anderen und
+   ist erst da, wenn jemand es angelegt hat. */
+.plot { position:absolute; inset:0; z-index:0; pointer-events:none;
+        background:var(--fp-plot, rgba(139,195,74,.08));
+        outline:2px solid var(--fp-plot-line, rgba(124,179,66,.55));
+        outline-offset:-2px; border-radius:2px; }
+.plot-corner { z-index:4; }
+.area.shaped { border-color:transparent; background:transparent; }
+.area-fill { position:absolute; inset:0; border-radius:10px;
+             background:var(--secondary-background-color,#fafafa);
+             outline:1px dashed var(--divider-color,#e0e0e0);
+             outline-offset:-1px; pointer-events:none; }
+.area.outdoor.shaped .area-fill { background:var(--fp-outdoor, rgba(76,175,80,.10));
+             outline:1px solid var(--fp-outdoor-line, rgba(76,175,80,.6)); }
+/* Ecken-Modus: ein Griff je Ecke, ein kleinerer in jeder Wandmitte zum
+   Einfügen. Damit werden Nischen und Wandversätze gezeichnet. */
+.corner { position:absolute; width:12px; height:12px; margin:-6px 0 0 -6px;
+          border-radius:50%; cursor:move; z-index:3;
+          background:var(--primary-color,#03a9f4);
+          box-shadow:0 0 0 2px var(--card-background-color,#fff); }
+.corner.add { width:8px; height:8px; margin:-4px 0 0 -4px; cursor:copy;
+              background:var(--card-background-color,#fff);
+              box-shadow:0 0 0 2px var(--primary-color,#03a9f4); }
+.corner.add:hover { background:var(--primary-color,#03a9f4); }
 .area-name { position:absolute; top:6px; left:8px; font-size:12px;
              color:var(--secondary-text-color,#727272); display:flex; align-items:center; gap:4px; }
 

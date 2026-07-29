@@ -415,9 +415,16 @@ Der Edit-Modus kann heute ziehen, skalieren, Ecken fassen, einrasten,
 rückgängig machen. Was fehlt, ist der Anspruch der Vision:
 **einfach genug für ein Kind, mächtig genug für einen Enthusiasten.**
 
-Offen sind unter anderem Mehrfachauswahl, freie Wandzüge statt Rechtecke,
-Labels an einen eigenen Platz ziehen und ein Weg, einen Raum zu zeichnen,
-ohne ihn erst in Home Assistant anzulegen.
+**Erledigt:** Räume sind keine Rechtecke mehr. Der Ecken-Modus zieht,
+setzt und entfernt Ecken — Nischen, Erker und Wandversätze sind damit
+zeichenbar, und dieselbe Kontur gilt in Einzel- wie Hausansicht. Auf
+derselben Mechanik sitzt das **Grundstück**: die gezeichnete Grenze um Haus
+und Garten, unter allem anderen, auf der Nebengebäude wie Garage und
+Gartenhütte als Außenbereiche stehen.
+
+Offen sind unter anderem Mehrfachauswahl, Labels an einen eigenen Platz
+ziehen und ein Weg, einen Raum zu zeichnen, ohne ihn erst in Home Assistant
+anzulegen.
 
 Interaktion ist hier mitgemeint und größtenteils schon da: **kurzer Klick
 schaltet**, **langer Druck öffnet** das mittige Modal mit Werten, Entities,
