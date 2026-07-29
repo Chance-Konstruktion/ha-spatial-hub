@@ -37,7 +37,9 @@ const ALL_FLOORS = "__all__";
 // a true isometric projection: rooms stay rectangles-in-parallel, which
 // keeps them recognisable as the same rooms from the detail view.
 const STACK = {
-  pad: 40, width: 620, depth: 300, skew: 260, top: 50, gap: 340,
+  // "pad" ist links breiter als noetig, und zwar mit Absicht: dort steht
+  // der Etagenname. Vorher lag er bei 40 halb ausserhalb des Bildes.
+  pad: 40, margin: 150, width: 620, depth: 300, skew: 260, top: 50, gap: 340,
   // Rooms have standing walls and a storey has thickness. Flat outlines
   // drawn on top of each other are what turned this view into porridge:
   // four sheets of the same weight, and nothing in the picture saying
@@ -857,7 +859,7 @@ class SpatialHubPanel extends HTMLElement {
     // liest man als zwei Gebaeude. Leerer Rand ist der guenstigere Preis;
     // dagegen hilft der Zoom, nicht das Umbrechen.
     return {
-      x: STACK.pad + STACK.stagger * floorIndex +
+      x: STACK.margin + STACK.stagger * floorIndex +
         nx * STACK.width + (1 - ny) * STACK.skew,
       y: STACK.top + sky + floorIndex * STACK.gap + ny * STACK.depth -
         this._planeLift(floorIndex),
@@ -889,7 +891,7 @@ class SpatialHubPanel extends HTMLElement {
    *  further right than the one above it, so the bottom one decides. */
   get _stackWidth() {
     return (
-      STACK.pad * 2 + STACK.width + STACK.skew +
+      STACK.margin + STACK.pad + STACK.width + STACK.skew +
       Math.max(0, this._stackFloors.length - 1) * STACK.stagger
     );
   }
@@ -1721,10 +1723,14 @@ class SpatialHubPanel extends HTMLElement {
             at, frame.min, frame.min + frame.span,
           )}"/>`
         : "";
-      // Hung off the storey's left-most corner, not its top-left one.
-      // The plan is skewed, so "top left" is a third of the way into the
-      // drawing -- the name landed on the rooms it was labelling.
-      const label = this._project(at, 0, 1);
+      // Der Name steht links neben der Etage, im Rand -- nicht an ihrer
+      // Kante. Die x-Koordinate kommt vom linkesten Punkt der Platte,
+      // die y-Koordinate aus der oberen Haelfte: so steht der Name auf
+      // Hoehe der Etage, statt an ihrer Unterkante zu haengen.
+      const label = {
+        x: this._project(at, 0, 1).x - 34,
+        y: this._project(at, 0, 0.35).y,
+      };
       // Back to front. Rooms have height now, so a room further back can
       // be hidden behind the walls of one in front -- which is what depth
       // looks like. Drawn in storage order instead, a back room paints
@@ -1760,10 +1766,12 @@ class SpatialHubPanel extends HTMLElement {
       if (floor.virtual) {
         return `<g class="plane virtual">
           ${rooms}
-          <g data-at-x="${label.x - 12}" data-at-y="${label.y}"
-             transform="translate(${label.x - 12},${label.y}) scale(${
+          <g data-at-x="${label.x}" data-at-y="${label.y}"
+             transform="translate(${label.x},${label.y}) scale(${
                this._counterScale
-             })"><text class="storey-name">${escapeHtml(floor.name)}</text></g>
+             })"><text class="storey-name">${escapeHtml(
+               String(floor.name || "").toLocaleUpperCase("de"),
+             )}</text></g>
         </g>`;
       }
       // The storey is a floor slab, not a sheet of paper: a thin band of
@@ -1783,10 +1791,12 @@ class SpatialHubPanel extends HTMLElement {
         ${rooms}
         ${wallsOf(house, STACK.rise, "shell-face", FRONT_WALL)}
         ${capsOf(crown, STACK.outerWall, "shell-cap")}
-        <g data-at-x="${label.x - 12}" data-at-y="${label.y}"
-           transform="translate(${label.x - 12},${label.y}) scale(${
+        <g data-at-x="${label.x}" data-at-y="${label.y}"
+           transform="translate(${label.x},${label.y}) scale(${
              this._counterScale
-           })"><text class="storey-name">${escapeHtml(floor.name)}</text></g>
+           })"><text class="storey-name">${escapeHtml(
+             String(floor.name || "").toLocaleUpperCase("de"),
+           )}</text></g>
       </g>`;
     });
 
@@ -4989,15 +4999,27 @@ main { flex:0 0 auto; min-width:0; }
    Stockwerks am staerksten, die Innenwaende leiser, der Garten nur
    gestrichelt. Vorher hatte alles dieselbe Staerke -- deshalb war das
    Sandwich ein Brei. */
-.storey { fill:var(--fp-slab, rgba(128,145,170,.05));
-          stroke:var(--divider-color,rgba(128,128,128,.55));
-          stroke-width:calc(2.4px * var(--fp-house,1)); }
+/* Bodenplatte: fast schwarz, eine helle Kante darum. Eine Bauzeichnung
+   fuellt nichts -- was die Etage traegt, ist die Linie. */
+.storey { fill:var(--fp-slab, var(--fp-surface, var(--card-background-color,#fff)));
+          fill-opacity:var(--fp-slab-opacity, .92);
+          stroke:var(--fp-house-line, currentColor);
+          stroke-opacity:calc(.75 * var(--fp-house,1));
+          stroke-width:calc(1.6px * var(--fp-house,1));
+          vector-effect:non-scaling-stroke; }
 /* Die Kante unter dem Stockwerk. Sie traegt die Etage, deshalb ist sie
    etwas dunkler als die Flaeche darueber. */
-.storey-side { fill:var(--fp-slab-side, rgba(128,145,170,.16));
-               stroke:var(--divider-color,rgba(128,128,128,.4));
-               stroke-width:calc(1px * var(--fp-house,1)); }
-.storey-name { font-size:26px; fill:currentColor; opacity:.65; text-anchor:end; }
+.storey-side { fill:var(--fp-slab-side, var(--fp-surface, var(--card-background-color,#fff)));
+               stroke:var(--fp-house-line, currentColor);
+               stroke-opacity:calc(.6 * var(--fp-house,1));
+               stroke-width:calc(1.2px * var(--fp-house,1));
+               vector-effect:non-scaling-stroke; }
+/* Der Etagenname steht im linken Rand, gross und ruhig, auf Hoehe der
+   Etage -- das Erste, was man in einer Schnittzeichnung liest. Vorher
+   klebte er bei .65 Deckkraft an der Plattenkante und wurde vom Rand des
+   Bildes abgeschnitten, weil links kein Rand war. */
+.storey-name { font-size:30px; fill:var(--fp-ink, currentColor); opacity:.8;
+               letter-spacing:.1em; text-anchor:end; }
 .stack-cloud { fill:var(--fp-virtual, rgba(120,144,180,.16));
                stroke:var(--fp-virtual-line, rgba(120,144,180,.7));
                stroke-width:1.5; vector-effect:non-scaling-stroke;
@@ -5007,25 +5029,26 @@ main { flex:0 0 auto; min-width:0; }
    Platte mit Punkten darauf. Jetzt eine Wand: sichtbar, aber immer noch
    leiser als die Aussenwand, die sie umschliesst. Der Regler bewegt
    beide, damit das Verhaeltnis stimmt. */
-.stack .room { fill:rgba(128,128,128,calc(.07 * var(--fp-house,1)));
-               stroke:none; }
+/* Der Boden im Raum bleibt der Hintergrund. Eine Fuellung hier war der
+   Grund, warum sich sechzehn Raeume zu einer grauen Flaeche addierten. */
+.stack .room { fill:none; stroke:none; }
 /* Stehende Waende: die Aussenseite. Gefuellt, damit sie einander wirklich
    verdecken -- eine Wand, durch die man den Raum dahinter sieht, ist
    keine. Deckend, nicht durchscheinend, sonst summieren sich sechzehn
    Waende zu Grau. */
-.room-wall { fill:var(--fp-wall, rgba(128,145,170,.20));
-             stroke:var(--fp-shell-line, rgba(128,145,170,.5));
-             stroke-width:calc(1px * var(--fp-house,1));
+.room-wall { fill:var(--fp-wall, var(--fp-surface, var(--card-background-color,#fff)));
+             stroke:var(--fp-shell-line, currentColor);
+             stroke-width:calc(1.1px * var(--fp-house,1));
              stroke-opacity:calc(.8 * var(--fp-house,1));
              stroke-linejoin:round;
              vector-effect:non-scaling-stroke; }
 /* Die Mauerkrone: das Band zwischen Aussen- und Innenkante. Das ist der
    Unterschied zwischen einem Grundriss und einem Rechteck mit Strich
    drumherum -- eine Wand hat zwei Seiten, und genau die sieht man hier. */
-.room-cap { fill:var(--fp-wall-top, rgba(128,145,170,.42));
-            stroke:var(--fp-shell-line, rgba(128,145,170,.75));
-            stroke-width:calc(1px * var(--fp-house,1));
-            stroke-opacity:calc(.9 * var(--fp-house,1));
+.room-cap { fill:var(--fp-wall-top, var(--fp-surface, var(--card-background-color,#fff)));
+            stroke:var(--fp-shell-line, currentColor);
+            stroke-width:calc(1.1px * var(--fp-house,1));
+            stroke-opacity:calc(.95 * var(--fp-house,1));
             stroke-linejoin:round;
             vector-effect:non-scaling-stroke; }
 /* Die Marke auf einer gemeinsamen Wand. Rotes × trennt, gruenes + fuegt
@@ -5049,17 +5072,23 @@ main { flex:0 0 auto; min-width:0; }
   pointer-events:none; }
 /* Die Aussenwand traegt das Haus und ist deshalb staerker als die
    Zwischenwaende -- dasselbe, was eine Bauzeichnung auf Papier macht. */
-.shell-face { fill:var(--fp-wall, rgba(128,145,170,.26));
-              stroke:var(--divider-color,rgba(128,128,128,.5));
-              stroke-width:calc(1.2px * var(--fp-house,1));
+.shell-face { fill:var(--fp-wall, var(--fp-surface, var(--card-background-color,#fff)));
+              stroke:var(--fp-house-line, currentColor);
+              stroke-opacity:calc(.85 * var(--fp-house,1));
+              stroke-width:calc(1.4px * var(--fp-house,1));
               stroke-linejoin:round;
               vector-effect:non-scaling-stroke; }
-.shell-cap { fill:var(--fp-wall-top, rgba(128,145,170,.5));
-             stroke:var(--divider-color,rgba(128,128,128,.7));
-             stroke-width:calc(1.4px * var(--fp-house,1));
+.shell-cap { fill:var(--fp-wall-top, var(--fp-surface, var(--card-background-color,#fff)));
+             stroke:var(--fp-house-line, currentColor);
+             stroke-opacity:var(--fp-house,1);
+             stroke-width:calc(1.6px * var(--fp-house,1));
              stroke-linejoin:round;
              vector-effect:non-scaling-stroke; }
-.stack .room-label { font-size:17px; fill:currentColor; opacity:.55;
+/* Raumnamen wie in einer Bauzeichnung: Versalien, gesperrt, ruhig. Bei
+   .55 Deckkraft standen sie auf dem dunklen Boden praktisch nicht da --
+   ein Grundriss, dessen Raeume man nicht lesen kann, ist ein Muster. */
+.stack .room-label { font-size:16px; fill:var(--fp-ink, currentColor);
+                     opacity:.92; letter-spacing:.06em;
                      text-anchor:middle; dominant-baseline:middle; }
 .stack-edge { stroke-linecap:round; opacity:var(--layer-opacity,1); }
 /* A connection between two storeys is the whole reason this view exists. */

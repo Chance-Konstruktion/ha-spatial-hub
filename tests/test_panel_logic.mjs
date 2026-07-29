@@ -1782,8 +1782,10 @@ test("only the ground floor gets grass, a balcony upstairs just gets a room", ()
   });
   const html = panel(data, { floor: null })._stackHtml();
   const planes = html.split('class="plane').slice(1);
-  const eg = planes.find((plane) => plane.includes("Erdgeschoss"));
-  const og = planes.find((plane) => plane.includes("Obergeschoss"));
+  // Der Etagenname steht in Versalien im Rand, wie in einer
+  // Schnittzeichnung -- danach wird hier gesucht.
+  const eg = planes.find((plane) => plane.includes("ERDGESCHOSS"));
+  const og = planes.find((plane) => plane.includes("OBERGESCHOSS"));
 
   assert.match(eg, /class="apron"/, "the ground floor gets the field");
   assert.doesNotMatch(og, /class="apron"/, "the storey above does not");
@@ -2822,7 +2824,46 @@ test("the house is one stack, however wide the window gets", () => {
   }
 
   // Und die Zeichnung ist so breit wie ein Stapel, nicht wie zwei.
-  assert.ok(view._stackWidth < 1200, "so breit wird ein einzelner Stapel nie");
+  // Zwei Spalten waren gut 2000 breit; ein Stapel ist es nie.
+  assert.ok(view._stackWidth < 1400, "so breit wird ein einzelner Stapel nie");
+});
+
+test("the stack is a line drawing, not four grey plates", () => {
+  // Vorlage ist eine Schnittzeichnung: schwarze Flaechen, weisse Linien.
+  // Vorher war jede Flaeche mit einem blaugrauen Schleier gefuellt, und
+  // sechzehn davon uebereinander ergaben Grau auf Grau.
+  const style = styleSheet();
+
+  // Waende fuellen sich mit dem Hintergrund, damit sie einander wirklich
+  // verdecken -- nicht mit einem Grauton, der sich aufsummiert.
+  for (const part of ["room-wall", "room-cap", "shell-face", "shell-cap"]) {
+    assert.match(style, new RegExp(`\\.${part} \\{[^}]*fill:var\\(--fp-[a-z-]+, var\\(--fp-surface`),
+                 `${part} malt noch einen eigenen Grauton`);
+  }
+  // Der Boden im Raum bleibt der Hintergrund.
+  assert.match(style, /\.stack \.room \{[^}]*fill:none/);
+});
+
+test("every storey says its name, in the margin and out of the plan", () => {
+  const data = model({
+    floors: [{ id: "kg", name: "Keller", level: -1, icon: "" },
+             { id: "eg", name: "EG", level: 0, icon: "" }],
+  });
+  const view = panel(data, { floor: null });
+  const html = view._stackHtml();
+
+  // Versalien, wie in einer Schnittzeichnung.
+  assert.match(html, /KELLER/);
+
+  // Und links neben der Etage, nicht auf ihr: der Name steht weiter
+  // links als der linkeste Punkt der Platte. Vorher wurde er am Bildrand
+  // abgeschnitten, weil es dort keinen Rand gab.
+  const leftmost = view._project(0, 0, 1).x;
+  const name = /translate\((-?[\d.]+),/.exec(
+    html.slice(html.indexOf("storey-name") - 300),
+  );
+  assert.ok(Number(name[1]) < leftmost, "der Name klebt an der Platte");
+  assert.ok(Number(name[1]) > 0, "der Name faellt aus dem Bild");
 });
 
 test("fit-to-screen fills the window instead of parking the plan in a corner", () => {
