@@ -436,7 +436,22 @@ Linie eine Wand ist und welche eine Bodenkante.
 - Die Zeichnung MUSS **mit dem Haus wachsen**, statt das Haus in eine feste
   Fläche zu quetschen. Der Abstand zwischen zwei Geschossen MUSS größer sein
   als die Tiefe eines Geschosses, sonst werden sie ineinander gezeichnet.
-- Drei Gewichte, nicht eines: Außenkante am stärksten, Innenwände leiser,
+- Eine Wand hat **zwei Seiten**. Gezeichnet wird die Außenfläche und die
+  Mauerkrone als Band zwischen Außen- und Innenkante — ein einzelner Strich
+  ist eine Grenze, kein Mauerwerk. Die Außenwand des Hauses ist stärker als
+  die Zwischenwände.
+- Die Außenwand MUSS **um die Räume herum** gezeichnet werden: die beiden
+  zum Betrachter zeigenden Flächen nach den Räumen, die beiden hinteren
+  davor. Alle vier vorn, und die Rückwand übermalt den Grundriss; alle vier
+  hinten, und die Räume stehen auf einer hausförmigen Platte statt in einem
+  Haus.
+- Etagen stehen **leicht versetzt**, nicht exakt übereinander. Deckungsgleich
+  fällt der Umriss der oberen auf den der unteren, und nur der Abstand
+  unterscheidet sie.
+- Über den Etagen wird **nichts** gezeichnet: kein Dach, keine
+  durchscheinenden Wände, keine Eckpfosten. Alles davon liegt über dem
+  Grundriss. Was das Haus zusammenhält, sind die Wände der Etagen selbst.
+- Drei Gewichte, nicht eines: Außenwand am stärksten, Innenwände leiser,
   Garten nur gestrichelt.
 
 ### Der Himmel
