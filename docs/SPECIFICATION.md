@@ -454,6 +454,23 @@ Linie eine Wand ist und welche eine Bodenkante.
 - Drei Gewichte, nicht eines: Außenwand am stärksten, Innenwände leiser,
   Garten nur gestrichelt.
 
+### Draußen gehört zu einer Etage, nicht zum Erdgeschoss
+
+Ein Außenbereich wird in den Ring **um sein Geschoss** gelegt, nicht um das
+Erdgeschoss.
+
+- Ein Außenbereich, den Home Assistant bereits auf einer echten Etage führt,
+  **behält sie**. Ein Balkon im Obergeschoss ist im Obergeschoss; ihn nach
+  unten zu ziehen sagt das Gegenteil, und ein Haus mit einem Balkon pro Etage
+  hätte sie alle im Vorgarten gestapelt.
+- Nur Außenbereiche **ohne eigene Etage** kommen ans Erdgeschoss — der
+  Garten, die Einfahrt, alles was auf einer Etage saß, die selbst „draußen"
+  ist.
+- `has_outdoor` bekommt **jede** Etage, die etwas Draußen trägt.
+- In der Hausansicht teilen sich alle Geschosse **ein** Fenster, und zwar das
+  der **weitesten** Etage. Die erste zu nehmen, die etwas Draußen hat, schnitte
+  ein gezeichnetes Grundstück im Erdgeschoss ab, sobald oben ein Balkon hängt.
+
 ### Der Himmel
 
 Eine virtuelle Etage ist keine Etage, sondern der Himmel über dem Haus.

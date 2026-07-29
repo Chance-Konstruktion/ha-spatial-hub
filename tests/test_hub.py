@@ -429,21 +429,50 @@ async def test_nodes_in_a_room_stay_inside_it(hass):
 
 
 @pytest.mark.asyncio
-async def test_an_outdoor_area_joins_the_ground_floor(hass, hub):
+async def test_an_outdoor_area_with_no_storey_joins_the_ground_floor(hass, hub):
     """A garden surrounds the ground floor rather than becoming a storey."""
     from homeassistant.helpers import area_registry as ar
 
-    ar.async_get(hass).areas.append(FakeArea("garten", "Garten", floor_id="og"))
+    ar.async_get(hass).areas.append(FakeArea("garten", "Garten", floor_id=None))
     model = await hub.async_model()
 
     garden = next(area for area in model["areas"] if area["id"] == "garten")
     assert garden["kind"] == "outdoor"
-    assert garden["floor_id"] == "eg", "the ground floor, not the one upstairs"
+    assert garden["floor_id"] == "eg", "the ground floor, not a storey of its own"
     assert garden["outdoor"] is True
 
     ground = next(floor for floor in model["floors"] if floor["id"] == "eg")
     assert ground["has_outdoor"] is True
     assert ground["outdoor_margin"] > 0
+
+
+@pytest.mark.asyncio
+async def test_a_balcony_stays_on_the_storey_it_is_on(hass, hub):
+    """A balcony on the first floor is on the first floor.
+
+    Every outdoor area used to be dragged down to the ground floor, which
+    is right for a garden and says the opposite of the truth for a
+    balcony -- and a house with one balcony per storey ended up with all
+    of them stacked in the front garden.
+    """
+    from homeassistant.helpers import area_registry as ar
+
+    ar.async_get(hass).areas.append(FakeArea("balkon", "Balkon", floor_id="og"))
+    model = await hub.async_model()
+
+    balcony = next(area for area in model["areas"] if area["id"] == "balkon")
+    assert balcony["kind"] == "outdoor"
+    assert balcony["floor_id"] == "og", "dragged down into the garden"
+    assert balcony["outdoor"] is True
+
+    # The apron belongs to whichever storey carries something outdoors.
+    upstairs = next(floor for floor in model["floors"] if floor["id"] == "og")
+    assert upstairs["has_outdoor"] is True
+    assert upstairs["outdoor_margin"] > 0
+
+    # And it is drawn outside the walls, like any other outdoor area.
+    x, y = balcony["position"]["x"], balcony["position"]["y"]
+    assert not (0 <= x <= 1 and 0 <= y <= 1), "a balcony is not a room"
 
 
 @pytest.mark.asyncio

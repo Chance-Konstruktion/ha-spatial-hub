@@ -480,9 +480,24 @@ class SpatialHubPanel extends HTMLElement {
 
   /** In the stack every storey shares one window, or they would not line
    *  up: a ground floor with a garden would be drawn smaller than the one
-   *  above it and the house would look like a wedding cake. */
+   *  above it and the house would look like a wedding cake.
+   *
+   *  The widest one, not the first one that has anything outdoors. More
+   *  than one storey can: a garden downstairs and a balcony upstairs. Take
+   *  the first and a drawn plot on the ground floor loses to a balcony's
+   *  narrow apron, which crops the garden out of its own picture.
+   */
   get _widestFloor() {
-    return this._floors.find((floor) => floor.has_outdoor) || null;
+    let widest = null;
+    let span = 0;
+    for (const floor of this._floors) {
+      const frame = frameOf(floor);
+      if (frame.span > span) {
+        span = frame.span;
+        widest = floor;
+      }
+    }
+    return widest;
   }
 
   /** Does this area appear in the stacked house view? */

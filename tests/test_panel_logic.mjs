@@ -2329,3 +2329,20 @@ test("a tall screen opens the legend rather than leaving half of it empty", () =
     globalThis.window = previous;
   }
 });
+
+test("the widest storey sets the window, not the first one with a garden", () => {
+  // A balcony upstairs and a drawn plot downstairs: taking the first
+  // storey that has anything outdoors crops the garden out of its own
+  // picture, because a balcony's apron is narrow and a plot is not.
+  const data = model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "", has_outdoor: true,
+        plot: [{ x: -2, y: -2 }, { x: 3, y: -2 }, { x: 3, y: 3 }, { x: -2, y: 3 }] },
+      { id: "og", name: "Obergeschoss", level: 1, icon: "", has_outdoor: true },
+    ],
+  });
+  const view = panel(data, { floor: null });
+
+  assert.equal(view._widestFloor.id, "eg");
+  assert.ok(view._frame.span > 4, "the plot is drawn outside the window");
+});
