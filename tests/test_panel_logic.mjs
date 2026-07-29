@@ -1088,8 +1088,58 @@ test("the garden sits outside the house but on the same floor", () => {
 
 test("a floor without a garden is drawn exactly as before", () => {
   const view = panel();
-  assert.deepEqual(view._frame, { min: 0, span: 1 });
+  // Vier Raender, alle null: das Haus fuellt das Fenster, in beiden
+  // Achsen. Der Rahmen fuehrt die Achsen seit dem Grundstueck je
+  // Himmelsrichtung getrennt.
+  assert.deepEqual(view._frame, { min: 0, span: 1, minY: 0, spanY: 1 });
   assert.match(view._areasHtml(), /left:25%/);
+});
+
+test("300m of garden behind the house does not put 300m in front of it", () => {
+  // Gemeldet als "ich kann das Grundstueck nicht einfach nach rechts
+  // erweitern, obwohl ich hinterm Haus 300m Garten habe". Der Rand war
+  // eine einzige Zahl fuer alle vier Seiten: was hinten gebraucht wurde,
+  // kam vorne, links und rechts genauso dazu -- und das Haus schrumpfte
+  // in der Mitte eines fast leeren Bildes.
+  const view = panel(model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "",
+               has_outdoor: true, outdoor_margin: 0.28 }],
+    areas: [
+      { id: "wohnzimmer", name: "Wohnzimmer", floor_id: "eg", kind: "indoor",
+        position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 } },
+      // Ein tiefer Garten hinter dem Haus, sonst nichts.
+      { id: "garten", name: "Garten", floor_id: "eg", kind: "outdoor",
+        outdoor: true, position: at(0.5, 2.2), size: { width: 0.9, height: 2.2 } },
+    ],
+  }));
+  const frame = view._frame;
+
+  // Hinten ist Platz ...
+  assert.ok(frame.minY + frame.spanY > 3, "der Garten passt nicht ins Bild");
+  // ... vorne, links und rechts bleibt es bei der Schuerze.
+  assert.equal(frame.min, -0.28, "links wuchs mit, ohne Grund");
+  assert.equal(Number(frame.span.toFixed(4)), 1.56, "rechts wuchs mit");
+  assert.equal(frame.minY, -0.28, "vorne wuchs mit");
+});
+
+test("a lopsided plot leaves the rooms square", () => {
+  // Sobald der Rahmen nicht mehr quadratisch ist, muss die Buehne sein
+  // Seitenverhaeltnis uebernehmen -- sonst rechnen die Raeume in Prozent
+  // von etwas Falschem und ein quadratisches Zimmer wird zum Rechteck.
+  const data = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "", aspect: 1,
+               has_outdoor: true, outdoor_margin: 0.28,
+               plot: [{ x: -0.28, y: -0.28 }, { x: 1.28, y: -0.28 },
+                      { x: 1.28, y: 3 }, { x: -0.28, y: 3 }] }],
+  });
+  const view = panel(data);
+  const frame = view._frame;
+  const stage = view._stageHtml();
+
+  const ratio = frame.span / frame.spanY;
+  assert.ok(ratio < 0.6, "der Rahmen ist gar nicht schief");
+  assert.match(stage, new RegExp(`aspect-ratio:${ratio.toFixed(4)}`),
+               "die Buehne folgt dem Rahmen nicht");
 });
 
 test("dragging in the garden keeps the coordinates outside the house", () => {

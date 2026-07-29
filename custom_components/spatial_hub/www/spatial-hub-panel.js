@@ -187,61 +187,117 @@ const houseWeight = (theme) => {
   return Math.min(1.6, Math.max(0.2, value));
 };
 
+/** Wie viel Umland das Bild zeigt -- je Himmelsrichtung einzeln.
+ *
+ *  Frueher war das eine einzige Zahl fuer alle vier Seiten. Wer hinter
+ *  dem Haus 300m Garten hat und davor die Strasse, bekam damit auch vorn,
+ *  links und rechts 300m: das Haus schrumpfte in der Mitte eines fast
+ *  leeren Bildes zusammen, und der Garten liess sich nicht nach hinten
+ *  erweitern, ohne alles andere mitzuziehen. Ein Grundstueck ist selten
+ *  quadratisch und das Haus steht fast nie in seiner Mitte.
+ *
+ *  Deshalb vier Raender. Der Rahmen ist danach nicht mehr quadratisch --
+ *  darum tragen die Achsen getrennte Spannen, und die Buehne bekommt das
+ *  Seitenverhaeltnis des Rahmens, damit ein quadratischer Raum
+ *  quadratisch bleibt.
+ */
 const frameOf = (floor, areas) => {
   // Sky gets the same room as garden. A cloud belongs *around* the house,
   // not squeezed into its footprint -- the internet is not a room on the
   // second floor, and a plane exactly as wide as the walls says it is.
   const wide = floor && (floor.has_outdoor || floor.virtual);
-  let margin = wide ? floor.outdoor_margin || 0.28 : 0;
+  const base = wide ? floor.outdoor_margin || 0.28 : 0;
+  // links, rechts, oben, unten -- das Haus liegt immer auf 0..1.
+  const side = { left: base, right: base, top: base, bottom: base };
+  const widen = (box, extra) => {
+    side.left = Math.max(side.left, -box.left + extra);
+    side.right = Math.max(side.right, box.right - 1 + extra);
+    side.top = Math.max(side.top, -box.top + extra);
+    side.bottom = Math.max(side.bottom, box.bottom - 1 + extra);
+  };
+
   // A drawn plot decides how much surroundings there are. Everybody's
   // garden is a different size, and a fixed apron would mean the boundary
   // either stops at an invisible wall or is drawn outside the picture --
-  // so the window grows to hold whatever was drawn, and the house keeps
-  // its place in the middle of it.
+  // so the window grows to hold whatever was drawn.
+  //
+  // Und mit demselben Zuschlag wie ein gezogener Garten: wer eine Ecke an
+  // den Rand zieht, soll beim naechsten Mal Platz haben, sie weiter zu
+  // ziehen -- statt "ziehen, loslassen, ziehen" ein Dutzend Mal.
   const plot = floor && Array.isArray(floor.plot) ? floor.plot : null;
   if (plot && plot.length >= 3) {
+    const reach = { left: 0, right: 0, top: 0, bottom: 0 };
     for (const point of plot) {
       if (!point || typeof point.x !== "number" || typeof point.y !== "number") {
         continue;
       }
-      margin = Math.max(
-        margin,
-        -point.x, point.x - 1,
-        -point.y, point.y - 1,
-      );
+      reach.left = Math.max(reach.left, -point.x);
+      reach.right = Math.max(reach.right, point.x - 1);
+      reach.top = Math.max(reach.top, -point.y);
+      reach.bottom = Math.max(reach.bottom, point.y - 1);
     }
-    margin = Math.min(margin + 0.04, 4);
+    for (const where of ["left", "right", "top", "bottom"]) {
+      if (reach[where] > side[where]) side[where] = reach[where] + 0.5;
+      else side[where] = Math.max(side[where], reach[where] + 0.04);
+    }
   }
   // Same idea without a drawn plot: a garden dragged bigger than the
   // default apron is still something somebody drew on purpose, not an
-  // overflow to clip away. Without this the fixed 0.28 apron is a wall
-  // nobody can see, and growing a garden past it takes a dozen trips
-  // through "drag to the edge, let go, drag again" before it is even
-  // visible.
+  // overflow to clip away. Without this the fixed apron is a wall nobody
+  // can see, and growing a garden past it takes a dozen trips through
+  // "drag to the edge, let go, drag again" before it is even visible.
+  //
+  // Der Zuschlag ist grosszuegig, damit einmal Ziehen Platz fuer das
+  // naechste Mal schafft -- aber er gilt nur noch fuer die Seite, an der
+  // wirklich etwas hinausragt.
+  //
+  // Der Zuschlag greift nur an der Seite, an der wirklich etwas ueber den
+  // Standardrand hinausragt: ein kleiner Garten, der in die Schuerze
+  // passt, darf das Fenster nicht trotzdem aufziehen.
   if (wide && floor && Array.isArray(areas)) {
-    let needed = 0;
+    const reach = { left: 0, right: 0, top: 0, bottom: 0 };
     for (const area of areas) {
       if (kindOf(area) !== AREA_KIND.OUTDOOR) continue;
       if (area.floor_id !== floor.id || !area.position) continue;
       const box = boxOf(area);
-      needed = Math.max(
-        needed,
-        -box.left, box.right - 1,
-        -box.top, box.bottom - 1,
-      );
+      reach.left = Math.max(reach.left, -box.left);
+      reach.right = Math.max(reach.right, box.right - 1);
+      reach.top = Math.max(reach.top, -box.top);
+      reach.bottom = Math.max(reach.bottom, box.bottom - 1);
     }
-    // Only kicks in once something outdoor actually needs more room than
-    // the default apron -- a small garden that fits inside it must not
-    // grow the window anyway. And then a generous buffer, not a tight
-    // one: the point is that dragging a garden's edge out once gives room
-    // to drag it further next time, instead of hugging the last position
-    // and asking for another twenty small steps to get anywhere.
-    if (needed > margin) margin = Math.min(needed + 0.5, 4);
+    for (const where of ["left", "right", "top", "bottom"]) {
+      if (reach[where] > side[where]) side[where] = reach[where] + 0.5;
+    }
   }
-  return { min: margin ? -margin : 0, span: 1 + 2 * margin };
+
+  // Vier Hausbreiten je Seite sind schon ein Park; darueber wird das Haus
+  // zum Punkt, und niemand findet mehr ein Geraet darin.
+  const cap = (value) => Math.min(4, Math.max(0, value));
+  const left = cap(side.left);
+  const right = cap(side.right);
+  const top = cap(side.top);
+  const bottom = cap(side.bottom);
+  return {
+    min: left ? -left : 0,
+    span: 1 + left + right,
+    minY: top ? -top : 0,
+    spanY: 1 + top + bottom,
+  };
 };
 
+/** Die y-Spanne eines Rahmens. Aeltere Rahmen (Tests, gespeicherte
+ *  Zustaende) kennen nur eine Spanne fuer beides -- die gilt dann fuer
+ *  beide Achsen, und alles verhaelt sich wie vorher. */
+const spanY = (frame) => (frame.spanY === undefined ? frame.span : frame.spanY);
+const minY = (frame) => (frame.minY === undefined ? frame.min : frame.minY);
+
+/** Der Rahmen der y-Achse als eigener Rahmen -- fuer alles, was mit
+ *  einer Achse rechnet und nicht wissen muss, welche es ist. */
+const yFrame = (frame) => ({ min: minY(frame), span: spanY(frame) });
+
 const inFrame = (value, frame) => ((value - frame.min) / frame.span) * 100;
+const inFrameY = (value, frame) =>
+  ((value - minY(frame)) / spanY(frame)) * 100;
 
 /** A room is a rectangle until somebody says otherwise.
  *
@@ -762,8 +818,12 @@ class SpatialHubPanel extends HTMLElement {
     let span = 0;
     for (const floor of this._floors) {
       const frame = frameOf(floor, this._model.areas);
-      if (frame.span > span) {
-        span = frame.span;
+      // Die groessere der beiden Spannen entscheidet: ein Grundstueck,
+      // das nur nach hinten reicht, macht die Etage genauso "weit" wie
+      // eines, das nur nach rechts reicht.
+      const reach = Math.max(frame.span, spanY(frame));
+      if (reach > span) {
+        span = reach;
         widest = floor;
       }
     }
@@ -841,7 +901,7 @@ class SpatialHubPanel extends HTMLElement {
   _project(floorIndex, x, y) {
     const frame = this._frame;
     const nx = (x - frame.min) / frame.span;
-    const ny = (y - frame.min) / frame.span;
+    const ny = (y - minY(frame)) / spanY(frame);
     // Headroom for the sky, added to everything so the lift pushes the
     // clouds up *within* the drawing instead of off the top of it.
     const sky = Math.max(
@@ -1701,12 +1761,17 @@ class SpatialHubPanel extends HTMLElement {
       ]),
     );
 
-    const corners = (at, from, to) =>
-      [[from, from], [to, from], [to, to], [from, to]]
+    // Die y-Grenzen duerfen von den x-Grenzen abweichen: der Rahmen ist
+    // nicht mehr quadratisch, seit jede Himmelsrichtung ihren eigenen
+    // Rand hat. Ohne Angabe gelten die x-Grenzen fuer beides -- das ist
+    // das Haus selbst, und das liegt auf 0..1 in beiden Achsen.
+    const corners = (at, from, to, fromY = from, toY = to) =>
+      [[from, fromY], [to, fromY], [to, toY], [from, toY]]
         .map(([x, y]) => this._project(at, x, y));
 
-    const outline = (at, from, to) =>
-      corners(at, from, to).map((point) => `${point.x},${point.y}`).join(" ");
+    const outline = (at, from, to, fromY, toY) =>
+      corners(at, from, to, fromY, toY)
+        .map((point) => `${point.x},${point.y}`).join(" ");
 
     const plans = floors.map((floor, at) => {
       const frame = this._frame;
@@ -1721,6 +1786,7 @@ class SpatialHubPanel extends HTMLElement {
       const apron = floor.has_outdoor && floor.ground
         ? `<polygon class="apron" points="${outline(
             at, frame.min, frame.min + frame.span,
+            minY(frame), minY(frame) + spanY(frame),
           )}"/>`
         : "";
       // Der Name steht links neben der Etage, im Rand -- nicht an ihrer
@@ -1989,7 +2055,16 @@ class SpatialHubPanel extends HTMLElement {
 
     if (this._stacked) return `${moved}${banner}${this._stackHtml()}`;
 
-    const aspect = (floor && floor.aspect) || 1.6;
+    // Das Seitenverhaeltnis des Hauses mal dem des Rahmens. Sonst wuerde
+    // ein Grundstueck, das nur nach hinten reicht, die Buehne in die
+    // Breite ziehen und jeden quadratischen Raum zu einem Rechteck
+    // machen: die Raeume rechnen in Prozent der Buehne, und Prozent von
+    // etwas Falschem bleibt falsch.
+    const houseAspect = (floor && floor.aspect) || 1.6;
+    const frameShape = this._frame;
+    const aspect = (
+      houseAspect * (frameShape.span / spanY(frameShape))
+    ).toFixed(4);
     const background = floor && floor.background;
     const nodes = this._visibleNodes;
     const edges = this._visibleEdges;
@@ -2120,9 +2195,9 @@ class SpatialHubPanel extends HTMLElement {
     const box = floor.outline;
     return `<div class="building-line" style="
       left:${inFrame(box.x, frame)}%;
-      top:${inFrame(box.y, frame)}%;
+      top:${inFrameY(box.y, frame)}%;
       width:${(box.width / frame.span) * 100}%;
-      height:${(box.height / frame.span) * 100}%;"></div>`;
+      height:${(box.height / spanY(frame)) * 100}%;"></div>`;
   }
 
   /** The strip under the house: everything still waiting for a room.
@@ -2262,11 +2337,14 @@ class SpatialHubPanel extends HTMLElement {
   _defaultPlot() {
     const frame = this._frame;
     const inset = frame.span * 0.04;
+    const insetY = spanY(frame) * 0.04;
     const low = frame.min + inset;
     const high = frame.min + frame.span - inset;
+    const lowY = minY(frame) + insetY;
+    const highY = minY(frame) + spanY(frame) - insetY;
     return [
-      { x: low, y: low }, { x: high, y: low },
-      { x: high, y: high }, { x: low, y: high },
+      { x: low, y: lowY }, { x: high, y: lowY },
+      { x: high, y: highY }, { x: low, y: highY },
     ].map((point) => ({
       x: Number(point.x.toFixed(4)),
       y: Number(point.y.toFixed(4)),
@@ -2319,7 +2397,7 @@ class SpatialHubPanel extends HTMLElement {
     if (!plot) return "";
     const frame = this._frame;
     const spot = (point) =>
-      `left:${inFrame(point.x, frame).toFixed(2)}%;top:${inFrame(
+      `left:${inFrame(point.x, frame).toFixed(2)}%;top:${inFrameY(
         point.y,
         frame,
       ).toFixed(2)}%`;
@@ -2502,9 +2580,9 @@ class SpatialHubPanel extends HTMLElement {
         return `
         <div class="ghost" style="
               left:${((box.x - frame.min) / frame.span) * 100}%;
-              top:${((box.y - frame.min) / frame.span) * 100}%;
+              top:${((box.y - minY(frame)) / spanY(frame)) * 100}%;
               width:${(box.width / frame.span) * 100}%;
-              height:${(box.height / frame.span) * 100}%;">
+              height:${(box.height / spanY(frame)) * 100}%;">
           <span class="ghost-name">${escapeHtml(floor.name)}</span>
         </div>`;
       })
@@ -2539,9 +2617,9 @@ class SpatialHubPanel extends HTMLElement {
           shaped ? "shaped" : ""
         }" data-area="${escapeHtml(area.id)}" style="
               left:${inFrame(area.position.x, frame)}%;
-              top:${inFrame(area.position.y, frame)}%;
+              top:${inFrameY(area.position.y, frame)}%;
               width:${(size.width / frame.span) * 100}%;
-              height:${(size.height / frame.span) * 100}%;">
+              height:${(size.height / spanY(frame)) * 100}%;">
           ${fill}
           ${kindOf(area) === AREA_KIND.VIRTUAL ? CLOUD_SVG : ""}
           <span class="area-name">
@@ -2638,11 +2716,11 @@ class SpatialHubPanel extends HTMLElement {
     const frame = this._frame;
     const [x1, y1] = [
       inFrame(edge.from.x, frame) * 10,
-      inFrame(edge.from.y, frame) * 10,
+      inFrameY(edge.from.y, frame) * 10,
     ];
     const [x2, y2] = [
       inFrame(edge.to.x, frame) * 10,
-      inFrame(edge.to.y, frame) * 10,
+      inFrameY(edge.to.y, frame) * 10,
     ];
 
     if (this._theme.edge_style === "curved") {
@@ -2724,7 +2802,7 @@ class SpatialHubPanel extends HTMLElement {
         data-node="${escapeHtml(node.id)}"
         title="${escapeHtml(node.label)}${node.floor_id ? "" : " (keiner Etage zugeordnet)"}"
         style="left:${inFrame(node.position.x, frame)}%;
-               top:${inFrame(node.position.y, frame)}%;
+               top:${inFrameY(node.position.y, frame)}%;
                --node-color:${escapeHtml(colour)}; --node-scale:${scale};
                --layer-opacity:${this._providerOpacity(node.id)};
                ${node.rotation ? `--node-rotation:${node.rotation}deg;` : ""}">
@@ -3813,7 +3891,8 @@ class SpatialHubPanel extends HTMLElement {
     const frame = drag.frame;
     return {
       x: frame.min + ((event.clientX - drag.box.left) / drag.box.width) * frame.span,
-      y: frame.min + ((event.clientY - drag.box.top) / drag.box.height) * frame.span,
+      y: minY(frame) +
+        ((event.clientY - drag.box.top) / drag.box.height) * spanY(frame),
     };
   }
 
@@ -3833,7 +3912,7 @@ class SpatialHubPanel extends HTMLElement {
       if (!plot[drag.index]) return;
       plot[drag.index] = {
         x: this._snap(x, event, frame),
-        y: this._snap(y, event, frame),
+        y: this._snap(y, event, yFrame(frame)),
       };
       drag.value = { plot };
       const shell = drag.element.parentElement &&
@@ -3842,7 +3921,7 @@ class SpatialHubPanel extends HTMLElement {
         shell.style.clipPath = `polygon(${plot
           .map(
             (point) =>
-              `${inFrame(point.x, frame).toFixed(2)}% ${inFrame(
+              `${inFrame(point.x, frame).toFixed(2)}% ${inFrameY(
                 point.y,
                 frame,
               ).toFixed(2)}%`,
@@ -3850,7 +3929,7 @@ class SpatialHubPanel extends HTMLElement {
           .join(",")})`;
       }
       drag.element.style.left = `${inFrame(plot[drag.index].x, frame).toFixed(2)}%`;
-      drag.element.style.top = `${inFrame(plot[drag.index].y, frame).toFixed(2)}%`;
+      drag.element.style.top = `${inFrameY(plot[drag.index].y, frame).toFixed(2)}%`;
       return;
     }
 
@@ -3905,11 +3984,11 @@ class SpatialHubPanel extends HTMLElement {
       }
       if (drag.edge.includes("n")) {
         rect.top = Math.min(
-          this._magnet(y, "y", event, frame, lines), rect.bottom - minimum);
+          this._magnet(y, "y", event, yFrame(frame), lines), rect.bottom - minimum);
       }
       if (drag.edge.includes("s")) {
         rect.bottom = Math.max(
-          this._magnet(y, "y", event, frame, lines), rect.top + minimum);
+          this._magnet(y, "y", event, yFrame(frame), lines), rect.top + minimum);
       }
       drag.value = {
         position: { x: (rect.left + rect.right) / 2,
@@ -3917,15 +3996,15 @@ class SpatialHubPanel extends HTMLElement {
         size: { width: rect.right - rect.left, height: rect.bottom - rect.top },
       };
       drag.element.style.left = `${inFrame(drag.value.position.x, frame)}%`;
-      drag.element.style.top = `${inFrame(drag.value.position.y, frame)}%`;
+      drag.element.style.top = `${inFrameY(drag.value.position.y, frame)}%`;
       drag.element.style.width = `${(drag.value.size.width / frame.span) * 100}%`;
-      drag.element.style.height = `${(drag.value.size.height / frame.span) * 100}%`;
+      drag.element.style.height = `${(drag.value.size.height / spanY(frame)) * 100}%`;
       return;
     }
 
     drag.value = {
       x: this._snap(x, event, frame),
-      y: this._snap(y, event, frame),
+      y: this._snap(y, event, yFrame(frame)),
     };
     // A room lands by its walls, not by its middle. Snapping the centre
     // puts a wall wherever half the room's width happens to fall, which
@@ -3946,7 +4025,7 @@ class SpatialHubPanel extends HTMLElement {
       );
     }
     drag.element.style.left = `${inFrame(drag.value.x, frame)}%`;
-    drag.element.style.top = `${inFrame(drag.value.y, frame)}%`;
+    drag.element.style.top = `${inFrameY(drag.value.y, frame)}%`;
   }
 
   /** How far to shift a room so one of its walls lands on a neighbour's.
@@ -4704,13 +4783,13 @@ class SpatialHubPanel extends HTMLElement {
     if (this._placing && stage) {
       const box = stage.getBoundingClientRect();
       const frame = this._frame;
-      const place = (offset, size) =>
+      const place = (offset, size, along) =>
         Math.min(
-          frame.min + frame.span,
-          Math.max(frame.min, frame.min + (offset / size) * frame.span),
+          along.min + along.span,
+          Math.max(along.min, along.min + (offset / size) * along.span),
         );
-      const x = place(event.clientX - box.left, box.width);
-      const y = place(event.clientY - box.top, box.height);
+      const x = place(event.clientX - box.left, box.width, frame);
+      const y = place(event.clientY - box.top, box.height, yFrame(frame));
       const { section, key } = this._placing;
       this._placing = null;
       this._setLayout(section, key, {
