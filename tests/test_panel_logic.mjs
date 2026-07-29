@@ -29,7 +29,7 @@ globalThis.window = { addEventListener() {}, removeEventListener() {},
                       confirm: () => true };
 
 const here = dirname(fileURLToPath(import.meta.url));
-const { SpatialHubPanel, HA_COLOURS } = await import(
+const { SpatialHubPanel, HA_COLOURS, joinsOf, drawsTheWall } = await import(
   pathToFileURL(
     join(here, "..", "custom_components", "spatial_hub", "www",
          "spatial-hub-panel.js"),
@@ -2345,4 +2345,120 @@ test("the widest storey sets the window, not the first one with a garden", () =>
 
   assert.equal(view._widestFloor.id, "eg");
   assert.ok(view._frame.span > 4, "the plot is drawn outside the window");
+});
+
+// ── Shared walls ──────────────────────────────────────────────────────
+
+const twoRooms = (extra = {}) =>
+  model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+    areas: [
+      { id: "kueche", name: "Küche", floor_id: "eg", kind: "indoor",
+        position: { x: 0.3, y: 0.5 }, size: { width: 0.2, height: 0.4 } },
+      { id: "bad", name: "Bad", floor_id: "eg", kind: "indoor",
+        position: { x: 0.5, y: 0.5 }, size: { width: 0.2, height: 0.4 },
+        ...extra },
+    ],
+  });
+
+test("two rooms that touch share the wall between them", () => {
+  const data = twoRooms();
+  const html = panel(data, { floor: null })._stackHtml();
+
+  // Four walls each would be eight. One of them is shared, so seven --
+  // otherwise two walls are drawn in the same place and the partition
+  // comes out twice as thick as every other one.
+  assert.equal((html.match(/class="room-wall"/g) || []).length, 7);
+  assert.equal((html.match(/class="room-cap"/g) || []).length, 7);
+});
+
+test("rooms that only meet at a corner do not share anything", () => {
+  const data = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+    areas: [
+      { id: "a", name: "A", floor_id: "eg", kind: "indoor",
+        position: { x: 0.3, y: 0.3 }, size: { width: 0.2, height: 0.2 } },
+      { id: "b", name: "B", floor_id: "eg", kind: "indoor",
+        position: { x: 0.5, y: 0.5 }, size: { width: 0.2, height: 0.2 } },
+    ],
+  });
+
+  assert.equal(joinsOf(data.areas).size, 0, "a point is not a wall");
+});
+
+test("a wall can be broken apart, and the break holds from both sides", () => {
+  const fromMine = twoRooms();
+  fromMine.areas[0].unjoined = ["bad"];
+  const fromTheirs = twoRooms({ unjoined: ["kueche"] });
+
+  for (const data of [fromMine, fromTheirs]) {
+    assert.equal(joinsOf(data.areas).size, 0);
+    const html = panel(data, { floor: null })._stackHtml();
+    assert.equal((html.match(/class="room-wall"/g) || []).length, 8,
+                 "a party wall between two flats really is two walls");
+  }
+});
+
+test("the room in front draws the shared wall, not the one behind", () => {
+  // Rooms are painted back to front. A wall drawn with the room behind
+  // has the front room's floor painted over its foot.
+  const back = { id: "b", position: { y: 0.2 } };
+  const front = { id: "a", position: { y: 0.8 } };
+  assert.equal(drawsTheWall(front, back), true);
+  assert.equal(drawsTheWall(back, front), false);
+});
+
+test("a garden, a cloud and a niche have no wall to share", () => {
+  for (const kind of ["outdoor", "virtual"]) {
+    const data = twoRooms();
+    data.areas[1].kind = kind;
+    assert.equal(joinsOf(data.areas).size, 0, kind);
+  }
+  const shaped = twoRooms({
+    shape: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0.5 }, { x: 0, y: 1 }],
+  });
+  assert.equal(joinsOf(shaped.areas).size, 0, "a niche has no side called right");
+});
+
+test("dragging a room pulls its wall onto the neighbour's", () => {
+  const view = panel(twoRooms(), { edit: true, floor: "eg" });
+  const lines = view._wallLines("bad");
+  const event = { shiftKey: false };
+
+  // Küche runs 0.2 … 0.4. A room whose left wall lands at 0.41 is nearly
+  // against it -- "nearly" is the difference between two rooms and one
+  // shared wall, so it lands exactly.
+  assert.equal(view._wallPull([0.41, 0.61], "x", event, lines), 0.4 - 0.41);
+  // Shift is the escape hatch, here as everywhere else.
+  assert.equal(view._wallPull([0.41, 0.61], "x", { shiftKey: true }, lines), 0);
+  // Out of reach, nothing happens.
+  assert.equal(view._wallPull([0.8, 1], "x", event, lines), 0);
+});
+
+test("a room never snaps to its own walls", () => {
+  const view = panel(twoRooms(), { edit: true, floor: "eg" });
+  assert.ok(!view._wallLines("bad").x.includes(0.6), "0.6 is Bad's own wall");
+  assert.ok(view._wallLines("bad").x.includes(0.4), "0.4 is the Küche's");
+});
+
+test("clicking a room shows the marks on its shared walls", () => {
+  const view = panel(twoRooms(), { edit: true, floor: "eg" });
+  assert.equal(view._joinMarksHtml(view._model.areas[1]), "", "not until asked");
+
+  view._joinArea = "bad";
+  const marks = view._joinMarksHtml(view._model.areas[1]);
+  assert.match(marks, /data-join-area="bad"/);
+  assert.match(marks, /data-join-other="kueche"/);
+  assert.match(marks, /join-mark left on/, "a red × on the wall it shares");
+  assert.doesNotMatch(marks, /join-mark right/, "and nothing on the free walls");
+});
+
+test("a broken wall offers to be joined again", () => {
+  // Without the +, breaking a join once is a decision nobody can undo.
+  const view = panel(twoRooms({ unjoined: ["kueche"] }), { edit: true, floor: "eg" });
+  view._joinArea = "bad";
+  const marks = view._joinMarksHtml(view._model.areas[1]);
+
+  assert.match(marks, /join-mark left off/);
+  assert.match(marks, /\+<\/button>/);
 });

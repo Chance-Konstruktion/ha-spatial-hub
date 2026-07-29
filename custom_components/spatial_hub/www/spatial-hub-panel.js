@@ -88,14 +88,24 @@ const insetOf = (corners, amount) => {
   });
 };
 
-const pathOf = (corners) =>
-  `M${corners.map((point) => `${point.x},${point.y}`).join("L")}Z`;
-
-/** The top of a wall: the band between an outline and its inset. */
-const capOf = (corners, thickness, className) =>
-  `<path class="${className}" fill-rule="evenodd" d="${pathOf(corners)}${
-    pathOf(insetOf(corners, thickness).slice().reverse())
-  }"/>`;
+/** The top of a wall: the band between an outline and its inset.
+ *
+ *  One quad per wall rather than one ring with a hole in it. The ring was
+ *  shorter, but a ring cannot leave a wall out -- and leaving a wall out
+ *  is the whole of sharing one with the room next door.
+ */
+const capsOf = (corners, thickness, className, keep = () => true) => {
+  const inner = insetOf(corners, thickness);
+  return corners
+    .map((corner, index) => {
+      if (!keep(index)) return "";
+      const next = (index + 1) % corners.length;
+      return `<polygon class="${className}" points="${corner.x},${corner.y} ` +
+        `${corners[next].x},${corners[next].y} ` +
+        `${inner[next].x},${inner[next].y} ${inner[index].x},${inner[index].y}"/>`;
+    })
+    .join("");
+};
 
 /** Standing walls along a projected outline.
  *
@@ -239,6 +249,109 @@ const CLOUD_PATH = "M26 52 C12 52 5 44 5 35 C5 26 12 19 21 19 " +
 const CLOUD_SVG = `<svg class="cloud" viewBox="0 0 100 60"
   preserveAspectRatio="none" aria-hidden="true"><path d="${CLOUD_PATH}"/></svg>`;
 
+/** A room's four walls in floor coordinates. */
+const boxOf = (area) => {
+  const size = (area && area.size) || { width: 0.3, height: 0.3 };
+  return {
+    left: area.position.x - size.width / 2,
+    right: area.position.x + size.width / 2,
+    top: area.position.y - size.height / 2,
+    bottom: area.position.y + size.height / 2,
+  };
+};
+
+/** The walls of a room's box, in the order its outline runs. */
+const SIDE = Object.freeze({ TOP: 0, RIGHT: 1, BOTTOM: 2, LEFT: 3 });
+const SIDE_NAME = Object.freeze(["top", "right", "bottom", "left"]);
+
+// How close two walls must be to be one wall, and how far a dragged wall
+// reaches for a neighbour to snap onto. The reach is the larger of the
+// two on purpose: you aim roughly, it lands exactly, and after that the
+// join is a fact rather than a guess about what you meant.
+const JOIN_GAP = 0.006;
+const SNAP_REACH = 0.03;
+
+/** Rooms that can share a wall.
+ *
+ *  A rectangle with walls: not a garden, not a cloud, and not a room with
+ *  an outline of its own -- a niche has no side called "right", so there
+ *  is nothing to join and nothing honest to draw.
+ */
+const joinable = (area) =>
+  Boolean(area) && Boolean(area.position) &&
+  kindOf(area) === AREA_KIND.INDOOR && !hasShape(area);
+
+/** Has somebody said these two rooms really do have two walls?
+ *
+ *  Stored on either side and honoured from both: a party wall between two
+ *  flats is two walls, and it must not come back the next time the other
+ *  room is the one being edited.
+ */
+const unjoined = (a, b) =>
+  (Array.isArray(a.unjoined) && a.unjoined.includes(b.id)) ||
+  (Array.isArray(b.unjoined) && b.unjoined.includes(a.id));
+
+/** Which walls of which rooms are the same wall.
+ *
+ *  Returns `id -> Map(side -> neighbour id)`. Two rooms share a wall when
+ *  one's wall lands on the other's and they actually run alongside each
+ *  other -- touching at a single corner is not a shared wall, it is two
+ *  rooms meeting at a point.
+ *
+ *  `honourBreaks: false` reports what the geometry says regardless of
+ *  what anybody switched off, which is how a broken join can still offer
+ *  to be joined again.
+ */
+const joinsOf = (areas, honourBreaks = true) => {
+  const rooms = areas.filter(joinable);
+  const found = new Map();
+  const add = (id, side, other) => {
+    if (!found.has(id)) found.set(id, new Map());
+    found.get(id).set(side, other);
+  };
+  for (let i = 0; i < rooms.length; i += 1) {
+    for (let j = i + 1; j < rooms.length; j += 1) {
+      const a = rooms[i];
+      const b = rooms[j];
+      if (honourBreaks && unjoined(a, b)) continue;
+      const one = boxOf(a);
+      const two = boxOf(b);
+      const alongY = Math.min(one.bottom, two.bottom) - Math.max(one.top, two.top);
+      const alongX = Math.min(one.right, two.right) - Math.max(one.left, two.left);
+      if (alongY > JOIN_GAP) {
+        if (Math.abs(one.right - two.left) <= JOIN_GAP) {
+          add(a.id, SIDE.RIGHT, b.id);
+          add(b.id, SIDE.LEFT, a.id);
+        }
+        if (Math.abs(two.right - one.left) <= JOIN_GAP) {
+          add(b.id, SIDE.RIGHT, a.id);
+          add(a.id, SIDE.LEFT, b.id);
+        }
+      }
+      if (alongX > JOIN_GAP) {
+        if (Math.abs(one.bottom - two.top) <= JOIN_GAP) {
+          add(a.id, SIDE.BOTTOM, b.id);
+          add(b.id, SIDE.TOP, a.id);
+        }
+        if (Math.abs(two.bottom - one.top) <= JOIN_GAP) {
+          add(b.id, SIDE.BOTTOM, a.id);
+          add(a.id, SIDE.TOP, b.id);
+        }
+      }
+    }
+  }
+  return found;
+};
+
+/** Of two rooms sharing a wall, which one draws it.
+ *
+ *  The one in front. Rooms are painted back to front, so a wall drawn
+ *  with the room behind would have the front room's floor painted over
+ *  its foot -- a wall standing in the neighbour's carpet.
+ */
+const drawsTheWall = (a, b) =>
+  a.position.y !== b.position.y ? a.position.y > b.position.y : a.id > b.id;
+
 /** The three area kinds, frozen. Specification § Area Type.
  *
  *  A renderer that compares against a literal is a renderer that quietly
@@ -286,6 +399,10 @@ class SpatialHubPanel extends HTMLElement {
     // is a detail of it, not the other way round.
     this._floorId = ALL_FLOORS;
     this._selected = null; // { kind, id }
+    // The room whose shared walls are on show. Not a selection in the
+    // popup sense -- clicking a room in room mode asks "what is this room
+    // attached to", and nothing else on screen should change.
+    this._joinArea = null;
     this._history = null;
     this._placing = null; // { section, key } -- next stage click places it
     this._showDiagnostics = false;
@@ -1334,14 +1451,29 @@ class SpatialHubPanel extends HTMLElement {
       // be hidden behind the walls of one in front -- which is what depth
       // looks like. Drawn in storage order instead, a back room paints
       // over the front one and the whole storey turns inside out.
-      const rooms = this._model.areas
-        .filter(
-          (area) =>
-            area.floor_id === floor.id && area.position && this._inSandwich(area),
-        )
+      const onThisFloor = this._model.areas.filter(
+        (area) =>
+          area.floor_id === floor.id && area.position && this._inSandwich(area),
+      );
+      // Two rooms side by side used to draw two walls in the same place,
+      // which is what a plan looks like when nobody has told it that a
+      // partition is one wall with a room on either side. Whoever is in
+      // front draws it; the other simply leaves that wall out.
+      const joins = joinsOf(onThisFloor);
+      const byId = new Map(onThisFloor.map((area) => [area.id, area]));
+      const rooms = onThisFloor
         .slice()
         .sort((a, b) => a.position.y - b.position.y)
-        .map((area) => this._roomPolygon(at, area))
+        .map((area) => {
+          const shared = joins.get(area.id);
+          const keep = shared
+            ? (side) => {
+                const other = byId.get(shared.get(side));
+                return !other || drawsTheWall(area, other);
+              }
+            : undefined;
+          return this._roomPolygon(at, area, keep);
+        })
         .join("");
       // Sky is not a storey. It got a floor slab and an outline like
       // every other plane, which is exactly what made the cloud level
@@ -1372,7 +1504,7 @@ class SpatialHubPanel extends HTMLElement {
         ${wallsOf(house, STACK.rise, "shell-face", BACK_WALL)}
         ${rooms}
         ${wallsOf(house, STACK.rise, "shell-face", FRONT_WALL)}
-        ${capOf(crown, STACK.outerWall, "shell-cap")}
+        ${capsOf(crown, STACK.outerWall, "shell-cap")}
         <g data-at-x="${label.x - 12}" data-at-y="${label.y}"
            transform="translate(${label.x - 12},${label.y}) scale(${
              this._counterScale
@@ -1466,7 +1598,7 @@ class SpatialHubPanel extends HTMLElement {
     return `<div class="viewport"><div class="canvas">${inner}</div></div>`;
   }
 
-  _roomPolygon(plane, area) {
+  _roomPolygon(plane, area, keep = () => true) {
     const width = (area.size && area.size.width) || 0.3;
     const height = (area.size && area.size.height) || 0.3;
     const x0 = area.position.x - width / 2;
@@ -1497,11 +1629,12 @@ class SpatialHubPanel extends HTMLElement {
     // read as a plan rather than as a grey rectangle with a line round it.
     let shape = `<polygon class="room" points="${points}"/>`;
     if (kindOf(area) === AREA_KIND.INDOOR) {
-      shape += wallsOf(corners, STACK.rise, "room-wall") +
-        capOf(
+      shape += wallsOf(corners, STACK.rise, "room-wall", keep) +
+        capsOf(
           corners.map((corner) => ({ x: corner.x, y: corner.y - STACK.rise })),
           STACK.wall,
           "room-cap",
+          keep,
         );
     }
     if (kindOf(area) === AREA_KIND.VIRTUAL) {
@@ -2125,6 +2258,7 @@ class SpatialHubPanel extends HTMLElement {
                 )} m</span>`
               : ""
           }
+          ${this._joinMarksHtml(area)}
           ${
             this._editRooms
               ? `${this._areaHandlesHtml(area)}
@@ -2140,6 +2274,43 @@ class SpatialHubPanel extends HTMLElement {
               : ""
           }
         </div>`;
+      })
+      .join("");
+  }
+
+  /** The × and + on a room's shared walls.
+   *
+   *  Only on the room that was clicked, and only while rooms are being
+   *  arranged. Every wall that is shared with the room next door gets a
+   *  red × to break it apart; a wall that touches but has been broken
+   *  gets a green + to put it back. Without the +, breaking a join once
+   *  would be a decision nobody could take back.
+   */
+  _joinMarksHtml(area) {
+    if (!this._editRooms || this._joinArea !== area.id) return "";
+    const here = this._visibleAreas.filter(
+      (candidate) =>
+        candidate.position &&
+        (!this._floor || candidate.floor_id === this._floor.id),
+    );
+    const joined = joinsOf(here).get(area.id) || new Map();
+    const touching = joinsOf(here, false).get(area.id) || new Map();
+    const id = escapeHtml(area.id);
+
+    return [...touching.keys()]
+      .map((side) => {
+        const together = joined.has(side);
+        const other = touching.get(side);
+        const name = (this._area(other) || {}).name || other;
+        return `<button class="join-mark ${SIDE_NAME[side]} ${
+          together ? "on" : "off"
+        }" data-join-area="${id}" data-join-side="${side}"
+                data-join-other="${escapeHtml(other)}"
+                title="${
+                  together
+                    ? `Gemeinsame Wand mit ${escapeHtml(name)} trennen`
+                    : `Wand wieder mit ${escapeHtml(name)} verbinden`
+                }">${together ? "×" : "+"}</button>`;
       })
       .join("");
   }
@@ -3058,6 +3229,51 @@ class SpatialHubPanel extends HTMLElement {
     return Math.min(high, Math.max(low, Math.round(clamped / 0.02) * 0.02));
   }
 
+  /** Every other room's walls on this floor, split by axis.
+   *
+   *  What a dragged wall can land on. The room being dragged is left out,
+   *  or it would snap to itself and never move again.
+   */
+  _wallLines(exceptId) {
+    const lines = { x: [], y: [] };
+    for (const area of this._visibleAreas) {
+      if (area.id === exceptId || !joinable(area)) continue;
+      if (this._floor && area.floor_id !== this._floor.id) continue;
+      const box = boxOf(area);
+      lines.x.push(box.left, box.right);
+      lines.y.push(box.top, box.bottom);
+    }
+    return lines;
+  }
+
+  /** Pull a wall onto a neighbour's wall when one is within reach.
+   *
+   *  This is what makes a shared wall shared without anybody typing a
+   *  number: you drag a room roughly against the next one, it lands
+   *  exactly, and from then on the two walls are one. Shift still turns
+   *  everything off, the same as it does for the grid.
+   *
+   *  Falls back to the grid, so a room with no neighbour behaves exactly
+   *  as it did before.
+   */
+  _magnet(value, axis, event, frame, lines) {
+    if (!event.shiftKey && lines) {
+      let best = null;
+      let reach = SNAP_REACH;
+      for (const line of lines[axis]) {
+        const distance = Math.abs(line - value);
+        if (distance <= reach) {
+          reach = distance;
+          best = line;
+        }
+      }
+      if (best !== null) {
+        return Math.min(frame.min + frame.span, Math.max(frame.min, best));
+      }
+    }
+    return this._snap(value, event, frame);
+  }
+
   _onPointerDown(event) {
     if (event.button !== 0 && event.button !== 1) return;
     const path = event.composedPath();
@@ -3134,7 +3350,7 @@ class SpatialHubPanel extends HTMLElement {
       : nodeElement
         ? { mode: "move", section: "nodes", key: nodeElement.getAttribute("data-node"),
             element: nodeElement }
-        : { mode: "move", section: "areas", key: areaElement.getAttribute("data-area"),
+        : { mode: "area", section: "areas", key: areaElement.getAttribute("data-area"),
             element: areaElement };
 
     event.preventDefault();
@@ -3153,6 +3369,13 @@ class SpatialHubPanel extends HTMLElement {
           ? { plot: (this._floor || {}).plot || null }
           : this._layoutOf(target.section, target.key),
       start: this._rectOf(target.section, target.key),
+      // The neighbours' walls, taken once. Recomputing them on every
+      // pointer move would let a room snap to a wall it has already
+      // pushed, which is a room that walks.
+      lines:
+        target.section === "areas" && target.mode !== "corner"
+          ? this._wallLines(target.key)
+          : null,
       box: stage.getBoundingClientRect(),
     };
 
@@ -3178,6 +3401,39 @@ class SpatialHubPanel extends HTMLElement {
           position: item.position ? { ...item.position } : null,
           size: item.size ? { ...item.size } : null,
         };
+  }
+
+  /** Break a shared wall apart, or put it back together.
+   *
+   *  Stored on the room that was clicked, and read from both sides: a
+   *  break made here must still be a break when the neighbour is the one
+   *  being edited. Storing it on one side only and reading it from one
+   *  side only would let the same wall be joined and broken at once,
+   *  depending on which room you happened to look at.
+   */
+  _toggleJoin(id, other) {
+    const area = this._area(id);
+    const neighbour = this._area(other);
+    if (!area || !neighbour) return;
+
+    const mine = Array.isArray(area.unjoined) ? area.unjoined : [];
+    const theirs = Array.isArray(neighbour.unjoined) ? neighbour.unjoined : [];
+    if (mine.includes(other) || theirs.includes(id)) {
+      // Joining again has to clear the break wherever it was written,
+      // or the wall stays apart and the + does nothing.
+      if (mine.includes(other)) {
+        this._setLayout("areas", id, {
+          unjoined: mine.filter((entry) => entry !== other),
+        });
+      }
+      if (theirs.includes(id)) {
+        this._setLayout("areas", other, {
+          unjoined: theirs.filter((entry) => entry !== id),
+        });
+      }
+      return;
+    }
+    this._setLayout("areas", id, { unjoined: [...mine, other] });
   }
 
   /** An area's walls, in floor coordinates. */
@@ -3282,17 +3538,22 @@ class SpatialHubPanel extends HTMLElement {
       // a wall does in a real plan.
       const rect = { ...drag.start };
       const minimum = 0.04;
+      const lines = drag.lines;
       if (drag.edge.includes("w")) {
-        rect.left = Math.min(this._snap(x, event, frame), rect.right - minimum);
+        rect.left = Math.min(
+          this._magnet(x, "x", event, frame, lines), rect.right - minimum);
       }
       if (drag.edge.includes("e")) {
-        rect.right = Math.max(this._snap(x, event, frame), rect.left + minimum);
+        rect.right = Math.max(
+          this._magnet(x, "x", event, frame, lines), rect.left + minimum);
       }
       if (drag.edge.includes("n")) {
-        rect.top = Math.min(this._snap(y, event, frame), rect.bottom - minimum);
+        rect.top = Math.min(
+          this._magnet(y, "y", event, frame, lines), rect.bottom - minimum);
       }
       if (drag.edge.includes("s")) {
-        rect.bottom = Math.max(this._snap(y, event, frame), rect.top + minimum);
+        rect.bottom = Math.max(
+          this._magnet(y, "y", event, frame, lines), rect.top + minimum);
       }
       drag.value = {
         position: { x: (rect.left + rect.right) / 2,
@@ -3310,8 +3571,48 @@ class SpatialHubPanel extends HTMLElement {
       x: this._snap(x, event, frame),
       y: this._snap(y, event, frame),
     };
+    // A room lands by its walls, not by its middle. Snapping the centre
+    // puts a wall wherever half the room's width happens to fall, which
+    // is never quite against the neighbour -- and "never quite" is the
+    // whole difference between two rooms and a shared wall.
+    if (drag.mode === "area" && drag.start && drag.lines) {
+      const size = {
+        width: drag.start.right - drag.start.left,
+        height: drag.start.bottom - drag.start.top,
+      };
+      drag.value.x += this._wallPull(
+        [drag.value.x - size.width / 2, drag.value.x + size.width / 2],
+        "x", event, drag.lines,
+      );
+      drag.value.y += this._wallPull(
+        [drag.value.y - size.height / 2, drag.value.y + size.height / 2],
+        "y", event, drag.lines,
+      );
+    }
     drag.element.style.left = `${inFrame(drag.value.x, frame)}%`;
     drag.element.style.top = `${inFrame(drag.value.y, frame)}%`;
+  }
+
+  /** How far to shift a room so one of its walls lands on a neighbour's.
+   *
+   *  Both walls on the axis are offered and the nearer one wins, so a
+   *  room can be pushed against the one on its left or the one on its
+   *  right without being told which.
+   */
+  _wallPull(walls, axis, event, lines) {
+    if (event.shiftKey) return 0;
+    let shift = 0;
+    let reach = SNAP_REACH;
+    for (const wall of walls) {
+      for (const line of lines[axis]) {
+        const distance = Math.abs(line - wall);
+        if (distance < reach) {
+          reach = distance;
+          shift = line - wall;
+        }
+      }
+    }
+    return shift;
   }
 
   /** Draw whatever arrived while a hand was on the plan. */
@@ -3322,6 +3623,15 @@ class SpatialHubPanel extends HTMLElement {
   _onPointerUp() {
     const drag = this._drag;
     this._drag = null;
+    // A room that was pressed and not moved was asked a question: what is
+    // this attached to. Pressing it again puts the marks away, so the
+    // same gesture is both halves of it.
+    if (drag && drag.mode === "area" && !this._dragged) {
+      this._joinArea = this._joinArea === drag.key ? null : drag.key;
+      this._storeDrag(drag);
+      this._render();
+      return;
+    }
     this._storeDrag(drag);
     this._flushRender();
   }
@@ -3923,6 +4233,15 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
+    const joinMark = hit("data-join-area");
+    if (joinMark) {
+      this._toggleJoin(
+        joinMark.getAttribute("data-join-area"),
+        joinMark.getAttribute("data-join-other"),
+      );
+      return;
+    }
+
     const hideArea = hit("data-hide-area");
     if (hideArea) {
       this._setLayout("areas", hideArea.getAttribute("data-hide-area"), {
@@ -4279,6 +4598,20 @@ main { flex:0 0 auto; min-width:0; }
             stroke-opacity:calc(.9 * var(--fp-house,1));
             stroke-linejoin:round;
             vector-effect:non-scaling-stroke; }
+/* Die Marke auf einer gemeinsamen Wand. Rotes × trennt, gruenes + fuegt
+   wieder zusammen -- ohne das + waere das Trennen eine Entscheidung, die
+   niemand zuruecknehmen kann. Sie sitzt mittig auf der Wand, die sie
+   meint, und ist so gross, dass ein Daumen sie trifft. */
+.join-mark { position:absolute; width:22px; height:22px; border-radius:50%;
+             border:none; cursor:pointer; padding:0; z-index:5;
+             font:600 15px/22px system-ui, sans-serif; color:#fff;
+             box-shadow:0 1px 3px rgba(0,0,0,.4); }
+.join-mark.on { background:var(--error-color,#db4437); }
+.join-mark.off { background:var(--success-color,#43a047); }
+.join-mark.top { left:50%; top:0; transform:translate(-50%,-50%); }
+.join-mark.bottom { left:50%; top:100%; transform:translate(-50%,-50%); }
+.join-mark.left { left:0; top:50%; transform:translate(-50%,-50%); }
+.join-mark.right { left:100%; top:50%; transform:translate(-50%,-50%); }
 /* Mauerwerk ist hier Darstellung, kein Bedienelement: ein Punkt, der
    halb unter einer Wand liegt, muss trotzdem das sein, was der Klick
    trifft. */
@@ -4633,4 +4966,4 @@ customElements.define("spatial-hub-panel", SpatialHubPanel);
 // Exported so the test suite can drive the rendering logic without a
 // browser. Home Assistant loads this file as a module and only ever uses
 // the custom element above.
-export { SpatialHubPanel, HA_COLOURS, AREA_KIND, kindOf };
+export { SpatialHubPanel, HA_COLOURS, AREA_KIND, kindOf, joinsOf, drawsTheWall };

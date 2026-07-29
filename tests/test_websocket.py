@@ -259,3 +259,17 @@ def test_the_house_may_be_measured_in_metres(hass, hub, connection):
 def test_a_house_cannot_be_zero_metres_wide():
     with pytest.raises(vol.Invalid):
         _layout_values({"metres": 0})
+
+
+def test_a_broken_wall_join_survives_the_schema():
+    """The same bug as the one that made corner editing look broken: the
+    panel writes a key, the command schema drops it, and the hub answers
+    with the wall still joined."""
+    kept = _layout_values({"unjoined": ["bad", "flur"]})["values"]
+    assert kept["unjoined"] == ["bad", "flur"]
+
+    assert _layout_values({"unjoined": []})["values"]["unjoined"] == []
+    assert _layout_values({"unjoined": None})["values"]["unjoined"] is None
+
+    with pytest.raises(vol.Invalid):
+        _layout_values({"unjoined": ["x"] * 65})

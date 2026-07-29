@@ -103,6 +103,10 @@ _PLOT_POINT = {
 _SHAPE_SCHEMA = vol.All([_SHAPE_POINT], vol.Length(min=3, max=64))
 _PLOT_SCHEMA = vol.All([_PLOT_POINT], vol.Length(min=3, max=64))
 
+# Area ids, so the list stays a list of neighbours rather than a place to
+# park arbitrary data. Bounded: a room has walls, not a hundred of them.
+_UNJOINED_SCHEMA = vol.All([str], vol.Length(max=64))
+
 _POSITION_SCHEMA = {
     vol.Required("x"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=2)),
     vol.Required("y"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=2)),
@@ -193,6 +197,10 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
             vol.Optional("order"): vol.Any(None, vol.Coerce(int)),
             vol.Optional("outline"): vol.Any(None, _OUTLINE_SCHEMA),
             vol.Optional("shape"): vol.Any(None, _SHAPE_SCHEMA),
+            # Rooms this one is *not* sharing a wall with, however much
+            # the geometry says otherwise. A party wall between two flats
+            # really is two walls.
+            vol.Optional("unjoined"): vol.Any(None, _UNJOINED_SCHEMA),
             vol.Optional("plot"): vol.Any(None, _PLOT_SCHEMA),
             # How wide the house is in metres -- the expert's one number.
             vol.Optional("metres"): vol.Any(

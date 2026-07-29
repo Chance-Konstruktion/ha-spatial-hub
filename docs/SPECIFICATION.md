@@ -454,6 +454,25 @@ Linie eine Wand ist und welche eine Bodenkante.
 - Drei Gewichte, nicht eines: Außenwand am stärksten, Innenwände leiser,
   Garten nur gestrichelt.
 
+### Gemeinsame Wände
+
+Zwei Räume, deren Wände aufeinander liegen, haben **eine** Wand.
+
+- Verbunden wird **automatisch**, sobald zwei Wände aufeinander liegen und
+  tatsächlich nebeneinander herlaufen. Eine Ecke ist keine gemeinsame Wand.
+- Gezeichnet wird die Wand vom Raum **davor**. Rechts der Raum dahinter, und
+  der vordere malt seinen Boden über den Wandfuß.
+- Beim Ziehen **rastet** eine Wand auf die des Nachbarn ein. Ohne das landet
+  eine Wand dort, wo die halbe Raumbreite gerade hinfällt — und „fast" ist der
+  ganze Unterschied zwischen zwei Räumen und einer gemeinsamen Wand. `Shift`
+  schaltet es ab, wie beim Raster.
+- `unjoined` auf einem Bereich listet die Nachbarn, mit denen er **keine**
+  Wand teilt. Von **beiden Seiten** gelesen: eine Trennung darf nicht
+  zurückkommen, sobald der Nachbar bearbeitet wird.
+- Nur rechteckige Innenräume. Ein Garten hat keine Wand, eine Wolke erst
+  recht nicht, und ein Raum mit eigenem Umriss hat keine Seite namens
+  „rechts".
+
 ### Draußen gehört zu einer Etage, nicht zum Erdgeschoss
 
 Ein Außenbereich wird in den Ring **um sein Geschoss** gelegt, nicht um das

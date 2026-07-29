@@ -54,7 +54,7 @@ _FLOOR_KEYS = {"background", "aspect", "name", "order", "in_sandwich",
 # `shape` is the room's own outline inside its box, in box-local
 # coordinates, so a niche or a wall offset survives moving and resizing.
 _AREA_KEYS = {"position", "size", "color", "hidden", "kind", "in_sandwich",
-              "single_only", "shape"}
+              "single_only", "shape", "unjoined"}
 # View-wide settings rather than one item's arrangement. One key, "view".
 _SETTINGS_KEYS = {"theme", "custom_layers"}
 
