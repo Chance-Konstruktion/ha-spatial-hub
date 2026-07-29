@@ -169,7 +169,7 @@ const houseWeight = (theme) => {
   return Math.min(1.6, Math.max(0.2, value));
 };
 
-const frameOf = (floor) => {
+const frameOf = (floor, areas) => {
   // Sky gets the same room as garden. A cloud belongs *around* the house,
   // not squeezed into its footprint -- the internet is not a room on the
   // second floor, and a plane exactly as wide as the walls says it is.
@@ -193,6 +193,32 @@ const frameOf = (floor) => {
       );
     }
     margin = Math.min(margin + 0.04, 4);
+  }
+  // Same idea without a drawn plot: a garden dragged bigger than the
+  // default apron is still something somebody drew on purpose, not an
+  // overflow to clip away. Without this the fixed 0.28 apron is a wall
+  // nobody can see, and growing a garden past it takes a dozen trips
+  // through "drag to the edge, let go, drag again" before it is even
+  // visible.
+  if (wide && floor && Array.isArray(areas)) {
+    let needed = 0;
+    for (const area of areas) {
+      if (kindOf(area) !== AREA_KIND.OUTDOOR) continue;
+      if (area.floor_id !== floor.id || !area.position) continue;
+      const box = boxOf(area);
+      needed = Math.max(
+        needed,
+        -box.left, box.right - 1,
+        -box.top, box.bottom - 1,
+      );
+    }
+    // Only kicks in once something outdoor actually needs more room than
+    // the default apron -- a small garden that fits inside it must not
+    // grow the window anyway. And then a generous buffer, not a tight
+    // one: the point is that dragging a garden's edge out once gives room
+    // to drag it further next time, instead of hugging the last position
+    // and asking for another twenty small steps to get anywhere.
+    if (needed > margin) margin = Math.min(needed + 0.5, 4);
   }
   return { min: margin ? -margin : 0, span: 1 + 2 * margin };
 };
@@ -672,7 +698,10 @@ class SpatialHubPanel extends HTMLElement {
    *  nodes and the pointer arithmetic that drags them.
    */
   get _frame() {
-    return frameOf(this._stacked ? this._widestFloor : this._floor);
+    return frameOf(
+      this._stacked ? this._widestFloor : this._floor,
+      this._model.areas,
+    );
   }
 
   /** In the stack every storey shares one window, or they would not line
@@ -688,7 +717,7 @@ class SpatialHubPanel extends HTMLElement {
     let widest = null;
     let span = 0;
     for (const floor of this._floors) {
-      const frame = frameOf(floor);
+      const frame = frameOf(floor, this._model.areas);
       if (frame.span > span) {
         span = frame.span;
         widest = floor;
@@ -1518,7 +1547,12 @@ class SpatialHubPanel extends HTMLElement {
       // The garden is drawn as what it is: the ground floor's apron, one
       // ring around the house, on the same plane. No extra storey, and
       // Vorgarten, Terrasse and Einfahrt all fit on it at once.
-      const apron = floor.has_outdoor
+      //
+      // Only the real ground floor gets this field, even though other
+      // storeys may carry outdoor areas of their own -- a balcony upstairs
+      // is still edited and drawn as a room (see `rooms` below), it just
+      // does not turn its whole storey into a lawn.
+      const apron = floor.has_outdoor && floor.ground
         ? `<polygon class="apron" points="${outline(
             at, frame.min, frame.min + frame.span,
           )}"/>`
@@ -4616,6 +4650,13 @@ main { flex:0 0 auto; min-width:0; }
                  background:transparent; color:var(--secondary-text-color,#727272);
                  font:inherit; cursor:pointer; padding:4px 0; border-radius:8px; }
 .legend-toggle:hover { color:var(--primary-text-color,#212121); }
+/* Im Hochformat ist die Höhe knapp und der Plan ist das, wofür man
+   gekommen ist. Eine Legende, die unbegrenzt mitwächst, schiebt ihn aus
+   dem sichtbaren Bereich -- also bekommt sie hier ein Dach und rollt
+   selbst, statt die ganze Seite zu rollen. */
+@media (orientation: portrait) {
+  .legend.open { max-height:38vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+}
 .dock { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start;
         background:var(--card-background-color,#fff); border-radius:12px;
         padding:4px 16px 14px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }

@@ -405,6 +405,13 @@ class SpatialHub:
         if ground is not None:
             for area in homeless:
                 area["floor_id"] = ground["id"]
+            # The ground itself, not "whichever storey has something
+            # outdoors" -- a balcony upstairs is still allowed to be drawn
+            # as outdoor space, but only the real ground floor is the
+            # ground in the stacked house view. Without this flag the
+            # sandwich painted the same grass-green field under a balcony
+            # as under the actual garden.
+            ground["ground"] = True
         for area in outdoor:
             area["outdoor"] = True
             floor = storeys.get(area.get("floor_id"))
