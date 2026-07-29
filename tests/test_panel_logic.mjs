@@ -29,7 +29,7 @@ globalThis.window = { addEventListener() {}, removeEventListener() {},
                       confirm: () => true };
 
 const here = dirname(fileURLToPath(import.meta.url));
-const { SpatialHubPanel, HA_COLOURS } = await import(
+const { SpatialHubPanel, HA_COLOURS, joinsOf, drawsTheWall } = await import(
   pathToFileURL(
     join(here, "..", "custom_components", "spatial_hub", "www",
          "spatial-hub-panel.js"),
@@ -944,13 +944,17 @@ test("storeys are drawn top down, the way a section is read", () => {
   assert.deepEqual(view._stackFloors.map((f) => f.id), ["og", "eg"]);
 });
 
-test("the same point on a higher storey is drawn higher up", () => {
+test("the same point on a higher storey is drawn higher up, and a step over", () => {
   const view = panel(model(), { floor: null });
   const upper = view._project(0, 0.5, 0.5);
   const lower = view._project(1, 0.5, 0.5);
 
-  assert.equal(upper.x, lower.x);
   assert.ok(upper.y < lower.y, "the storeys would sit on top of each other");
+  // Not the same x. Dead-aligned, the upper outline lands exactly on the
+  // lower one and only the gap tells them apart; offset, every storey
+  // shows a corner of its own and the stack reads as one building taken
+  // apart rather than four drawings in a pile.
+  assert.ok(lower.x > upper.x, "the storeys stand exactly above each other");
 });
 
 test("the back of a storey is sheared right, which is what makes it a solid", () => {
@@ -958,14 +962,24 @@ test("the back of a storey is sheared right, which is what makes it a solid", ()
   assert.ok(view._project(0, 0, 0).x > view._project(0, 0, 1).x);
 });
 
-test("many storeys are squeezed instead of running off the bottom", () => {
+test("many storeys get more drawing, not less air between them", () => {
+  // They used to be squeezed into a fixed 1000-unit box: six floors and
+  // the spacing collapsed below a storey's own depth, so every floor was
+  // drawn through the one under it. That was the porridge.
   const data = model();
   data.floors = ["a", "b", "c", "d", "e", "f"].map((id, level) => ({
     id, name: id.toUpperCase(), level, icon: "",
   }));
   const view = panel(data, { floor: null });
 
-  assert.ok(view._project(5, 1, 1).y <= 1000, "the bottom storey is off-canvas");
+  const height = view._stackHeight;
+  assert.ok(view._project(5, 1, 1).y <= height, "the bottom storey is off-canvas");
+  assert.match(view._stackHtml(), new RegExp(
+    `viewBox="0 0 ${Math.round(view._stackWidth)} ${Math.round(height)}"`));
+
+  // A storey is 300 units deep. Two neighbours must not interleave.
+  const step = view._project(1, 0, 0).y - view._project(0, 0, 0).y;
+  assert.ok(step > 300, `storeys ${step} apart is less than one storey deep`);
 });
 
 test("a node on no storey at all lands in the tray, not silently missing", () => {
@@ -1640,31 +1654,96 @@ test("a ghost is placed through the same window as the rooms", () => {
 
 // ── The building around the storeys ────────────────────────
 
-test("the stack gets a body so it reads as one house", () => {
-  const data = model();
-  const view = panel(data, { floor: null });
-  const html = view._stackHtml();
+test("nothing is drawn across the storeys any more", () => {
+  // Translucent walls, a roof, corner posts: each of them spanned the
+  // whole picture and lay over the plan. What holds the house together
+  // now is the walls of the storeys themselves.
+  const html = panel(model(), { floor: null })._stackHtml();
 
-  assert.match(html, /shell-wall/, "see-through walls between the storeys");
-  assert.match(html, /shell-roof/, "and something on top of them");
-  assert.match(html, /shell-post/);
+  assert.doesNotMatch(html, /shell-wall|shell-post|shell-roof/);
+  assert.match(html, /shell-face/, "but every storey has its own outer wall");
+  assert.match(html, /shell-cap/, "and that wall has two sides");
 });
 
-test("one storey gets no body", () => {
-  // A shell around a single sheet says nothing that the sheet did not.
+test("the outer wall is split around the rooms", () => {
+  // All four faces in front and the back wall paints over the plan; all
+  // four behind and the rooms sit on a slab shaped like a house instead
+  // of standing inside one.
+  const html = panel(model(), { floor: null })._stackHtml();
+  const plane = html.slice(html.indexOf('<g class="plane">'));
+
+  assert.ok(plane.indexOf("shell-face") < plane.indexOf("room-wall"),
+            "the back wall is behind the rooms");
+  assert.ok(plane.lastIndexOf("shell-face") > plane.indexOf("room-wall"),
+            "the front wall is in front of them");
+});
+
+test("a storey stands on a slab instead of being a sheet of paper", () => {
+  const view = panel(model(), { floor: null });
+  const html = view._stackHtml();
+
+  // One band per edge of the outline, and it hangs *below* the storey.
+  const sides = [...html.matchAll(/class="storey-side" points="([^"]+)"/g)];
+  assert.equal(sides.length, 8, "four edges on each of the two storeys");
+  const [x0, y0, , , , y2] = sides[0][1]
+    .split(/[ ,]/)
+    .map(Number);
+  assert.ok(y2 > y0, "the slab hangs down, it does not float up");
+  assert.equal(typeof x0, "number");
+});
+
+test("a room has standing walls, a garden does not", () => {
   const data = model({
-    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+    areas: [
+      { id: "wohnen", name: "Wohnen", floor_id: "eg", kind: "indoor",
+        position: { x: 0.3, y: 0.4 }, size: { width: 0.3, height: 0.3 } },
+      { id: "terrasse", name: "Terrasse", floor_id: "eg", kind: "outdoor",
+        position: { x: 0.8, y: 0.4 }, size: { width: 0.2, height: 0.2 } },
+    ],
   });
   const view = panel(data, { floor: null });
 
-  assert.deepEqual(view._shellHtml(view._stackFloors), { behind: "", front: "" });
+  const room = view._roomPolygon(0, data.areas[0]);
+  const terrace = view._roomPolygon(0, data.areas[1]);
+
+  assert.equal((room.match(/room-wall/g) || []).length, 4);
+  assert.doesNotMatch(terrace, /room-wall/, "a terrace is not a room with a roof off");
 });
 
-test("the body is hung off the house, never off the garden", () => {
-  // The apron reaches outside 0..1. A shell that followed it would put
-  // the front wall somewhere in the lawn.
-  const plain = panel(model(), { floor: null });
-  const withGarden = panel(
+test("rooms are drawn back to front, or the storey turns inside out", () => {
+  // With height, whoever is drawn last is in front. Storage order is not
+  // depth order, so the sandwich has to sort.
+  const data = model({
+    areas: [
+      { id: "vorne", name: "Vorne", floor_id: "eg", kind: "indoor",
+        position: { x: 0.5, y: 0.8 }, size: { width: 0.3, height: 0.2 } },
+      { id: "hinten", name: "Hinten", floor_id: "eg", kind: "indoor",
+        position: { x: 0.5, y: 0.2 }, size: { width: 0.3, height: 0.2 } },
+    ],
+  });
+  const html = panel(data, { floor: null })._stackHtml();
+
+  assert.ok(
+    html.indexOf("Hinten") < html.indexOf("Vorne"),
+    "the room at the back is painted first",
+  );
+});
+
+test("a single storey is a house too", () => {
+  // It used to get no body at all, because a shell around one sheet said
+  // nothing that the sheet did not. Walls are not a shell -- a bungalow
+  // has them.
+  const data = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+  });
+
+  assert.match(panel(data, { floor: null })._stackHtml(), /shell-face/);
+});
+
+test("the wall is hung off the house, never off the garden", () => {
+  // The apron reaches outside 0..1. A wall that followed it would put the
+  // front door somewhere in the lawn.
+  const view = panel(
     model({
       floors: [
         { id: "eg", name: "Erdgeschoss", level: 0, icon: "", has_outdoor: true },
@@ -1673,57 +1752,56 @@ test("the body is hung off the house, never off the garden", () => {
     }),
     { floor: null },
   );
+  const html = view._stackHtml();
 
-  const corners = (html) =>
-    (html.match(/class="shell-post"[^/]*/g) || []).length;
-  assert.equal(corners(plain._stackHtml()), 4);
-  assert.equal(corners(withGarden._stackHtml()), 4, "still four walls");
+  assert.equal((html.match(/class="shell-face"/g) || []).length, 8,
+               "four faces on each of the two storeys");
+  const house = view._project(0, 0, 0);
+  assert.ok(html.includes(`points="${house.x},${house.y} `),
+            "a face starts on the building line, not on the lawn");
 });
 
-test("the cloud and the homeless storey are not part of the building", () => {
+test("the cloud gets no walls", () => {
+  // The internet has no masonry, and a homeless storey is not a storey.
   const data = model({
     floors: [
       { id: "eg", name: "Erdgeschoss", level: 0, icon: "" },
       { id: "_virtual", name: "Virtuell", level: 900, virtual: true },
     ],
   });
-  const view = panel(data, { floor: null });
+  const html = panel(data, { floor: null })._stackHtml();
 
-  assert.deepEqual(
-    view._shellHtml(view._stackFloors),
-    { behind: "", front: "" },
-    "one real storey plus a cloud is still one storey",
-  );
+  assert.equal((html.match(/class="shell-face"/g) || []).length, 4,
+               "one real storey, one set of walls");
 });
 
-test("the body never swallows a click meant for a device", () => {
+test("the walls never swallow a click meant for a device", () => {
+  // Masonry is decoration here. A node under a wall must still be the
+  // thing the click lands on.
   const source = readFileSync(
     join(here, "..", "custom_components", "spatial_hub", "www",
          "spatial-hub-panel.js"),
     "utf8",
   );
-  assert.match(source, /\.shell \{ pointer-events:none/);
+  assert.match(source,
+    /\.room-wall, \.room-cap, \.shell-face, \.shell-cap, \.storey-side \{[\s]*pointer-events:none/);
 });
 
-test("the roof can be switched off", () => {
-  // Decoration, and decoration the user did not ask for is decoration
-  // they get to remove.
+test("there is no roof, in the markup or in the stylesheet", () => {
+  // "lass das dach weg! das sieht schrecklich aus!" -- and it was: four
+  // long lines across the top storey, the one floor people look at most.
   const view = panel(model(), { floor: null });
-  assert.match(view._shellHtml(view._stackFloors).front, /shell-roof/);
+  assert.doesNotMatch(view._stackHtml(), /roof/i);
+  assert.doesNotMatch(view._headerHtml(), /roof/i);
 
-  view._roof = false;
-  assert.equal(view._shellHtml(view._stackFloors).front.includes("shell-roof"),
-               false);
-});
-
-test("the roof is an outline, not a lid over the top storey", () => {
   const source = readFileSync(
     join(here, "..", "custom_components", "spatial_hub", "www",
          "spatial-hub-panel.js"),
     "utf8",
   );
-  assert.match(source, /\.shell-roof \{ fill:none;/);
+  assert.doesNotMatch(source, /shell-roof|data-toggle-roof/);
 });
+
 
 test("a cloud never swallows the grip that resizes it", () => {
   const source = readFileSync(
@@ -2250,4 +2328,272 @@ test("a tall screen opens the legend rather than leaving half of it empty", () =
   } finally {
     globalThis.window = previous;
   }
+});
+
+test("the widest storey sets the window, not the first one with a garden", () => {
+  // A balcony upstairs and a drawn plot downstairs: taking the first
+  // storey that has anything outdoors crops the garden out of its own
+  // picture, because a balcony's apron is narrow and a plot is not.
+  const data = model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "", has_outdoor: true,
+        plot: [{ x: -2, y: -2 }, { x: 3, y: -2 }, { x: 3, y: 3 }, { x: -2, y: 3 }] },
+      { id: "og", name: "Obergeschoss", level: 1, icon: "", has_outdoor: true },
+    ],
+  });
+  const view = panel(data, { floor: null });
+
+  assert.equal(view._widestFloor.id, "eg");
+  assert.ok(view._frame.span > 4, "the plot is drawn outside the window");
+});
+
+// ── Shared walls ──────────────────────────────────────────────────────
+
+const twoRooms = (extra = {}) =>
+  model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+    areas: [
+      { id: "kueche", name: "Küche", floor_id: "eg", kind: "indoor",
+        position: { x: 0.3, y: 0.5 }, size: { width: 0.2, height: 0.4 } },
+      { id: "bad", name: "Bad", floor_id: "eg", kind: "indoor",
+        position: { x: 0.5, y: 0.5 }, size: { width: 0.2, height: 0.4 },
+        ...extra },
+    ],
+  });
+
+test("two rooms that touch share the wall between them", () => {
+  const data = twoRooms();
+  const html = panel(data, { floor: null })._stackHtml();
+
+  // Four walls each would be eight. One of them is shared, so seven --
+  // otherwise two walls are drawn in the same place and the partition
+  // comes out twice as thick as every other one.
+  assert.equal((html.match(/class="room-wall"/g) || []).length, 7);
+  assert.equal((html.match(/class="room-cap"/g) || []).length, 7);
+});
+
+test("rooms that only meet at a corner do not share anything", () => {
+  const data = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+    areas: [
+      { id: "a", name: "A", floor_id: "eg", kind: "indoor",
+        position: { x: 0.3, y: 0.3 }, size: { width: 0.2, height: 0.2 } },
+      { id: "b", name: "B", floor_id: "eg", kind: "indoor",
+        position: { x: 0.5, y: 0.5 }, size: { width: 0.2, height: 0.2 } },
+    ],
+  });
+
+  assert.equal(joinsOf(data.areas).size, 0, "a point is not a wall");
+});
+
+test("a wall can be broken apart, and the break holds from both sides", () => {
+  const fromMine = twoRooms();
+  fromMine.areas[0].unjoined = ["bad"];
+  const fromTheirs = twoRooms({ unjoined: ["kueche"] });
+
+  for (const data of [fromMine, fromTheirs]) {
+    assert.equal(joinsOf(data.areas).size, 0);
+    const html = panel(data, { floor: null })._stackHtml();
+    assert.equal((html.match(/class="room-wall"/g) || []).length, 8,
+                 "a party wall between two flats really is two walls");
+  }
+});
+
+test("the room in front draws the shared wall, not the one behind", () => {
+  // Rooms are painted back to front. A wall drawn with the room behind
+  // has the front room's floor painted over its foot.
+  const back = { id: "b", position: { y: 0.2 } };
+  const front = { id: "a", position: { y: 0.8 } };
+  assert.equal(drawsTheWall(front, back), true);
+  assert.equal(drawsTheWall(back, front), false);
+});
+
+test("a garden, a cloud and a niche have no wall to share", () => {
+  for (const kind of ["outdoor", "virtual"]) {
+    const data = twoRooms();
+    data.areas[1].kind = kind;
+    assert.equal(joinsOf(data.areas).size, 0, kind);
+  }
+  const shaped = twoRooms({
+    shape: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0.5 }, { x: 0, y: 1 }],
+  });
+  assert.equal(joinsOf(shaped.areas).size, 0, "a niche has no side called right");
+});
+
+test("dragging a room pulls its wall onto the neighbour's", () => {
+  const view = panel(twoRooms(), { edit: true, floor: "eg" });
+  const lines = view._wallLines("bad");
+  const event = { shiftKey: false };
+
+  // Küche runs 0.2 … 0.4. A room whose left wall lands at 0.41 is nearly
+  // against it -- "nearly" is the difference between two rooms and one
+  // shared wall, so it lands exactly.
+  assert.equal(view._wallPull([0.41, 0.61], "x", event, lines), 0.4 - 0.41);
+  // Shift is the escape hatch, here as everywhere else.
+  assert.equal(view._wallPull([0.41, 0.61], "x", { shiftKey: true }, lines), 0);
+  // Out of reach, nothing happens.
+  assert.equal(view._wallPull([0.8, 1], "x", event, lines), 0);
+});
+
+test("a room never snaps to its own walls", () => {
+  const view = panel(twoRooms(), { edit: true, floor: "eg" });
+  assert.ok(!view._wallLines("bad").x.includes(0.6), "0.6 is Bad's own wall");
+  assert.ok(view._wallLines("bad").x.includes(0.4), "0.4 is the Küche's");
+});
+
+test("clicking a room shows the marks on its shared walls", () => {
+  const view = panel(twoRooms(), { edit: true, floor: "eg" });
+  assert.equal(view._joinMarksHtml(view._model.areas[1]), "", "not until asked");
+
+  view._joinArea = "bad";
+  const marks = view._joinMarksHtml(view._model.areas[1]);
+  assert.match(marks, /data-join-area="bad"/);
+  assert.match(marks, /data-join-other="kueche"/);
+  assert.match(marks, /join-mark left on/, "a red × on the wall it shares");
+  assert.doesNotMatch(marks, /join-mark right/, "and nothing on the free walls");
+});
+
+test("a broken wall offers to be joined again", () => {
+  // Without the +, breaking a join once is a decision nobody can undo.
+  const view = panel(twoRooms({ unjoined: ["kueche"] }), { edit: true, floor: "eg" });
+  view._joinArea = "bad";
+  const marks = view._joinMarksHtml(view._model.areas[1]);
+
+  assert.match(marks, /join-mark left off/);
+  assert.match(marks, /\+<\/button>/);
+});
+
+// ── Dragging a device into another room ───────────────────────────────
+
+const twoRoomHouse = (nodeExtra = {}) =>
+  model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+    areas: [
+      { id: "kueche", name: "Küche", floor_id: "eg", kind: "indoor",
+        position: { x: 0.3, y: 0.5 }, size: { width: 0.2, height: 0.4 } },
+      { id: "bad", name: "Bad", floor_id: "eg", kind: "indoor",
+        position: { x: 0.7, y: 0.5 }, size: { width: 0.2, height: 0.4 } },
+    ],
+    nodes: [
+      node("esp:board", {
+        area_id: "kueche", position: at(0.3, 0.5),
+        entity_id: "sensor.temperatur", ...nodeExtra,
+      }),
+    ],
+  });
+
+/** The panel under test, wired to a fake Home Assistant.
+ *
+ *  `_render` is stubbed: these tests are about which command goes over
+ *  the wire, and the test harness has no shadow root to draw into.
+ */
+const movingPanel = (data, answer) => {
+  const view = panel(data, { edit: true, floor: "eg" });
+  view._render = () => {};
+  view._hass = spyHass(answer);
+  return view;
+};
+
+const spyHass = (answer = {}) => {
+  const calls = [];
+  return {
+    calls,
+    user: { is_admin: true },
+    callWS: async (message) => {
+      calls.push(message);
+      return { scope: "device", target: "board", before: "kueche",
+               after: message.area_id, ...answer };
+    },
+    connection: { subscribeMessage: async () => () => {} },
+  };
+};
+
+test("a dot dropped in another room says which room that is", () => {
+  const view = panel(twoRoomHouse(), { edit: true, floor: "eg" });
+
+  assert.equal(view._areaAt(0.7, 0.5, "eg").id, "bad");
+  assert.equal(view._areaAt(0.3, 0.5, "eg").id, "kueche");
+  assert.equal(view._areaAt(0.95, 0.95, "eg"), null, "between rooms is no room");
+});
+
+test("overlapping rooms: the smaller one wins", () => {
+  // A hallway drawn under a stairwell. The smaller room is always the
+  // more specific answer.
+  const data = twoRoomHouse();
+  data.areas.push({
+    id: "flur", name: "Flur", floor_id: "eg", kind: "indoor",
+    position: { x: 0.5, y: 0.5 }, size: { width: 1, height: 1 },
+  });
+  const view = panel(data, { edit: true, floor: "eg" });
+
+  assert.equal(view._areaAt(0.3, 0.5, "eg").id, "kueche");
+  assert.equal(view._areaAt(0.05, 0.05, "eg").id, "flur");
+});
+
+test("dragging a device across a wall moves it in Home Assistant", async () => {
+  const view = movingPanel(twoRoomHouse());
+
+  await view._moveIntoArea(view._model.nodes[0], 0.7, 0.5);
+
+  assert.deepEqual(view._hass.calls, [{
+    type: "spatial_hub/area/assign",
+    entity_id: "sensor.temperatur",
+    area_id: "bad",
+  }]);
+  assert.equal(view._moved.room, "Bad");
+});
+
+test("dropping a device back in its own room changes nothing", async () => {
+  // Every nudge inside a room would otherwise be a write to the registry.
+  const view = movingPanel(twoRoomHouse());
+
+  await view._moveIntoArea(view._model.nodes[0], 0.32, 0.52);
+
+  assert.deepEqual(view._hass.calls, []);
+  assert.equal(view._moved, null);
+});
+
+test("a node with no entity cannot be moved anywhere", async () => {
+  // Nothing to write to: the provider gave a dot and no way back to
+  // Home Assistant. Better to leave the plan alone than to guess.
+  const view = movingPanel(twoRoomHouse({ entity_id: null }));
+
+  await view._moveIntoArea(view._model.nodes[0], 0.7, 0.5);
+  assert.deepEqual(view._hass.calls, []);
+});
+
+test("a guest cannot rearrange the house", async () => {
+  const view = movingPanel(twoRoomHouse());
+  view._hass.user.is_admin = false;
+
+  await view._moveIntoArea(view._model.nodes[0], 0.7, 0.5);
+  assert.deepEqual(view._hass.calls, []);
+});
+
+test("the move is announced, and the way back is in the announcement", async () => {
+  const view = movingPanel(twoRoomHouse());
+  await view._moveIntoArea(view._model.nodes[0], 0.7, 0.5);
+
+  const html = view._stageHtml();
+  assert.match(html, /banner moved/);
+  assert.match(html, /mit allen Entitäten des Geräts/);
+  assert.match(html, /data-undo-move/);
+
+  view._hass.calls.length = 0;
+  await view._undoMove();
+  assert.deepEqual(view._hass.calls, [{
+    type: "spatial_hub/area/assign",
+    entity_id: "sensor.temperatur",
+    area_id: "kueche",
+    scope: "device",
+  }]);
+  assert.equal(view._moved, null);
+});
+
+test("an entity pulled out of its device is announced as just itself", async () => {
+  const view = movingPanel(twoRoomHouse(),
+                           { scope: "entity", target: "sensor.temperatur" });
+  await view._moveIntoArea(view._model.nodes[0], 0.7, 0.5);
+
+  assert.match(view._stageHtml(), /nur diese Entität/);
 });

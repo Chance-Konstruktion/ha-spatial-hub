@@ -288,6 +288,7 @@ zurück.
 | `spatial_hub/action` | Provider-Action ausführen (Admin) |
 | `spatial_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
 | `spatial_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
+| `spatial_hub/area/assign` | ein Gerät oder eine Entität in einen anderen Bereich legen — **schreibt in Home Assistant**, nur Admin |
 
 Eigene Ebenen können zusätzlich `topology: true` setzen. Dann zeichnet der
 Hub die `via_device`-Beziehungen aus der Device-Registry als Kanten — die

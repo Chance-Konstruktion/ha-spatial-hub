@@ -36,7 +36,105 @@ const ALL_FLOORS = "__all__";
 // The shear that turns a flat plan into a storey seen from the side. Not
 // a true isometric projection: rooms stay rectangles-in-parallel, which
 // keeps them recognisable as the same rooms from the detail view.
-const STACK = { pad: 40, width: 620, depth: 300, skew: 260, top: 50, gap: 230 };
+const STACK = {
+  pad: 40, width: 620, depth: 300, skew: 260, top: 50, gap: 340,
+  // Rooms have standing walls and a storey has thickness. Flat outlines
+  // drawn on top of each other are what turned this view into porridge:
+  // four sheets of the same weight, and nothing in the picture saying
+  // which line is a wall, which is a floor edge and which is a garden.
+  // Height is what separates them, so height is what the drawing gets.
+  rise: 26, slab: 15,
+  // How thick a wall is drawn. The outer wall of the building carries the
+  // house and is drawn heavier than the partitions inside it -- the same
+  // thing a paper floor plan does, and the reason one can be read from
+  // across a room.
+  wall: 8, outerWall: 13,
+  // Storeys sit slightly behind each other instead of exactly above.
+  // Dead-aligned, the upper floor's outline lands on the lower one's and
+  // the eye has nothing to separate them by except the gap; offset, each
+  // storey shows its own corner and the stack reads as an exploded view
+  // of one building.
+  stagger: 34,
+};
+
+/** The middle of a projected outline. Where a room's name belongs: at the
+ *  corner it collided with the neighbour's name two rooms in a row. */
+const centreOf = (corners) => ({
+  x: corners.reduce((sum, point) => sum + point.x, 0) / corners.length,
+  y: corners.reduce((sum, point) => sum + point.y, 0) / corners.length,
+});
+
+/** The same outline, `amount` further in.
+ *
+ *  A wall is not a line, it is a thing with two sides -- that is what a
+ *  floor plan draws and what makes one readable at a glance. So a room
+ *  gets an outer edge and an inner one, and the band between them is the
+ *  masonry.
+ *
+ *  Each corner steps straight towards the middle rather than the outline
+ *  being scaled: scaling makes the wall of a long corridor thick at the
+ *  ends and thin along the sides, which is not a wall, that is a funnel.
+ *  A tiny room never turns inside out -- the step stops at not-quite-half
+ *  the way to the middle.
+ */
+const insetOf = (corners, amount) => {
+  const middle = centreOf(corners);
+  return corners.map((corner) => {
+    const dx = middle.x - corner.x;
+    const dy = middle.y - corner.y;
+    const reach = Math.hypot(dx, dy) || 1;
+    const step = Math.min(amount, reach * 0.42);
+    return { x: corner.x + (dx / reach) * step, y: corner.y + (dy / reach) * step };
+  });
+};
+
+/** The top of a wall: the band between an outline and its inset.
+ *
+ *  One quad per wall rather than one ring with a hole in it. The ring was
+ *  shorter, but a ring cannot leave a wall out -- and leaving a wall out
+ *  is the whole of sharing one with the room next door.
+ */
+const capsOf = (corners, thickness, className, keep = () => true) => {
+  const inner = insetOf(corners, thickness);
+  return corners
+    .map((corner, index) => {
+      if (!keep(index)) return "";
+      const next = (index + 1) % corners.length;
+      return `<polygon class="${className}" points="${corner.x},${corner.y} ` +
+        `${corners[next].x},${corners[next].y} ` +
+        `${inner[next].x},${inner[next].y} ${inner[index].x},${inner[index].y}"/>`;
+    })
+    .join("");
+};
+
+/** Standing walls along a projected outline.
+ *
+ *  `rise` upwards for a room's walls, negative for the slab a storey
+ *  stands on. One quad per edge, in the outline's own order -- the
+ *  projection shears x and y together, so a wall is a parallelogram and
+ *  needs no trigonometry beyond "the same points, higher up".
+ */
+const wallsOf = (corners, rise, className, keep = () => true) =>
+  corners
+    .map((corner, index) => {
+      if (!keep(index)) return "";
+      const next = corners[(index + 1) % corners.length];
+      return `<polygon class="${className}" points="${corner.x},${corner.y} ` +
+        `${next.x},${next.y} ${next.x},${next.y - rise} ` +
+        `${corner.x},${corner.y - rise}"/>`;
+    })
+    .join("");
+
+/** Which of the four outer walls stand between the viewer and the rooms.
+ *
+ *  The house outline runs (0,0) (1,0) (1,1) (0,1), so edges 1 and 2 face
+ *  the viewer and edges 0 and 3 are behind the storey. They have to be
+ *  drawn on opposite sides of the rooms: all four in front and the back
+ *  wall paints over the plan; all four behind and the front wall stops
+ *  being a wall the rooms stand inside.
+ */
+const FRONT_WALL = (index) => index === 1 || index === 2;
+const BACK_WALL = (index) => !FRONT_WALL(index);
 
 // How far the camera may be pushed in either direction. Beyond this a plan
 // is either a single icon or a smear, and the way back is not obvious.
@@ -151,6 +249,109 @@ const CLOUD_PATH = "M26 52 C12 52 5 44 5 35 C5 26 12 19 21 19 " +
 const CLOUD_SVG = `<svg class="cloud" viewBox="0 0 100 60"
   preserveAspectRatio="none" aria-hidden="true"><path d="${CLOUD_PATH}"/></svg>`;
 
+/** A room's four walls in floor coordinates. */
+const boxOf = (area) => {
+  const size = (area && area.size) || { width: 0.3, height: 0.3 };
+  return {
+    left: area.position.x - size.width / 2,
+    right: area.position.x + size.width / 2,
+    top: area.position.y - size.height / 2,
+    bottom: area.position.y + size.height / 2,
+  };
+};
+
+/** The walls of a room's box, in the order its outline runs. */
+const SIDE = Object.freeze({ TOP: 0, RIGHT: 1, BOTTOM: 2, LEFT: 3 });
+const SIDE_NAME = Object.freeze(["top", "right", "bottom", "left"]);
+
+// How close two walls must be to be one wall, and how far a dragged wall
+// reaches for a neighbour to snap onto. The reach is the larger of the
+// two on purpose: you aim roughly, it lands exactly, and after that the
+// join is a fact rather than a guess about what you meant.
+const JOIN_GAP = 0.006;
+const SNAP_REACH = 0.03;
+
+/** Rooms that can share a wall.
+ *
+ *  A rectangle with walls: not a garden, not a cloud, and not a room with
+ *  an outline of its own -- a niche has no side called "right", so there
+ *  is nothing to join and nothing honest to draw.
+ */
+const joinable = (area) =>
+  Boolean(area) && Boolean(area.position) &&
+  kindOf(area) === AREA_KIND.INDOOR && !hasShape(area);
+
+/** Has somebody said these two rooms really do have two walls?
+ *
+ *  Stored on either side and honoured from both: a party wall between two
+ *  flats is two walls, and it must not come back the next time the other
+ *  room is the one being edited.
+ */
+const unjoined = (a, b) =>
+  (Array.isArray(a.unjoined) && a.unjoined.includes(b.id)) ||
+  (Array.isArray(b.unjoined) && b.unjoined.includes(a.id));
+
+/** Which walls of which rooms are the same wall.
+ *
+ *  Returns `id -> Map(side -> neighbour id)`. Two rooms share a wall when
+ *  one's wall lands on the other's and they actually run alongside each
+ *  other -- touching at a single corner is not a shared wall, it is two
+ *  rooms meeting at a point.
+ *
+ *  `honourBreaks: false` reports what the geometry says regardless of
+ *  what anybody switched off, which is how a broken join can still offer
+ *  to be joined again.
+ */
+const joinsOf = (areas, honourBreaks = true) => {
+  const rooms = areas.filter(joinable);
+  const found = new Map();
+  const add = (id, side, other) => {
+    if (!found.has(id)) found.set(id, new Map());
+    found.get(id).set(side, other);
+  };
+  for (let i = 0; i < rooms.length; i += 1) {
+    for (let j = i + 1; j < rooms.length; j += 1) {
+      const a = rooms[i];
+      const b = rooms[j];
+      if (honourBreaks && unjoined(a, b)) continue;
+      const one = boxOf(a);
+      const two = boxOf(b);
+      const alongY = Math.min(one.bottom, two.bottom) - Math.max(one.top, two.top);
+      const alongX = Math.min(one.right, two.right) - Math.max(one.left, two.left);
+      if (alongY > JOIN_GAP) {
+        if (Math.abs(one.right - two.left) <= JOIN_GAP) {
+          add(a.id, SIDE.RIGHT, b.id);
+          add(b.id, SIDE.LEFT, a.id);
+        }
+        if (Math.abs(two.right - one.left) <= JOIN_GAP) {
+          add(b.id, SIDE.RIGHT, a.id);
+          add(a.id, SIDE.LEFT, b.id);
+        }
+      }
+      if (alongX > JOIN_GAP) {
+        if (Math.abs(one.bottom - two.top) <= JOIN_GAP) {
+          add(a.id, SIDE.BOTTOM, b.id);
+          add(b.id, SIDE.TOP, a.id);
+        }
+        if (Math.abs(two.bottom - one.top) <= JOIN_GAP) {
+          add(b.id, SIDE.BOTTOM, a.id);
+          add(a.id, SIDE.TOP, b.id);
+        }
+      }
+    }
+  }
+  return found;
+};
+
+/** Of two rooms sharing a wall, which one draws it.
+ *
+ *  The one in front. Rooms are painted back to front, so a wall drawn
+ *  with the room behind would have the front room's floor painted over
+ *  its foot -- a wall standing in the neighbour's carpet.
+ */
+const drawsTheWall = (a, b) =>
+  a.position.y !== b.position.y ? a.position.y > b.position.y : a.id > b.id;
+
 /** The three area kinds, frozen. Specification § Area Type.
  *
  *  A renderer that compares against a literal is a renderer that quietly
@@ -198,6 +399,13 @@ class SpatialHubPanel extends HTMLElement {
     // is a detail of it, not the other way round.
     this._floorId = ALL_FLOORS;
     this._selected = null; // { kind, id }
+    // The room whose shared walls are on show. Not a selection in the
+    // popup sense -- clicking a room in room mode asks "what is this room
+    // attached to", and nothing else on screen should change.
+    this._joinArea = null;
+    // What the last drag changed in Home Assistant itself, kept only long
+    // enough to offer taking it back.
+    this._moved = null;
     this._history = null;
     this._placing = null; // { section, key } -- next stage click places it
     this._showDiagnostics = false;
@@ -238,11 +446,6 @@ class SpatialHubPanel extends HTMLElement {
     // whole point is to notice the drift without having gone looking for
     // a setting first.
     this._ghosts = true;
-    // The roof is decoration and nothing else, so it is the user's to
-    // switch off. Four filled slopes over the top storey turned out to
-    // read as a lid rather than a house; an outline says "building"
-    // without covering the floor underneath it.
-    this._roof = true;
     // Corner editing, off by default: most rooms really are rectangles,
     // and eight wall handles are the right answer until one is not.
     this._corners = false;
@@ -359,6 +562,83 @@ class SpatialHubPanel extends HTMLElement {
     }
   }
 
+  /** Which room a point on this floor is in.
+   *
+   *  The smallest one that contains it. Rooms overlap -- a hallway drawn
+   *  under a stairwell -- and the smaller of two is always the more
+   *  specific answer.
+   */
+  _areaAt(x, y, floorId) {
+    let best = null;
+    let smallest = Infinity;
+    for (const area of this._visibleAreas) {
+      if (!area.position || area.floor_id !== floorId) continue;
+      if (kindOf(area) === AREA_KIND.VIRTUAL) continue;
+      const box = boxOf(area);
+      if (x < box.left || x > box.right || y < box.top || y > box.bottom) continue;
+      const size = (box.right - box.left) * (box.bottom - box.top);
+      if (size < smallest) {
+        smallest = size;
+        best = area;
+      }
+    }
+    return best;
+  }
+
+  /** A dot dragged into another room moves the thing itself.
+   *
+   *  This is the one gesture that writes outside the hub, so it says so:
+   *  the plan gets a line above it naming what moved where, with a way
+   *  back. Everything else in this panel arranges a picture; this changes
+   *  the configuration every dashboard and every automation reads, and a
+   *  change like that must never be silent.
+   */
+  async _moveIntoArea(node, x, y) {
+    if (!this._canEdit || !node || !node.entity_id) return;
+    const room = this._areaAt(x, y, node.floor_id);
+    const from = node.area_id || null;
+    const to = room ? room.id : null;
+    if (to === from || (!room && !from)) return;
+
+    try {
+      const done = await this._hass.callWS({
+        type: `${DOMAIN}/area/assign`,
+        entity_id: node.entity_id,
+        area_id: to,
+      });
+      this._moved = {
+        label: node.label,
+        room: room ? room.name : "keinem Bereich",
+        entity_id: node.entity_id,
+        ...done,
+      };
+    } catch (err) {
+      this._error = err && err.message ? err.message : String(err);
+    }
+    this._render();
+  }
+
+  /** Put back whatever the last drag changed in Home Assistant. */
+  async _undoMove() {
+    const move = this._moved;
+    this._moved = null;
+    if (!move) {
+      this._render();
+      return;
+    }
+    try {
+      await this._hass.callWS({
+        type: `${DOMAIN}/area/assign`,
+        entity_id: move.entity_id,
+        area_id: move.before,
+        scope: move.scope,
+      });
+    } catch (err) {
+      this._error = err && err.message ? err.message : String(err);
+    }
+    this._render();
+  }
+
   async _undoStep() {
     const step = this._undo.pop();
     if (!step) return;
@@ -397,9 +677,24 @@ class SpatialHubPanel extends HTMLElement {
 
   /** In the stack every storey shares one window, or they would not line
    *  up: a ground floor with a garden would be drawn smaller than the one
-   *  above it and the house would look like a wedding cake. */
+   *  above it and the house would look like a wedding cake.
+   *
+   *  The widest one, not the first one that has anything outdoors. More
+   *  than one storey can: a garden downstairs and a balcony upstairs. Take
+   *  the first and a drawn plot on the ground floor loses to a balcony's
+   *  narrow apron, which crops the garden out of its own picture.
+   */
   get _widestFloor() {
-    return this._floors.find((floor) => floor.has_outdoor) || null;
+    let widest = null;
+    let span = 0;
+    for (const floor of this._floors) {
+      const frame = frameOf(floor);
+      if (frame.span > span) {
+        span = frame.span;
+        widest = floor;
+      }
+    }
+    return widest;
   }
 
   /** Does this area appear in the stacked house view? */
@@ -456,10 +751,9 @@ class SpatialHubPanel extends HTMLElement {
 
   /** How far above the storeys a plane floats.
    *
-   *  Only the sky floats, and it has to clear the roof: the ridge sits
-   *  roughly half the plan's depth above the top storey, so a cloud plane
-   *  drawn as just another slab lands *inside* the roof rather than over
-   *  it. This is the difference between weather and an attic.
+   *  Only the sky floats, and it has to clear the top storey by more than
+   *  a storey's own depth, or a cloud plane reads as an attic with weather
+   *  painted on the ceiling.
    */
   _planeLift(floorIndex) {
     const floor = this._stackFloors[floorIndex];
@@ -481,16 +775,41 @@ class SpatialHubPanel extends HTMLElement {
       0,
       ...this._stackFloors.map((_floor, at) => this._planeLift(at)),
     );
-    const gap = Math.min(
-      STACK.gap,
-      (1000 - STACK.top - sky - STACK.depth) /
-        Math.max(1, this._stackFloors.length - 1),
-    );
     return {
-      x: STACK.pad + nx * STACK.width + (1 - ny) * STACK.skew,
-      y: STACK.top + sky + floorIndex * gap + ny * STACK.depth -
+      x: STACK.pad + STACK.stagger * floorIndex +
+        nx * STACK.width + (1 - ny) * STACK.skew,
+      y: STACK.top + sky + floorIndex * STACK.gap + ny * STACK.depth -
         this._planeLift(floorIndex),
     };
+  }
+
+  /** How tall the drawing has to be to hold the house.
+   *
+   *  The storeys used to be squeezed into a fixed 1000×1000 box: with a
+   *  sky plane and four floors the spacing collapsed to under a third of
+   *  a storey's own depth, so every floor was drawn *through* the one
+   *  below it. That was the porridge -- not the line weights, the
+   *  spacing. Air between the storeys is what makes them storeys, so the
+   *  picture grows with the house instead of the house shrinking into
+   *  the picture. The camera already scrolls and zooms; a taller drawing
+   *  costs nothing but says which floor is which.
+   */
+  get _stackHeight() {
+    const sky = Math.max(0, ...this._stackFloors.map((_f, at) => this._planeLift(at)));
+    return (
+      STACK.top + sky +
+      Math.max(0, this._stackFloors.length - 1) * STACK.gap +
+      STACK.depth + STACK.slab + STACK.pad
+    );
+  }
+
+  /** How wide the drawing has to be. Every storey is offset a little
+   *  further right than the one above it, so the bottom one decides. */
+  get _stackWidth() {
+    return (
+      STACK.pad * 2 + STACK.width + STACK.skew +
+      Math.max(0, this._stackFloors.length - 1) * STACK.stagger
+    );
   }
 
   /** Providers whose every layer is switched off.
@@ -1067,15 +1386,6 @@ class SpatialHubPanel extends HTMLElement {
           </button>
         </div>
         ${
-          this._stacked
-            ? `<button class="icon-btn ${this._roof ? "on" : ""}"
-                       data-toggle-roof="1"
-                       title="${this._roof ? "Dach ausblenden" : "Dach zeigen"}">
-                 <ha-icon icon="mdi:home-roof"></ha-icon>
-               </button>`
-            : ""
-        }
-        ${
           this._edit
             ? `<div class="mode" role="group" aria-label="Was wird bearbeitet">
                  <button class="chip ${this._editWhat === "rooms" ? "on" : ""}"
@@ -1196,11 +1506,12 @@ class SpatialHubPanel extends HTMLElement {
       ]),
     );
 
-    const outline = (at, from, to) =>
+    const corners = (at, from, to) =>
       [[from, from], [to, from], [to, to], [from, to]]
-        .map(([x, y]) => this._project(at, x, y))
-        .map((point) => `${point.x},${point.y}`)
-        .join(" ");
+        .map(([x, y]) => this._project(at, x, y));
+
+    const outline = (at, from, to) =>
+      corners(at, from, to).map((point) => `${point.x},${point.y}`).join(" ");
 
     const plans = floors.map((floor, at) => {
       const frame = this._frame;
@@ -1216,12 +1527,33 @@ class SpatialHubPanel extends HTMLElement {
       // The plan is skewed, so "top left" is a third of the way into the
       // drawing -- the name landed on the rooms it was labelling.
       const label = this._project(at, 0, 1);
-      const rooms = this._model.areas
-        .filter(
-          (area) =>
-            area.floor_id === floor.id && area.position && this._inSandwich(area),
-        )
-        .map((area) => this._roomPolygon(at, area))
+      // Back to front. Rooms have height now, so a room further back can
+      // be hidden behind the walls of one in front -- which is what depth
+      // looks like. Drawn in storage order instead, a back room paints
+      // over the front one and the whole storey turns inside out.
+      const onThisFloor = this._model.areas.filter(
+        (area) =>
+          area.floor_id === floor.id && area.position && this._inSandwich(area),
+      );
+      // Two rooms side by side used to draw two walls in the same place,
+      // which is what a plan looks like when nobody has told it that a
+      // partition is one wall with a room on either side. Whoever is in
+      // front draws it; the other simply leaves that wall out.
+      const joins = joinsOf(onThisFloor);
+      const byId = new Map(onThisFloor.map((area) => [area.id, area]));
+      const rooms = onThisFloor
+        .slice()
+        .sort((a, b) => a.position.y - b.position.y)
+        .map((area) => {
+          const shared = joins.get(area.id);
+          const keep = shared
+            ? (side) => {
+                const other = byId.get(shared.get(side));
+                return !other || drawsTheWall(area, other);
+              }
+            : undefined;
+          return this._roomPolygon(at, area, keep);
+        })
         .join("");
       // Sky is not a storey. It got a floor slab and an outline like
       // every other plane, which is exactly what made the cloud level
@@ -1236,10 +1568,23 @@ class SpatialHubPanel extends HTMLElement {
              })"><text class="storey-name">${escapeHtml(floor.name)}</text></g>
         </g>`;
       }
+      // The storey is a floor slab, not a sheet of paper: a thin band of
+      // edge under it is the difference between four drawings above each
+      // other and four floors of one house.
+      // The outer wall is split around the rooms on purpose: the two walls
+      // facing the viewer are drawn after them and hide their lower edge,
+      // which is what puts the rooms *inside* the house instead of on top
+      // of a slab shaped like one.
+      const house = corners(at, 0, 1);
+      const crown = house.map((corner) => ({ x: corner.x, y: corner.y - STACK.rise }));
       return `<g class="plane">
         ${apron}
+        ${wallsOf(house, -STACK.slab, "storey-side")}
         <polygon class="storey" points="${outline(at, 0, 1)}"/>
+        ${wallsOf(house, STACK.rise, "shell-face", BACK_WALL)}
         ${rooms}
+        ${wallsOf(house, STACK.rise, "shell-face", FRONT_WALL)}
+        ${capsOf(crown, STACK.outerWall, "shell-cap")}
         <g data-at-x="${label.x - 12}" data-at-y="${label.y}"
            transform="translate(${label.x - 12},${label.y}) scale(${
              this._counterScale
@@ -1264,7 +1609,6 @@ class SpatialHubPanel extends HTMLElement {
       })
       .join("");
 
-    const shell = this._shellHtml(floors);
     const matches = this._matches;
     const nodes = this._visibleNodes
       .map((node) => {
@@ -1294,10 +1638,8 @@ class SpatialHubPanel extends HTMLElement {
       .join("");
 
     return `${this._viewportHtml(`<div class="stack">
-      <svg viewBox="0 0 1000 1000">
-        ${shell.behind}
+      <svg viewBox="0 0 ${Math.round(this._stackWidth)} ${Math.round(this._stackHeight)}">
         ${plans.join("")}
-        ${shell.front}
         ${edges}
         ${nodes}
       </svg>
@@ -1305,85 +1647,6 @@ class SpatialHubPanel extends HTMLElement {
     <p class="hint">Alle Etagen auf einmal — die einzige Ansicht, in der eine
     Verbindung zwischen zwei Stockwerken überhaupt zu sehen ist. Zum
     Anordnen und für Details eine einzelne Etage wählen.</p>`;
-  }
-
-  /** A hinted building around the storeys: walls you can see through.
-   *
-   *  Without it the stacked view is a pile of loose sheets. The rooms are
-   *  all there and it still does not read as a house, because nothing
-   *  says the storeys are one building rather than four drawings that
-   *  happen to be above each other.
-   *
-   *  Hinted, not drawn: the walls are barely-there fills and the roof is
-   *  a suggestion. The moment they are solid they cover the plan, and the
-   *  plan is the thing the user came for. Purely decorative, so it takes
-   *  no clicks -- and it is skipped when there is only one storey, where
-   *  a body around a single sheet says nothing.
-   */
-  _shellHtml(floors) {
-    const solid = floors.filter((floor) => !floor.virtual && !floor.unassigned);
-    if (solid.length < 2) return { behind: "", front: "" };
-    const top = floors.indexOf(solid[0]);
-    const base = floors.indexOf(solid[solid.length - 1]);
-
-    // The building line is the house, 0..1 -- never the apron. A garden
-    // is not a wall, and hanging the shell off it would put the front
-    // door somewhere in the lawn.
-    const corners = [[0, 0], [1, 0], [1, 1], [0, 1]];
-    const upper = corners.map(([x, y]) => this._project(top, x, y));
-    const lower = corners.map(([x, y]) => this._project(base, x, y));
-    const points = (list) => list.map((p) => `${p.x},${p.y}`).join(" ");
-
-    const walls = corners
-      .map((_corner, index) => {
-        const next = (index + 1) % corners.length;
-        return `<polygon class="shell-wall" points="${points([
-          upper[index], upper[next], lower[next], lower[index],
-        ])}"/>`;
-      })
-      .join("");
-
-    const posts = corners
-      .map(
-        (_corner, index) =>
-          `<line class="shell-post" x1="${upper[index].x}" y1="${upper[index].y}"
-                 x2="${lower[index].x}" y2="${lower[index].y}"/>`,
-      )
-      .join("");
-
-    // A hipped roof: four slopes from the top storey's walls to one apex
-    // above the middle of it.
-    //
-    // The rise has to clear the *depth* of the plan, not a fraction of the
-    // storey spacing. A plan drawn in this projection is 300 units deep,
-    // so a roof that rose by 70 had its ridge sitting inside the top floor
-    // -- geometrically a roof, visually a stripe across the attic.
-    const depth = upper[3].y - upper[0].y;
-    const apex = {
-      x: (upper[0].x + upper[1].x + upper[2].x + upper[3].x) / 4,
-      y: (upper[0].y + upper[1].y + upper[2].y + upper[3].y) / 4
-        - (depth * 0.5 + 80),
-    };
-    const roof = this._roof
-      ? upper
-          .map((corner, index) => {
-            const next = upper[(index + 1) % upper.length];
-            return `<polygon class="shell-roof" points="${points([
-              corner, next, apex,
-            ])}"/>`;
-          })
-          .join("")
-      : "";
-
-    // The walls go behind the storeys, the roof in front of them. With a
-    // cloud plane above the top floor the roof sits exactly where the
-    // clouds are drawn, and behind everything it simply vanished -- so
-    // the one part that says "house" was the one part nobody could see.
-    // It is translucent, so being in front costs the plan nothing.
-    return {
-      behind: `<g class="shell" aria-hidden="true">${walls}${posts}</g>`,
-      front: `<g class="shell" aria-hidden="true">${roof}</g>`,
-    };
   }
 
   /** The icon in the stack, in the same shape as on a single floor.
@@ -1415,7 +1678,7 @@ class SpatialHubPanel extends HTMLElement {
     return `<div class="viewport"><div class="canvas">${inner}</div></div>`;
   }
 
-  _roomPolygon(plane, area) {
+  _roomPolygon(plane, area, keep = () => true) {
     const width = (area.size && area.size.width) || 0.3;
     const height = (area.size && area.size.height) || 0.3;
     const x0 = area.position.x - width / 2;
@@ -1424,17 +1687,36 @@ class SpatialHubPanel extends HTMLElement {
     // views disagreeing about the shape of a room is the bug that made
     // the cloud a rectangle in the house view, and a niche visible on one
     // tab only would be the same bug wearing a different hat.
-    const points = shapeOf(area)
+    const corners = shapeOf(area)
       .map((point) => [x0 + point.x * width, y0 + point.y * height])
-      .map(([x, y]) => this._project(plane, x, y))
-      .map((point) => `${point.x},${point.y}`)
-      .join(" ");
-    const label = this._project(plane, x0, y0);
+      .map(([x, y]) => this._project(plane, x, y));
+    const points = corners.map((point) => `${point.x},${point.y}`).join(" ");
+    // The room's name in the middle of the room, the way a floor plan has
+    // always labelled a room. Hung off the corner it landed on the wall it
+    // shared with the next room, and two names on one line is neither.
+    const label = centreOf(corners);
 
     // A virtual area is a cloud here too. It was a cloud on its own tab
     // and a rectangle in the house view, so the two views disagreed about
     // what the thing *is* -- and the house view is the one people open.
+    // Walls, and only for rooms. A garden has no walls, and a cloud has
+    // neither -- standing a terrace up on 26 units of masonry would say
+    // the exact opposite of what a terrace is.
+    //
+    // Three parts, in the order you would see them: the floor inside the
+    // room, the outside faces of the walls standing on it, and the top of
+    // the masonry as a band with two edges. The band is what makes this
+    // read as a plan rather than as a grey rectangle with a line round it.
     let shape = `<polygon class="room" points="${points}"/>`;
+    if (kindOf(area) === AREA_KIND.INDOOR) {
+      shape += wallsOf(corners, STACK.rise, "room-wall", keep) +
+        capsOf(
+          corners.map((corner) => ({ x: corner.x, y: corner.y - STACK.rise })),
+          STACK.wall,
+          "room-cap",
+          keep,
+        );
+    }
     if (kindOf(area) === AREA_KIND.VIRTUAL) {
       // The plan is skewed, so the cloud is skewed with it: two edges of
       // the projected room are the axes it is drawn along.
@@ -1453,8 +1735,8 @@ class SpatialHubPanel extends HTMLElement {
     }
 
     return `${shape}
-      <g data-at-x="${label.x + 6}" data-at-y="${label.y + 16}"
-         transform="translate(${label.x + 6},${label.y + 16}) scale(${
+      <g data-at-x="${label.x}" data-at-y="${label.y}"
+         transform="translate(${label.x},${label.y}) scale(${
            this._counterScale
          })"><text class="room-label">${escapeHtml(area.name)}</text></g>`;
   }
@@ -1476,6 +1758,17 @@ class SpatialHubPanel extends HTMLElement {
     }
 
     const floor = this._floor;
+    const moved = this._moved
+      ? `<p class="banner moved">
+           <b>${escapeHtml(this._moved.label)}</b> ist jetzt in
+           <b>${escapeHtml(this._moved.room)}</b>${
+             this._moved.scope === "device"
+               ? " — mit allen Entitäten des Geräts"
+               : " — nur diese Entität"
+           }. Das steht so in Home Assistant.
+           <button class="link" data-undo-move="1">Rückgängig</button>
+         </p>`
+      : "";
     const banner = floor && floor.unassigned
       ? `<p class="banner">Diese Bereiche sind in Home Assistant keiner Etage
          zugeordnet. Sobald du das dort nachträgst, wandern sie von selbst auf
@@ -1486,7 +1779,7 @@ class SpatialHubPanel extends HTMLElement {
          Integration räumliche Daten liefert, erscheint sie hier von selbst —
          einzurichten ist dafür nichts.</p>`;
 
-    if (this._stacked) return `${banner}${this._stackHtml()}`;
+    if (this._stacked) return `${moved}${banner}${this._stackHtml()}`;
 
     const aspect = (floor && floor.aspect) || 1.6;
     const background = floor && floor.background;
@@ -1522,7 +1815,7 @@ class SpatialHubPanel extends HTMLElement {
       </div>`;
 
     return `
-      ${banner}
+      ${moved}${banner}
       ${this._viewportHtml(stage)}
       ${this._trayHtml()}
       ${this._editHintHtml()}
@@ -2056,6 +2349,7 @@ class SpatialHubPanel extends HTMLElement {
                 )} m</span>`
               : ""
           }
+          ${this._joinMarksHtml(area)}
           ${
             this._editRooms
               ? `${this._areaHandlesHtml(area)}
@@ -2071,6 +2365,43 @@ class SpatialHubPanel extends HTMLElement {
               : ""
           }
         </div>`;
+      })
+      .join("");
+  }
+
+  /** The × and + on a room's shared walls.
+   *
+   *  Only on the room that was clicked, and only while rooms are being
+   *  arranged. Every wall that is shared with the room next door gets a
+   *  red × to break it apart; a wall that touches but has been broken
+   *  gets a green + to put it back. Without the +, breaking a join once
+   *  would be a decision nobody could take back.
+   */
+  _joinMarksHtml(area) {
+    if (!this._editRooms || this._joinArea !== area.id) return "";
+    const here = this._visibleAreas.filter(
+      (candidate) =>
+        candidate.position &&
+        (!this._floor || candidate.floor_id === this._floor.id),
+    );
+    const joined = joinsOf(here).get(area.id) || new Map();
+    const touching = joinsOf(here, false).get(area.id) || new Map();
+    const id = escapeHtml(area.id);
+
+    return [...touching.keys()]
+      .map((side) => {
+        const together = joined.has(side);
+        const other = touching.get(side);
+        const name = (this._area(other) || {}).name || other;
+        return `<button class="join-mark ${SIDE_NAME[side]} ${
+          together ? "on" : "off"
+        }" data-join-area="${id}" data-join-side="${side}"
+                data-join-other="${escapeHtml(other)}"
+                title="${
+                  together
+                    ? `Gemeinsame Wand mit ${escapeHtml(name)} trennen`
+                    : `Wand wieder mit ${escapeHtml(name)} verbinden`
+                }">${together ? "×" : "+"}</button>`;
       })
       .join("");
   }
@@ -2989,6 +3320,51 @@ class SpatialHubPanel extends HTMLElement {
     return Math.min(high, Math.max(low, Math.round(clamped / 0.02) * 0.02));
   }
 
+  /** Every other room's walls on this floor, split by axis.
+   *
+   *  What a dragged wall can land on. The room being dragged is left out,
+   *  or it would snap to itself and never move again.
+   */
+  _wallLines(exceptId) {
+    const lines = { x: [], y: [] };
+    for (const area of this._visibleAreas) {
+      if (area.id === exceptId || !joinable(area)) continue;
+      if (this._floor && area.floor_id !== this._floor.id) continue;
+      const box = boxOf(area);
+      lines.x.push(box.left, box.right);
+      lines.y.push(box.top, box.bottom);
+    }
+    return lines;
+  }
+
+  /** Pull a wall onto a neighbour's wall when one is within reach.
+   *
+   *  This is what makes a shared wall shared without anybody typing a
+   *  number: you drag a room roughly against the next one, it lands
+   *  exactly, and from then on the two walls are one. Shift still turns
+   *  everything off, the same as it does for the grid.
+   *
+   *  Falls back to the grid, so a room with no neighbour behaves exactly
+   *  as it did before.
+   */
+  _magnet(value, axis, event, frame, lines) {
+    if (!event.shiftKey && lines) {
+      let best = null;
+      let reach = SNAP_REACH;
+      for (const line of lines[axis]) {
+        const distance = Math.abs(line - value);
+        if (distance <= reach) {
+          reach = distance;
+          best = line;
+        }
+      }
+      if (best !== null) {
+        return Math.min(frame.min + frame.span, Math.max(frame.min, best));
+      }
+    }
+    return this._snap(value, event, frame);
+  }
+
   _onPointerDown(event) {
     if (event.button !== 0 && event.button !== 1) return;
     const path = event.composedPath();
@@ -3065,7 +3441,7 @@ class SpatialHubPanel extends HTMLElement {
       : nodeElement
         ? { mode: "move", section: "nodes", key: nodeElement.getAttribute("data-node"),
             element: nodeElement }
-        : { mode: "move", section: "areas", key: areaElement.getAttribute("data-area"),
+        : { mode: "area", section: "areas", key: areaElement.getAttribute("data-area"),
             element: areaElement };
 
     event.preventDefault();
@@ -3084,6 +3460,13 @@ class SpatialHubPanel extends HTMLElement {
           ? { plot: (this._floor || {}).plot || null }
           : this._layoutOf(target.section, target.key),
       start: this._rectOf(target.section, target.key),
+      // The neighbours' walls, taken once. Recomputing them on every
+      // pointer move would let a room snap to a wall it has already
+      // pushed, which is a room that walks.
+      lines:
+        target.section === "areas" && target.mode !== "corner"
+          ? this._wallLines(target.key)
+          : null,
       box: stage.getBoundingClientRect(),
     };
 
@@ -3109,6 +3492,39 @@ class SpatialHubPanel extends HTMLElement {
           position: item.position ? { ...item.position } : null,
           size: item.size ? { ...item.size } : null,
         };
+  }
+
+  /** Break a shared wall apart, or put it back together.
+   *
+   *  Stored on the room that was clicked, and read from both sides: a
+   *  break made here must still be a break when the neighbour is the one
+   *  being edited. Storing it on one side only and reading it from one
+   *  side only would let the same wall be joined and broken at once,
+   *  depending on which room you happened to look at.
+   */
+  _toggleJoin(id, other) {
+    const area = this._area(id);
+    const neighbour = this._area(other);
+    if (!area || !neighbour) return;
+
+    const mine = Array.isArray(area.unjoined) ? area.unjoined : [];
+    const theirs = Array.isArray(neighbour.unjoined) ? neighbour.unjoined : [];
+    if (mine.includes(other) || theirs.includes(id)) {
+      // Joining again has to clear the break wherever it was written,
+      // or the wall stays apart and the + does nothing.
+      if (mine.includes(other)) {
+        this._setLayout("areas", id, {
+          unjoined: mine.filter((entry) => entry !== other),
+        });
+      }
+      if (theirs.includes(id)) {
+        this._setLayout("areas", other, {
+          unjoined: theirs.filter((entry) => entry !== id),
+        });
+      }
+      return;
+    }
+    this._setLayout("areas", id, { unjoined: [...mine, other] });
   }
 
   /** An area's walls, in floor coordinates. */
@@ -3213,17 +3629,22 @@ class SpatialHubPanel extends HTMLElement {
       // a wall does in a real plan.
       const rect = { ...drag.start };
       const minimum = 0.04;
+      const lines = drag.lines;
       if (drag.edge.includes("w")) {
-        rect.left = Math.min(this._snap(x, event, frame), rect.right - minimum);
+        rect.left = Math.min(
+          this._magnet(x, "x", event, frame, lines), rect.right - minimum);
       }
       if (drag.edge.includes("e")) {
-        rect.right = Math.max(this._snap(x, event, frame), rect.left + minimum);
+        rect.right = Math.max(
+          this._magnet(x, "x", event, frame, lines), rect.left + minimum);
       }
       if (drag.edge.includes("n")) {
-        rect.top = Math.min(this._snap(y, event, frame), rect.bottom - minimum);
+        rect.top = Math.min(
+          this._magnet(y, "y", event, frame, lines), rect.bottom - minimum);
       }
       if (drag.edge.includes("s")) {
-        rect.bottom = Math.max(this._snap(y, event, frame), rect.top + minimum);
+        rect.bottom = Math.max(
+          this._magnet(y, "y", event, frame, lines), rect.top + minimum);
       }
       drag.value = {
         position: { x: (rect.left + rect.right) / 2,
@@ -3241,8 +3662,48 @@ class SpatialHubPanel extends HTMLElement {
       x: this._snap(x, event, frame),
       y: this._snap(y, event, frame),
     };
+    // A room lands by its walls, not by its middle. Snapping the centre
+    // puts a wall wherever half the room's width happens to fall, which
+    // is never quite against the neighbour -- and "never quite" is the
+    // whole difference between two rooms and a shared wall.
+    if (drag.mode === "area" && drag.start && drag.lines) {
+      const size = {
+        width: drag.start.right - drag.start.left,
+        height: drag.start.bottom - drag.start.top,
+      };
+      drag.value.x += this._wallPull(
+        [drag.value.x - size.width / 2, drag.value.x + size.width / 2],
+        "x", event, drag.lines,
+      );
+      drag.value.y += this._wallPull(
+        [drag.value.y - size.height / 2, drag.value.y + size.height / 2],
+        "y", event, drag.lines,
+      );
+    }
     drag.element.style.left = `${inFrame(drag.value.x, frame)}%`;
     drag.element.style.top = `${inFrame(drag.value.y, frame)}%`;
+  }
+
+  /** How far to shift a room so one of its walls lands on a neighbour's.
+   *
+   *  Both walls on the axis are offered and the nearer one wins, so a
+   *  room can be pushed against the one on its left or the one on its
+   *  right without being told which.
+   */
+  _wallPull(walls, axis, event, lines) {
+    if (event.shiftKey) return 0;
+    let shift = 0;
+    let reach = SNAP_REACH;
+    for (const wall of walls) {
+      for (const line of lines[axis]) {
+        const distance = Math.abs(line - wall);
+        if (distance < reach) {
+          reach = distance;
+          shift = line - wall;
+        }
+      }
+    }
+    return shift;
   }
 
   /** Draw whatever arrived while a hand was on the plan. */
@@ -3253,7 +3714,22 @@ class SpatialHubPanel extends HTMLElement {
   _onPointerUp() {
     const drag = this._drag;
     this._drag = null;
+    // A room that was pressed and not moved was asked a question: what is
+    // this attached to. Pressing it again puts the marks away, so the
+    // same gesture is both halves of it.
+    if (drag && drag.mode === "area" && !this._dragged) {
+      this._joinArea = this._joinArea === drag.key ? null : drag.key;
+      this._storeDrag(drag);
+      this._render();
+      return;
+    }
     this._storeDrag(drag);
+    // A device dragged across a wall did not just move on the picture --
+    // it moved house. Checked after the position is stored, so the dot
+    // stays where it was put even if Home Assistant refuses the move.
+    if (drag && drag.section === "nodes" && this._dragged && drag.value) {
+      this._moveIntoArea(this._node(drag.key), drag.value.x, drag.value.y);
+    }
     this._flushRender();
   }
 
@@ -3554,12 +4030,6 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
-    if (hit("data-toggle-roof")) {
-      this._roof = !this._roof;
-      this._render();
-      return;
-    }
-
     if (hit("data-toggle-corners")) {
       this._corners = !this._corners;
       this._render();
@@ -3857,6 +4327,20 @@ class SpatialHubPanel extends HTMLElement {
           z_index: (layer.z_index || 10) + (layerUp ? 5 : -5),
         });
       }
+      return;
+    }
+
+    if (hit("data-undo-move")) {
+      this._undoMove();
+      return;
+    }
+
+    const joinMark = hit("data-join-area");
+    if (joinMark) {
+      this._toggleJoin(
+        joinMark.getAttribute("data-join-area"),
+        joinMark.getAttribute("data-join-other"),
+      );
       return;
     }
 
@@ -4169,22 +4653,22 @@ main { flex:0 0 auto; min-width:0; }
          border-radius:12px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12));
          padding:8px; }
 .stack svg { display:block; width:100%; height:auto; }
-/* Der angedeutete Gebäudekörper. Durchsichtig ist keine Stilfrage: sobald
-   die Wände decken, verdecken sie den Grundriss, und der ist der Grund,
-   warum jemand hinschaut. Rein dekorativ, daher pointer-events:none. */
-.shell { pointer-events:none; }
-.shell-wall { fill:var(--fp-shell, rgba(128,145,170,.09)); stroke:none;
-              opacity:var(--fp-house,1); }
-.shell-post { stroke:var(--fp-shell-line, rgba(128,145,170,.45)); stroke-width:2; }
-/* Nur die Kante. Gefüllt lagen vier Flächen wie ein Deckel über dem
-   Dachgeschoss und verdeckten genau die Etage, die man sehen will. */
-.shell-roof { fill:none;
-              stroke:var(--fp-shell-line, rgba(128,145,170,.55)); stroke-width:2;
-              stroke-linejoin:round; }
-.shell-ridge { stroke:var(--fp-shell-line, rgba(128,145,170,.6)); stroke-width:2.5;
-               stroke-linecap:round; }
-.storey { fill:none; stroke:var(--divider-color,rgba(128,128,128,.45));
-          stroke-width:calc(2px * var(--fp-house,1)); }
+/* Es gibt keinen Gebäudekörper mehr, der über allen Etagen liegt. Weder
+   durchscheinende Wände noch ein Dach noch Eckpfosten: alles davon lag
+   über dem Grundriss, und der ist der Grund, warum jemand hinschaut. Was
+   das Haus zusammenhält, sind jetzt die Wände der Etagen selbst. */
+/* Drei Gewichte, damit das Auge sofort sortiert: die Aussenkante des
+   Stockwerks am staerksten, die Innenwaende leiser, der Garten nur
+   gestrichelt. Vorher hatte alles dieselbe Staerke -- deshalb war das
+   Sandwich ein Brei. */
+.storey { fill:var(--fp-slab, rgba(128,145,170,.05));
+          stroke:var(--divider-color,rgba(128,128,128,.55));
+          stroke-width:calc(2.4px * var(--fp-house,1)); }
+/* Die Kante unter dem Stockwerk. Sie traegt die Etage, deshalb ist sie
+   etwas dunkler als die Flaeche darueber. */
+.storey-side { fill:var(--fp-slab-side, rgba(128,145,170,.16));
+               stroke:var(--divider-color,rgba(128,128,128,.4));
+               stroke-width:calc(1px * var(--fp-house,1)); }
 .storey-name { font-size:26px; fill:currentColor; opacity:.65; text-anchor:end; }
 .stack-cloud { fill:var(--fp-virtual, rgba(120,144,180,.16));
                stroke:var(--fp-virtual-line, rgba(120,144,180,.7));
@@ -4195,12 +4679,60 @@ main { flex:0 0 auto; min-width:0; }
    Platte mit Punkten darauf. Jetzt eine Wand: sichtbar, aber immer noch
    leiser als die Aussenwand, die sie umschliesst. Der Regler bewegt
    beide, damit das Verhaeltnis stimmt. */
-.stack .room { fill:rgba(128,128,128,calc(.10 * var(--fp-house,1)));
-               stroke:var(--fp-shell-line, rgba(128,145,170,.55));
-               stroke-width:calc(1.5px * var(--fp-house,1));
-               stroke-opacity:calc(.85 * var(--fp-house,1));
-               vector-effect:non-scaling-stroke; }
-.stack .room-label { font-size:17px; fill:currentColor; opacity:.5; }
+.stack .room { fill:rgba(128,128,128,calc(.07 * var(--fp-house,1)));
+               stroke:none; }
+/* Stehende Waende: die Aussenseite. Gefuellt, damit sie einander wirklich
+   verdecken -- eine Wand, durch die man den Raum dahinter sieht, ist
+   keine. Deckend, nicht durchscheinend, sonst summieren sich sechzehn
+   Waende zu Grau. */
+.room-wall { fill:var(--fp-wall, rgba(128,145,170,.20));
+             stroke:var(--fp-shell-line, rgba(128,145,170,.5));
+             stroke-width:calc(1px * var(--fp-house,1));
+             stroke-opacity:calc(.8 * var(--fp-house,1));
+             stroke-linejoin:round;
+             vector-effect:non-scaling-stroke; }
+/* Die Mauerkrone: das Band zwischen Aussen- und Innenkante. Das ist der
+   Unterschied zwischen einem Grundriss und einem Rechteck mit Strich
+   drumherum -- eine Wand hat zwei Seiten, und genau die sieht man hier. */
+.room-cap { fill:var(--fp-wall-top, rgba(128,145,170,.42));
+            stroke:var(--fp-shell-line, rgba(128,145,170,.75));
+            stroke-width:calc(1px * var(--fp-house,1));
+            stroke-opacity:calc(.9 * var(--fp-house,1));
+            stroke-linejoin:round;
+            vector-effect:non-scaling-stroke; }
+/* Die Marke auf einer gemeinsamen Wand. Rotes × trennt, gruenes + fuegt
+   wieder zusammen -- ohne das + waere das Trennen eine Entscheidung, die
+   niemand zuruecknehmen kann. Sie sitzt mittig auf der Wand, die sie
+   meint, und ist so gross, dass ein Daumen sie trifft. */
+.join-mark { position:absolute; width:22px; height:22px; border-radius:50%;
+             border:none; cursor:pointer; padding:0; z-index:5;
+             font:600 15px/22px system-ui, sans-serif; color:#fff;
+             box-shadow:0 1px 3px rgba(0,0,0,.4); }
+.join-mark.on { background:var(--error-color,#db4437); }
+.join-mark.off { background:var(--success-color,#43a047); }
+.join-mark.top { left:50%; top:0; transform:translate(-50%,-50%); }
+.join-mark.bottom { left:50%; top:100%; transform:translate(-50%,-50%); }
+.join-mark.left { left:0; top:50%; transform:translate(-50%,-50%); }
+.join-mark.right { left:100%; top:50%; transform:translate(-50%,-50%); }
+/* Mauerwerk ist hier Darstellung, kein Bedienelement: ein Punkt, der
+   halb unter einer Wand liegt, muss trotzdem das sein, was der Klick
+   trifft. */
+.room-wall, .room-cap, .shell-face, .shell-cap, .storey-side {
+  pointer-events:none; }
+/* Die Aussenwand traegt das Haus und ist deshalb staerker als die
+   Zwischenwaende -- dasselbe, was eine Bauzeichnung auf Papier macht. */
+.shell-face { fill:var(--fp-wall, rgba(128,145,170,.26));
+              stroke:var(--divider-color,rgba(128,128,128,.5));
+              stroke-width:calc(1.2px * var(--fp-house,1));
+              stroke-linejoin:round;
+              vector-effect:non-scaling-stroke; }
+.shell-cap { fill:var(--fp-wall-top, rgba(128,145,170,.5));
+             stroke:var(--divider-color,rgba(128,128,128,.7));
+             stroke-width:calc(1.4px * var(--fp-house,1));
+             stroke-linejoin:round;
+             vector-effect:non-scaling-stroke; }
+.stack .room-label { font-size:17px; fill:currentColor; opacity:.55;
+                     text-anchor:middle; dominant-baseline:middle; }
 .stack-edge { stroke-linecap:round; opacity:var(--layer-opacity,1); }
 /* A connection between two storeys is the whole reason this view exists. */
 .stack-edge.across { opacity:calc(var(--layer-opacity,1) * .95); }
@@ -4488,6 +5020,13 @@ select { font:inherit; padding:6px; border-radius:8px;
 .edit-buttons { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
 .edit-buttons .chip { display:flex; align-items:center; gap:4px; }
 
+/* Der einzige Hinweis, der von einer Aenderung *ausserhalb* des Hubs
+   berichtet. Deshalb faellt er auf und deshalb steht der Weg zurueck
+   direkt darin. */
+.banner.moved { border-left:4px solid var(--fp-accent, var(--primary-color,#03a9f4)); }
+.banner.moved .link { background:none; border:none; padding:0 0 0 6px;
+                      color:var(--fp-accent, var(--primary-color,#03a9f4));
+                      font:inherit; cursor:pointer; text-decoration:underline; }
 .banner { margin:0 0 12px; padding:10px 14px; border-radius:10px; font-size:13px;
           background:var(--card-background-color,#fff); color:var(--secondary-text-color,#727272);
           box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
@@ -4536,4 +5075,4 @@ customElements.define("spatial-hub-panel", SpatialHubPanel);
 // Exported so the test suite can drive the rendering logic without a
 // browser. Home Assistant loads this file as a module and only ever uses
 // the custom element above.
-export { SpatialHubPanel, HA_COLOURS, AREA_KIND, kindOf };
+export { SpatialHubPanel, HA_COLOURS, AREA_KIND, kindOf, joinsOf, drawsTheWall };

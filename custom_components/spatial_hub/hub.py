@@ -359,13 +359,22 @@ class SpatialHub:
     def _resolve_area_kinds(
         self, floors: list[dict[str, Any]], areas: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Put outdoor areas around the ground floor, virtual ones above it.
+        """Put outdoor areas in the apron around their storey.
 
         A garden is not a storey. Given its own floor it lands between the
         cellar and the ground floor as if you could walk down into it, and
         a house with a front garden, a back garden and a terrace suddenly
-        has three of them. So every outdoor area joins the ground floor and
-        is arranged in the apron *around* it, which is where it actually is.
+        has three of them. So an outdoor area is arranged in the apron
+        *around* a storey, which is where it actually is.
+
+        Which storey is the question. Every outdoor area used to be moved
+        to the ground floor, and that is right for a garden and wrong for
+        a balcony: a balcony on the first floor is on the first floor, and
+        dragging it down to the garden says the opposite. So an outdoor
+        area that Home Assistant already put on a real storey **keeps
+        it**; only the ones with no storey of their own -- the garden, the
+        drive, the ones that were sitting on a floor that is itself the
+        outdoors -- join the ground floor.
 
         Returns the floors that are left: a storey that existed only to
         hold the garden goes with it.
@@ -375,17 +384,39 @@ class SpatialHub:
         if not outdoor and not virtual:
             return floors
 
+        storeys = {
+            floor["id"]: floor
+            for floor in floors
+            if not floor.get("unassigned")
+            and not floor.get("virtual")
+            and floor.get("kind", AreaKind.INDOOR) is AreaKind.INDOOR
+        }
+        homeless = [
+            area for area in outdoor if area.get("floor_id") not in storeys
+        ]
+
         emptied = {
-            area["floor_id"] for area in outdoor + virtual if area.get("floor_id")
+            area["floor_id"]
+            for area in homeless + virtual
+            if area.get("floor_id")
         }
 
         ground = self._ground_floor(floors)
         if ground is not None:
-            for area in outdoor:
+            for area in homeless:
                 area["floor_id"] = ground["id"]
-                area["outdoor"] = True
-            ground["has_outdoor"] = True
-            ground["outdoor_margin"] = OUTDOOR_MARGIN
+        for area in outdoor:
+            area["outdoor"] = True
+            floor = storeys.get(area.get("floor_id"))
+            if floor is None and ground is not None:
+                floor = ground
+            if floor is not None:
+                # The apron belongs to whichever storey carries something
+                # outdoors, not to the ground floor by decree. Otherwise a
+                # balcony on the first floor is drawn outside a wall the
+                # first floor does not have.
+                floor["has_outdoor"] = True
+                floor["outdoor_margin"] = OUTDOOR_MARGIN
 
         if virtual:
             for area in virtual:

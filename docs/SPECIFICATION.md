@@ -422,6 +422,97 @@ Pro Bereich und pro Etage:
 Eine ausgeklammerte Etage nimmt ihre Nodes mit; sonst schwebten sie über der
 darunterliegenden und läsen sich, als gehörten sie dorthin.
 
+#### Höhe ist das, was Etagen zu Etagen macht
+
+Die Hausansicht zeigt Räume mit **stehenden Wänden** und Geschosse auf einer
+**Bodenplatte mit Dicke**. Flache Umrisse übereinander sind vier Zeichnungen,
+kein Haus: alles hat dieselbe Strichstärke, und nichts im Bild sagt, welche
+Linie eine Wand ist und welche eine Bodenkante.
+
+- Räume MÜSSEN **von hinten nach vorn** gezeichnet werden. Mit Höhe verdeckt,
+  wer zuletzt gezeichnet wird — in Speicherreihenfolge kehrt sich das Geschoss
+  nach innen.
+- Nur `indoor` bekommt Wände. Ein Garten hat keine, eine Wolke erst recht nicht.
+- Die Zeichnung MUSS **mit dem Haus wachsen**, statt das Haus in eine feste
+  Fläche zu quetschen. Der Abstand zwischen zwei Geschossen MUSS größer sein
+  als die Tiefe eines Geschosses, sonst werden sie ineinander gezeichnet.
+- Eine Wand hat **zwei Seiten**. Gezeichnet wird die Außenfläche und die
+  Mauerkrone als Band zwischen Außen- und Innenkante — ein einzelner Strich
+  ist eine Grenze, kein Mauerwerk. Die Außenwand des Hauses ist stärker als
+  die Zwischenwände.
+- Die Außenwand MUSS **um die Räume herum** gezeichnet werden: die beiden
+  zum Betrachter zeigenden Flächen nach den Räumen, die beiden hinteren
+  davor. Alle vier vorn, und die Rückwand übermalt den Grundriss; alle vier
+  hinten, und die Räume stehen auf einer hausförmigen Platte statt in einem
+  Haus.
+- Etagen stehen **leicht versetzt**, nicht exakt übereinander. Deckungsgleich
+  fällt der Umriss der oberen auf den der unteren, und nur der Abstand
+  unterscheidet sie.
+- Über den Etagen wird **nichts** gezeichnet: kein Dach, keine
+  durchscheinenden Wände, keine Eckpfosten. Alles davon liegt über dem
+  Grundriss. Was das Haus zusammenhält, sind die Wände der Etagen selbst.
+- Drei Gewichte, nicht eines: Außenwand am stärksten, Innenwände leiser,
+  Garten nur gestrichelt.
+
+### Ein Gerät in einen anderen Raum ziehen
+
+Der Hub ordnet sonst nur ein Bild an. Dies ist der **einzige** Befehl, der
+außerhalb des Hubs schreibt: `spatial_hub/area/assign` ändert die
+Bereichszuordnung in Home Assistant, sichtbar in jedem Dashboard und jeder
+Automatisierung.
+
+- **Admin-pflichtig.** Anordnen ist es nicht, das hier schon.
+- **Gerät oder Entität wird nicht gefragt, sondern hergeleitet.** Ein Punkt
+  liegt dort, wo er liegt, weil entweder eine Überschreibung an der Entität
+  oder der Bereich ihres Geräts das entschieden hat. Was den Punkt dorthin
+  gelegt hat, wird bewegt. Eine Platine zieht also alle ihre Entitäten mit;
+  eine Entität, die bewusst aus dem Raum ihres Geräts geholt wurde — ein
+  WiFi-CSI-Sensor, der das Gäste-WC beobachtet, während seine Lampe im
+  Vorgarten steht — bewegt sich allein.
+- Die Antwort enthält `scope`, `target`, `before` und `after` — genug, um es
+  vollständig zurückzunehmen.
+- Ein Umzug MUSS **sichtbar** sein: eine Zeile über dem Plan, die benennt was
+  wohin ging, mit „Rückgängig" darin. Eine Änderung an fremder Konfiguration
+  darf nie stillschweigend passieren.
+- Ein Punkt ohne `entity_id` bewegt nichts. Es gibt nichts, worauf man
+  schreiben könnte, und Raten ist schlechter als Nichtstun.
+
+### Gemeinsame Wände
+
+Zwei Räume, deren Wände aufeinander liegen, haben **eine** Wand.
+
+- Verbunden wird **automatisch**, sobald zwei Wände aufeinander liegen und
+  tatsächlich nebeneinander herlaufen. Eine Ecke ist keine gemeinsame Wand.
+- Gezeichnet wird die Wand vom Raum **davor**. Rechts der Raum dahinter, und
+  der vordere malt seinen Boden über den Wandfuß.
+- Beim Ziehen **rastet** eine Wand auf die des Nachbarn ein. Ohne das landet
+  eine Wand dort, wo die halbe Raumbreite gerade hinfällt — und „fast" ist der
+  ganze Unterschied zwischen zwei Räumen und einer gemeinsamen Wand. `Shift`
+  schaltet es ab, wie beim Raster.
+- `unjoined` auf einem Bereich listet die Nachbarn, mit denen er **keine**
+  Wand teilt. Von **beiden Seiten** gelesen: eine Trennung darf nicht
+  zurückkommen, sobald der Nachbar bearbeitet wird.
+- Nur rechteckige Innenräume. Ein Garten hat keine Wand, eine Wolke erst
+  recht nicht, und ein Raum mit eigenem Umriss hat keine Seite namens
+  „rechts".
+
+### Draußen gehört zu einer Etage, nicht zum Erdgeschoss
+
+Ein Außenbereich wird in den Ring **um sein Geschoss** gelegt, nicht um das
+Erdgeschoss.
+
+- Ein Außenbereich, den Home Assistant bereits auf einer echten Etage führt,
+  **behält sie**. Ein Balkon im Obergeschoss ist im Obergeschoss; ihn nach
+  unten zu ziehen sagt das Gegenteil, und ein Haus mit einem Balkon pro Etage
+  hätte sie alle im Vorgarten gestapelt.
+- Nur Außenbereiche **ohne eigene Etage** kommen ans Erdgeschoss — der
+  Garten, die Einfahrt, alles was auf einer Etage saß, die selbst „draußen"
+  ist.
+- `has_outdoor` bekommt **jede** Etage, die etwas Draußen trägt.
+- In der Hausansicht teilen sich alle Geschosse **ein** Fenster, und zwar das
+  der **weitesten** Etage. Die erste zu nehmen, die etwas Draußen hat, schnitte
+  ein gezeichnetes Grundstück im Erdgeschoss ab, sobald oben ein Balkon hängt.
+
 ### Der Himmel
 
 Eine virtuelle Etage ist keine Etage, sondern der Himmel über dem Haus.
@@ -461,6 +552,7 @@ und behandelt nie eine Integration namentlich als Sonderfall.
 | `spatial_hub/action` | Provider-Action ausführen (Admin) |
 | `spatial_hub/diagnostics` | was jeder Provider geliefert hat, inklusive Fehler |
 | `spatial_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
+| `spatial_hub/area/assign` | ein Gerät oder eine Entität in einen anderen Bereich legen — **schreibt in Home Assistant**, nur Admin |
 
 Ein **lesender** Renderer braucht davon zwei: `model` und `subscribe`.
 
