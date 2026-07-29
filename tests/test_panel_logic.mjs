@@ -1227,9 +1227,11 @@ test("the floor tabs claim the free space themselves", () => {
          "spatial-hub-panel.js"),
     "utf8",
   );
-  // Otherwise the spacer takes it and the last storeys end up unreachable
-  // underneath the search box on a narrow window.
-  assert.match(source, /\.tabs \{[^}]*flex:1 1 auto/);
+  // "1 1 auto" was this line for a while, and it is how the strip ended up
+  // exactly zero pixels wide on a phone: it claims free space, but it also
+  // gives up all of its own when there is none. A stated basis is the half
+  // that was missing.
+  assert.match(source, /\.tabs \{[^}]*flex:1 1 220px/);
 });
 
 // ── Search ─────────────────────────────────────────────────
@@ -2182,4 +2184,38 @@ test("a stored zero cannot erase the house", () => {
   view._model.theme = { ...view._model.theme, house_weight: 0 };
 
   assert.match(view._themeVars, /--fp-house:0\.2/, "clamped, not obeyed");
+});
+
+// ── Die Kopfzeile auf einem Telefon ────────────────────────
+
+/** The panel's stylesheet, read from the source it ships. */
+const styleSheet = () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  const start = source.indexOf("const STYLES = `");
+  assert.ok(start > 0, "the stylesheet moved");
+  return source.slice(start, source.indexOf("`;", start));
+};
+
+test("the storey tabs can never be squeezed to nothing", () => {
+  // Measured in a real browser at 390px: the tab strip was exactly 0
+  // pixels wide, so the header appeared to start with the search box.
+  // The storeys were not hidden -- they had no width. Everything else in
+  // that row refuses to shrink, so the strip must either keep a usable
+  // width or take a line of its own.
+  const style = styleSheet();
+
+  assert.match(style, /\.tabs\s*{[^}]*flex:1 1 220px/,
+               "a basis wide enough to hold a storey name");
+  assert.match(style, /header\s*{[^}]*flex-wrap:wrap/,
+               "and a header that gives it its own line rather than crushing it");
+});
+
+test("the tab strip is the first thing in the header, wrapped or not", () => {
+  const style = styleSheet();
+  assert.match(style, /\.tabs\s*{[^}]*order:-1/,
+               "so a wrapped header still starts with the storeys");
 });

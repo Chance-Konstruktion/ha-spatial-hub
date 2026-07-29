@@ -4049,7 +4049,14 @@ const STYLES = `
        font-family:var(--paper-font-body1_-_font-family, Roboto, sans-serif); }
 header { display:flex; align-items:center; gap:8px; padding:8px 12px;
          background:var(--fp-accent, var(--app-header-background-color, var(--primary-color,#03a9f4)));
-         color:var(--app-header-text-color,#fff); }
+         color:var(--app-header-text-color,#fff);
+         /* Umbrechen statt zerdruecken. Suche, Zoom und die
+            Werkzeugknoepfe geben keine Breite her, die Reiterleiste
+            schon -- auf einem Telefon schrumpfte sie deshalb auf null
+            und die Kopfzeile begann mit dem Suchfeld: die Etagen waren
+            nicht versteckt, sie waren null Pixel breit. Jetzt weichen
+            sie in eine eigene Zeile aus. */
+         flex-wrap:wrap; row-gap:8px; }
 /* Ein Haus mit zwölf Etagen darf die Kopfzeile nicht in vier Zeilen
    umbrechen: die Reiter blieben sonst nicht dort, wo der Nutzer sie
    zuletzt gesehen hat, und der Grundriss darunter würde bei jedem
@@ -4059,9 +4066,15 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
    selbst, statt ihn dem Abstandshalter zu überlassen und danach auf zwei
    Reiter zusammenzuschrumpfen. Bei sieben Etagen auf einem schmalen
    Fenster lagen die letzten sonst unerreichbar unter dem Suchfeld. */
+/* "1 1 220px" statt "1 1 auto": die Leiste darf schmaler werden, aber
+   nicht schmaler als eine Etage breit ist. Passen 220px und die Werkzeuge
+   nicht nebeneinander, bricht die Zeile -- und zwar an einer Breite, die
+   sich aus dem Platz ergibt, nicht aus einer geratenen Bildschirmgroesse.
+   Ein Panel neben offener Seitenleiste ist genauso schmal wie ein Telefon
+   und hatte dasselbe Problem. */
 .tabs { display:flex; gap:4px; flex-wrap:nowrap; overflow-x:auto;
-        min-width:0; flex:1 1 auto; scrollbar-width:none;
-        overscroll-behavior-x:contain; }
+        min-width:0; flex:1 1 220px; scrollbar-width:none;
+        overscroll-behavior-x:contain; order:-1; }
 .tabs::-webkit-scrollbar { display:none; }
 .tab { display:flex; align-items:center; gap:6px; border:0; border-radius:16px;
        padding:6px 14px; cursor:pointer; font:inherit; color:inherit;
@@ -4077,9 +4090,11 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
    nicht mehr erreichbar sind. Ab hier bekommen die Reiter deshalb eine
    eigene Zeile -- die oberste, weil "welche Etage" die erste Frage ist
    und alles andere Werkzeug dazu. */
+/* Sobald die Reiter eine eigene Zeile haben, sollen sie die ganze
+   nehmen -- eine halbe Zeile Etagen neben halb leerem Platz waere
+   Verschnitt. Der Abstandshalter schiebt die Werkzeuge nach rechts. */
 @media (max-width: 760px) {
-  header { flex-wrap:wrap; row-gap:8px; }
-  .tabs { flex:1 0 100%; order:-1; }
+  .tabs { flex:1 0 100%; }
   .spacer { flex:1 1 auto; }
   .search input { width:88px; }
 }
