@@ -422,6 +422,23 @@ Pro Bereich und pro Etage:
 Eine ausgeklammerte Etage nimmt ihre Nodes mit; sonst schwebten sie über der
 darunterliegenden und läsen sich, als gehörten sie dorthin.
 
+#### Höhe ist das, was Etagen zu Etagen macht
+
+Die Hausansicht zeigt Räume mit **stehenden Wänden** und Geschosse auf einer
+**Bodenplatte mit Dicke**. Flache Umrisse übereinander sind vier Zeichnungen,
+kein Haus: alles hat dieselbe Strichstärke, und nichts im Bild sagt, welche
+Linie eine Wand ist und welche eine Bodenkante.
+
+- Räume MÜSSEN **von hinten nach vorn** gezeichnet werden. Mit Höhe verdeckt,
+  wer zuletzt gezeichnet wird — in Speicherreihenfolge kehrt sich das Geschoss
+  nach innen.
+- Nur `indoor` bekommt Wände. Ein Garten hat keine, eine Wolke erst recht nicht.
+- Die Zeichnung MUSS **mit dem Haus wachsen**, statt das Haus in eine feste
+  Fläche zu quetschen. Der Abstand zwischen zwei Geschossen MUSS größer sein
+  als die Tiefe eines Geschosses, sonst werden sie ineinander gezeichnet.
+- Drei Gewichte, nicht eines: Außenkante am stärksten, Innenwände leiser,
+  Garten nur gestrichelt.
+
 ### Der Himmel
 
 Eine virtuelle Etage ist keine Etage, sondern der Himmel über dem Haus.

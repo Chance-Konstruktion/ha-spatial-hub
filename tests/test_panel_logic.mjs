@@ -958,14 +958,23 @@ test("the back of a storey is sheared right, which is what makes it a solid", ()
   assert.ok(view._project(0, 0, 0).x > view._project(0, 0, 1).x);
 });
 
-test("many storeys are squeezed instead of running off the bottom", () => {
+test("many storeys get more drawing, not less air between them", () => {
+  // They used to be squeezed into a fixed 1000-unit box: six floors and
+  // the spacing collapsed below a storey's own depth, so every floor was
+  // drawn through the one under it. That was the porridge.
   const data = model();
   data.floors = ["a", "b", "c", "d", "e", "f"].map((id, level) => ({
     id, name: id.toUpperCase(), level, icon: "",
   }));
   const view = panel(data, { floor: null });
 
-  assert.ok(view._project(5, 1, 1).y <= 1000, "the bottom storey is off-canvas");
+  const height = view._stackHeight;
+  assert.ok(view._project(5, 1, 1).y <= height, "the bottom storey is off-canvas");
+  assert.match(view._stackHtml(), new RegExp(`viewBox="0 0 1000 ${Math.round(height)}"`));
+
+  // A storey is 300 units deep. Two neighbours must not interleave.
+  const step = view._project(1, 0, 0).y - view._project(0, 0, 0).y;
+  assert.ok(step > 300, `storeys ${step} apart is less than one storey deep`);
 });
 
 test("a node on no storey at all lands in the tray, not silently missing", () => {
@@ -1645,9 +1654,62 @@ test("the stack gets a body so it reads as one house", () => {
   const view = panel(data, { floor: null });
   const html = view._stackHtml();
 
-  assert.match(html, /shell-wall/, "see-through walls between the storeys");
-  assert.match(html, /shell-roof/, "and something on top of them");
-  assert.match(html, /shell-post/);
+  // The four translucent faces that used to span every storey are gone --
+  // they were a haze over the whole picture. Volume does the job now.
+  assert.doesNotMatch(html, /shell-wall/, "no haze over the storeys");
+  assert.match(html, /shell-roof/, "something on top of them");
+  assert.match(html, /shell-post/, "and corners tying them together");
+});
+
+test("a storey stands on a slab instead of being a sheet of paper", () => {
+  const view = panel(model(), { floor: null });
+  const html = view._stackHtml();
+
+  // One band per edge of the outline, and it hangs *below* the storey.
+  const sides = [...html.matchAll(/class="storey-side" points="([^"]+)"/g)];
+  assert.equal(sides.length, 8, "four edges on each of the two storeys");
+  const [x0, y0, , , , y2] = sides[0][1]
+    .split(/[ ,]/)
+    .map(Number);
+  assert.ok(y2 > y0, "the slab hangs down, it does not float up");
+  assert.equal(typeof x0, "number");
+});
+
+test("a room has standing walls, a garden does not", () => {
+  const data = model({
+    areas: [
+      { id: "wohnen", name: "Wohnen", floor_id: "eg", kind: "indoor",
+        position: { x: 0.3, y: 0.4 }, size: { width: 0.3, height: 0.3 } },
+      { id: "terrasse", name: "Terrasse", floor_id: "eg", kind: "outdoor",
+        position: { x: 0.8, y: 0.4 }, size: { width: 0.2, height: 0.2 } },
+    ],
+  });
+  const view = panel(data, { floor: null });
+
+  const room = view._roomPolygon(0, data.areas[0]);
+  const terrace = view._roomPolygon(0, data.areas[1]);
+
+  assert.equal((room.match(/room-wall/g) || []).length, 4);
+  assert.doesNotMatch(terrace, /room-wall/, "a terrace is not a room with a roof off");
+});
+
+test("rooms are drawn back to front, or the storey turns inside out", () => {
+  // With height, whoever is drawn last is in front. Storage order is not
+  // depth order, so the sandwich has to sort.
+  const data = model({
+    areas: [
+      { id: "vorne", name: "Vorne", floor_id: "eg", kind: "indoor",
+        position: { x: 0.5, y: 0.8 }, size: { width: 0.3, height: 0.2 } },
+      { id: "hinten", name: "Hinten", floor_id: "eg", kind: "indoor",
+        position: { x: 0.5, y: 0.2 }, size: { width: 0.3, height: 0.2 } },
+    ],
+  });
+  const html = panel(data, { floor: null })._stackHtml();
+
+  assert.ok(
+    html.indexOf("Hinten") < html.indexOf("Vorne"),
+    "the room at the back is painted first",
+  );
 });
 
 test("one storey gets no body", () => {
@@ -1709,10 +1771,10 @@ test("the roof can be switched off", () => {
   // Decoration, and decoration the user did not ask for is decoration
   // they get to remove.
   const view = panel(model(), { floor: null });
-  assert.match(view._shellHtml(view._stackFloors).front, /shell-roof/);
+  assert.match(view._shellHtml(view._stackFloors).behind, /shell-roof/);
 
   view._roof = false;
-  assert.equal(view._shellHtml(view._stackFloors).front.includes("shell-roof"),
+  assert.equal(view._shellHtml(view._stackFloors).behind.includes("shell-roof"),
                false);
 });
 

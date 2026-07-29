@@ -36,7 +36,39 @@ const ALL_FLOORS = "__all__";
 // The shear that turns a flat plan into a storey seen from the side. Not
 // a true isometric projection: rooms stay rectangles-in-parallel, which
 // keeps them recognisable as the same rooms from the detail view.
-const STACK = { pad: 40, width: 620, depth: 300, skew: 260, top: 50, gap: 230 };
+const STACK = {
+  pad: 40, width: 620, depth: 300, skew: 260, top: 50, gap: 340,
+  // Rooms have standing walls and a storey has thickness. Flat outlines
+  // drawn on top of each other are what turned this view into porridge:
+  // four sheets of the same weight, and nothing in the picture saying
+  // which line is a wall, which is a floor edge and which is a garden.
+  // Height is what separates them, so height is what the drawing gets.
+  rise: 26, slab: 15,
+};
+
+/** The middle of a projected outline. Where a room's name belongs: at the
+ *  corner it collided with the neighbour's name two rooms in a row. */
+const centreOf = (corners) => ({
+  x: corners.reduce((sum, point) => sum + point.x, 0) / corners.length,
+  y: corners.reduce((sum, point) => sum + point.y, 0) / corners.length,
+});
+
+/** Standing walls along a projected outline.
+ *
+ *  `rise` upwards for a room's walls, negative for the slab a storey
+ *  stands on. One quad per edge, in the outline's own order -- the
+ *  projection shears x and y together, so a wall is a parallelogram and
+ *  needs no trigonometry beyond "the same points, higher up".
+ */
+const wallsOf = (corners, rise, className) =>
+  corners
+    .map((corner, index) => {
+      const next = corners[(index + 1) % corners.length];
+      return `<polygon class="${className}" points="${corner.x},${corner.y} ` +
+        `${next.x},${next.y} ${next.x},${next.y - rise} ` +
+        `${corner.x},${corner.y - rise}"/>`;
+    })
+    .join("");
 
 // How far the camera may be pushed in either direction. Beyond this a plan
 // is either a single icon or a smear, and the way back is not obvious.
@@ -481,16 +513,31 @@ class SpatialHubPanel extends HTMLElement {
       0,
       ...this._stackFloors.map((_floor, at) => this._planeLift(at)),
     );
-    const gap = Math.min(
-      STACK.gap,
-      (1000 - STACK.top - sky - STACK.depth) /
-        Math.max(1, this._stackFloors.length - 1),
-    );
     return {
       x: STACK.pad + nx * STACK.width + (1 - ny) * STACK.skew,
-      y: STACK.top + sky + floorIndex * gap + ny * STACK.depth -
+      y: STACK.top + sky + floorIndex * STACK.gap + ny * STACK.depth -
         this._planeLift(floorIndex),
     };
+  }
+
+  /** How tall the drawing has to be to hold the house.
+   *
+   *  The storeys used to be squeezed into a fixed 1000×1000 box: with a
+   *  sky plane and four floors the spacing collapsed to under a third of
+   *  a storey's own depth, so every floor was drawn *through* the one
+   *  below it. That was the porridge -- not the line weights, the
+   *  spacing. Air between the storeys is what makes them storeys, so the
+   *  picture grows with the house instead of the house shrinking into
+   *  the picture. The camera already scrolls and zooms; a taller drawing
+   *  costs nothing but says which floor is which.
+   */
+  get _stackHeight() {
+    const sky = Math.max(0, ...this._stackFloors.map((_f, at) => this._planeLift(at)));
+    return (
+      STACK.top + sky +
+      Math.max(0, this._stackFloors.length - 1) * STACK.gap +
+      STACK.depth + STACK.slab + STACK.pad
+    );
   }
 
   /** Providers whose every layer is switched off.
@@ -1196,11 +1243,12 @@ class SpatialHubPanel extends HTMLElement {
       ]),
     );
 
-    const outline = (at, from, to) =>
+    const corners = (at, from, to) =>
       [[from, from], [to, from], [to, to], [from, to]]
-        .map(([x, y]) => this._project(at, x, y))
-        .map((point) => `${point.x},${point.y}`)
-        .join(" ");
+        .map(([x, y]) => this._project(at, x, y));
+
+    const outline = (at, from, to) =>
+      corners(at, from, to).map((point) => `${point.x},${point.y}`).join(" ");
 
     const plans = floors.map((floor, at) => {
       const frame = this._frame;
@@ -1216,11 +1264,17 @@ class SpatialHubPanel extends HTMLElement {
       // The plan is skewed, so "top left" is a third of the way into the
       // drawing -- the name landed on the rooms it was labelling.
       const label = this._project(at, 0, 1);
+      // Back to front. Rooms have height now, so a room further back can
+      // be hidden behind the walls of one in front -- which is what depth
+      // looks like. Drawn in storage order instead, a back room paints
+      // over the front one and the whole storey turns inside out.
       const rooms = this._model.areas
         .filter(
           (area) =>
             area.floor_id === floor.id && area.position && this._inSandwich(area),
         )
+        .slice()
+        .sort((a, b) => a.position.y - b.position.y)
         .map((area) => this._roomPolygon(at, area))
         .join("");
       // Sky is not a storey. It got a floor slab and an outline like
@@ -1236,8 +1290,12 @@ class SpatialHubPanel extends HTMLElement {
              })"><text class="storey-name">${escapeHtml(floor.name)}</text></g>
         </g>`;
       }
+      // The storey is a floor slab, not a sheet of paper: a thin band of
+      // edge under it is the difference between four drawings above each
+      // other and four floors of one house.
       return `<g class="plane">
         ${apron}
+        ${wallsOf(corners(at, 0, 1), -STACK.slab, "storey-side")}
         <polygon class="storey" points="${outline(at, 0, 1)}"/>
         ${rooms}
         <g data-at-x="${label.x - 12}" data-at-y="${label.y}"
@@ -1294,7 +1352,7 @@ class SpatialHubPanel extends HTMLElement {
       .join("");
 
     return `${this._viewportHtml(`<div class="stack">
-      <svg viewBox="0 0 1000 1000">
+      <svg viewBox="0 0 1000 ${Math.round(this._stackHeight)}">
         ${shell.behind}
         ${plans.join("")}
         ${shell.front}
@@ -1334,15 +1392,12 @@ class SpatialHubPanel extends HTMLElement {
     const lower = corners.map(([x, y]) => this._project(base, x, y));
     const points = (list) => list.map((p) => `${p.x},${p.y}`).join(" ");
 
-    const walls = corners
-      .map((_corner, index) => {
-        const next = (index + 1) % corners.length;
-        return `<polygon class="shell-wall" points="${points([
-          upper[index], upper[next], lower[next], lower[index],
-        ])}"/>`;
-      })
-      .join("");
-
+    // The four translucent faces that used to span every storey are gone.
+    // They were the one thing lying over the whole picture at once, and
+    // with the storeys standing on slabs and the rooms carrying walls,
+    // the building reads as a building without a haze on top of it. What
+    // is left is the corner posts: four lines, and they tie the storeys
+    // together without covering a single room.
     const posts = corners
       .map(
         (_corner, index) =>
@@ -1375,14 +1430,15 @@ class SpatialHubPanel extends HTMLElement {
           .join("")
       : "";
 
-    // The walls go behind the storeys, the roof in front of them. With a
-    // cloud plane above the top floor the roof sits exactly where the
-    // clouds are drawn, and behind everything it simply vanished -- so
-    // the one part that says "house" was the one part nobody could see.
-    // It is translucent, so being in front costs the plan nothing.
+    // Everything goes behind the storeys. The roof used to be drawn in
+    // front, because with the old cramped spacing it landed inside the
+    // cloud plane and vanished -- but in front it also drew four long
+    // lines straight across the top floor, over the rooms. The storeys
+    // have room to breathe now, so the roof clears the top one on its
+    // own and no longer has to cover it to be seen.
     return {
-      behind: `<g class="shell" aria-hidden="true">${walls}${posts}</g>`,
-      front: `<g class="shell" aria-hidden="true">${roof}</g>`,
+      behind: `<g class="shell" aria-hidden="true">${posts}${roof}</g>`,
+      front: "",
     };
   }
 
@@ -1424,17 +1480,25 @@ class SpatialHubPanel extends HTMLElement {
     // views disagreeing about the shape of a room is the bug that made
     // the cloud a rectangle in the house view, and a niche visible on one
     // tab only would be the same bug wearing a different hat.
-    const points = shapeOf(area)
+    const corners = shapeOf(area)
       .map((point) => [x0 + point.x * width, y0 + point.y * height])
-      .map(([x, y]) => this._project(plane, x, y))
-      .map((point) => `${point.x},${point.y}`)
-      .join(" ");
-    const label = this._project(plane, x0, y0);
+      .map(([x, y]) => this._project(plane, x, y));
+    const points = corners.map((point) => `${point.x},${point.y}`).join(" ");
+    // The room's name in the middle of the room, the way a floor plan has
+    // always labelled a room. Hung off the corner it landed on the wall it
+    // shared with the next room, and two names on one line is neither.
+    const label = centreOf(corners);
 
     // A virtual area is a cloud here too. It was a cloud on its own tab
     // and a rectangle in the house view, so the two views disagreed about
     // what the thing *is* -- and the house view is the one people open.
+    // Walls, and only for rooms. A garden has no walls, and a cloud has
+    // neither -- standing a terrace up on 26 units of masonry would say
+    // the exact opposite of what a terrace is.
     let shape = `<polygon class="room" points="${points}"/>`;
+    if (kindOf(area) === AREA_KIND.INDOOR) {
+      shape += wallsOf(corners, STACK.rise, "room-wall");
+    }
     if (kindOf(area) === AREA_KIND.VIRTUAL) {
       // The plan is skewed, so the cloud is skewed with it: two edges of
       // the projected room are the axes it is drawn along.
@@ -1453,8 +1517,8 @@ class SpatialHubPanel extends HTMLElement {
     }
 
     return `${shape}
-      <g data-at-x="${label.x + 6}" data-at-y="${label.y + 16}"
-         transform="translate(${label.x + 6},${label.y + 16}) scale(${
+      <g data-at-x="${label.x}" data-at-y="${label.y}"
+         transform="translate(${label.x},${label.y}) scale(${
            this._counterScale
          })"><text class="room-label">${escapeHtml(area.name)}</text></g>`;
   }
@@ -4173,9 +4237,8 @@ main { flex:0 0 auto; min-width:0; }
    die Wände decken, verdecken sie den Grundriss, und der ist der Grund,
    warum jemand hinschaut. Rein dekorativ, daher pointer-events:none. */
 .shell { pointer-events:none; }
-.shell-wall { fill:var(--fp-shell, rgba(128,145,170,.09)); stroke:none;
+.shell-post { stroke:var(--fp-shell-line, rgba(128,145,170,.45)); stroke-width:2;
               opacity:var(--fp-house,1); }
-.shell-post { stroke:var(--fp-shell-line, rgba(128,145,170,.45)); stroke-width:2; }
 /* Nur die Kante. Gefüllt lagen vier Flächen wie ein Deckel über dem
    Dachgeschoss und verdeckten genau die Etage, die man sehen will. */
 .shell-roof { fill:none;
@@ -4183,8 +4246,18 @@ main { flex:0 0 auto; min-width:0; }
               stroke-linejoin:round; }
 .shell-ridge { stroke:var(--fp-shell-line, rgba(128,145,170,.6)); stroke-width:2.5;
                stroke-linecap:round; }
-.storey { fill:none; stroke:var(--divider-color,rgba(128,128,128,.45));
-          stroke-width:calc(2px * var(--fp-house,1)); }
+/* Drei Gewichte, damit das Auge sofort sortiert: die Aussenkante des
+   Stockwerks am staerksten, die Innenwaende leiser, der Garten nur
+   gestrichelt. Vorher hatte alles dieselbe Staerke -- deshalb war das
+   Sandwich ein Brei. */
+.storey { fill:var(--fp-slab, rgba(128,145,170,.05));
+          stroke:var(--divider-color,rgba(128,128,128,.55));
+          stroke-width:calc(2.4px * var(--fp-house,1)); }
+/* Die Kante unter dem Stockwerk. Sie traegt die Etage, deshalb ist sie
+   etwas dunkler als die Flaeche darueber. */
+.storey-side { fill:var(--fp-slab-side, rgba(128,145,170,.16));
+               stroke:var(--divider-color,rgba(128,128,128,.4));
+               stroke-width:calc(1px * var(--fp-house,1)); }
 .storey-name { font-size:26px; fill:currentColor; opacity:.65; text-anchor:end; }
 .stack-cloud { fill:var(--fp-virtual, rgba(120,144,180,.16));
                stroke:var(--fp-virtual-line, rgba(120,144,180,.7));
@@ -4195,12 +4268,19 @@ main { flex:0 0 auto; min-width:0; }
    Platte mit Punkten darauf. Jetzt eine Wand: sichtbar, aber immer noch
    leiser als die Aussenwand, die sie umschliesst. Der Regler bewegt
    beide, damit das Verhaeltnis stimmt. */
-.stack .room { fill:rgba(128,128,128,calc(.10 * var(--fp-house,1)));
-               stroke:var(--fp-shell-line, rgba(128,145,170,.55));
-               stroke-width:calc(1.5px * var(--fp-house,1));
-               stroke-opacity:calc(.85 * var(--fp-house,1));
-               vector-effect:non-scaling-stroke; }
-.stack .room-label { font-size:17px; fill:currentColor; opacity:.5; }
+.stack .room { fill:rgba(128,128,128,calc(.07 * var(--fp-house,1)));
+               stroke:none; }
+/* Stehende Waende. Sie sind der Grund, warum ein Raum jetzt ein Raum ist
+   und keine graue Flaeche: leicht gefuellt, damit sie einander verdecken
+   koennen, und mit einer Kante, die man auch bei kleinem Zoom sieht. */
+.room-wall { fill:var(--fp-wall, rgba(128,145,170,.13));
+             stroke:var(--fp-shell-line, rgba(128,145,170,.55));
+             stroke-width:calc(1.3px * var(--fp-house,1));
+             stroke-opacity:calc(.9 * var(--fp-house,1));
+             stroke-linejoin:round;
+             vector-effect:non-scaling-stroke; }
+.stack .room-label { font-size:17px; fill:currentColor; opacity:.55;
+                     text-anchor:middle; dominant-baseline:middle; }
 .stack-edge { stroke-linecap:round; opacity:var(--layer-opacity,1); }
 /* A connection between two storeys is the whole reason this view exists. */
 .stack-edge.across { opacity:calc(var(--layer-opacity,1) * .95); }
