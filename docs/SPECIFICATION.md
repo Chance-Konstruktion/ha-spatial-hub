@@ -158,6 +158,16 @@ Ein Renderer DARF Etagen **nicht** zur Deckungsgleichheit zwingen. Eine
 Terrasse, ein Erker, ein zurückgesetztes Dachgeschoss sind der Normalfall,
 kein Fehler; die Kontur ist eine Auskunft, keine Vorschrift.
 
+### Bearbeiten ist zweierlei
+
+Ein Renderer, der beides anbietet — Wände ziehen und Geräte einsortieren —
+MUSS sie **trennen**. Beides gleichzeitig heißt keins von beiden: ein Griff
+zwischen zwanzig Gerätepunkten trifft immer den Punkt, und ein Punkt zwischen
+lauter Anfassern trifft immer den Anfasser.
+
+Im Raum-Modus SOLL ein Renderer die Geräte **ausblenden**. Sie sind nicht
+gelöscht, nur nicht im Weg, und ein Wechsel zurück holt sie sofort wieder.
+
 ### Räume, die keine Rechtecke sind
 
 Ein Bereich DARF eine eigene Kontur `shape` tragen: eine Liste von mindestens
@@ -194,6 +204,37 @@ und `null` bedeutet: kein Grundstück, nicht "unbekannt".
 Ein Renderer SOLL es **unter allem anderen** zeichnen. Es ist der Grund, auf
 dem das Haus steht, und Nebengebäude — Garage, Gartenhütte — sind Außenbereiche
 darauf, keine Geschosse.
+
+Das Grundstück bestimmt, **wie viel Umgebung es gibt**. Ein Renderer MUSS
+sein Sichtfenster so weit öffnen, dass ein gezeichnetes `plot` vollständig
+hineinpasst; ein fester Rand um das Haus wäre eine Behauptung über fremde
+Gärten. Das Haus bleibt dabei in der Mitte — es wird nicht kleiner, weil
+jemand mehr Grundstück hat, es bekommt nur mehr Rand.
+
+### Maße
+
+Eine Etage DARF ein `metres` tragen: wie breit das Haus in der Wirklichkeit
+ist. Genau diese eine Zahl, und alle anderen Längen der Etage rechnen sich
+daraus.
+
+Nichts DARF sie voraussetzen. Der Editor funktioniert nach Augenmaß —
+ziehen, bis es aussieht wie zu Hause — und ein so gezeichneter Grundriss ist
+ein gültiger Grundriss. `metres` ist die Antwort für die, die ihr Haus auf
+den Zentimeter kennen, und sonst für niemanden; fehlt es, MUSS ein Renderer
+schlicht keine Maße anzeigen statt eine erfundene Zahl.
+
+### Wie deutlich das Haus ist
+
+Ein Renderer SOLL die **Innenwände sichtbar** zeichnen, nicht nur andeuten:
+ein Grundriss ohne sie ist eine Fläche mit Punkten darauf und beantwortet
+nicht mehr die Frage, in welchem Raum man steht.
+
+Wie stark, ist nicht festzulegen — das hängt am Haus, am Bildschirm und am
+Geschmack. Ein Renderer SOLL es deshalb **einstellbar** machen (`house_weight`
+im Theme, `0.2 … 1.6`) und MUSS Außenwände, Innenwände und Etagenplatten
+gemeinsam bewegen, damit ihr Verhältnis zueinander erhalten bleibt. Der Wert
+`0` ist verboten: ein verschwundenes Haus sieht aus wie ein Fehler, und der
+Regler, der es getan hat, liegt drei Dialoge weit weg.
 
 ## § Popup
 

@@ -54,6 +54,12 @@ _AUTO: dict[str, Any] = {
     },
     "node_shape": "circle",
     "node_size": 1.0,
+    # How strongly the building itself is drawn. A floor plan with no
+    # interior walls is a surface with dots on it and no longer says where
+    # you are standing; one with full walls buries the devices it exists
+    # for. Where between those two is right depends on the house and the
+    # screen, so it is a dial rather than a decision.
+    "house_weight": 1.0,
     "labels": "always",
     "edge_style": "straight",
     "room_style": "outline",
@@ -165,6 +171,12 @@ def resolve(stored: Any) -> dict[str, Any]:
     size = theme.get("node_size")
     if isinstance(size, (int, float)):
         resolved["node_size"] = min(3.0, max(0.4, float(size)))
+
+    weight = theme.get("house_weight")
+    if isinstance(weight, (int, float)):
+        # Never zero: a stored zero would erase the house and leave a panel
+        # that looks broken, with the setting that did it three dialogs away.
+        resolved["house_weight"] = min(1.6, max(0.2, float(weight)))
 
     # Per-word overrides sit on top of the preset, so a user can recolour
     # just "offline" without giving up everything else the preset decided.

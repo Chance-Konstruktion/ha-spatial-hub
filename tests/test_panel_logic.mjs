@@ -117,11 +117,14 @@ const model = (overrides = {}) => ({
 // the stacked view of the whole house, so a test that means "the detail
 // view" has to say so -- pass floor:null for the stack.
 function panel(data = model(), { admin = true, edit = false,
-                                 floor = "eg" } = {}) {
+                                 what = "rooms", floor = "eg" } = {}) {
   const instance = new SpatialHubPanel();
   instance._floorId = floor === null ? "__all__" : floor;
   instance._model = data;
   instance._edit = edit;
+  // Editing is two modes now. Rooms is the default, so a test that drags a
+  // device says so -- the same way a user has to.
+  instance._editWhat = what;
   instance._written = [];
   instance._hass = {
     user: { is_admin: admin },
@@ -436,7 +439,7 @@ test("areas grow a grip and a hide button only while editing", () => {
 });
 
 test("dragging a node writes its position once, on release", () => {
-  const view = panel(model(), { edit: true });
+  const view = panel(model(), { edit: true, what: "icons" });
   const target = element({ "data-node": "a:one" });
   const board = stage();
   view._onPointerDown(pointer(0, 0, { target: [target, board] }));
@@ -452,7 +455,7 @@ test("dragging a node writes its position once, on release", () => {
 });
 
 test("dragging snaps to the grid, and Shift lets go of it", () => {
-  const view = panel(model(), { edit: true });
+  const view = panel(model(), { edit: true, what: "icons" });
   const target = element({ "data-node": "a:one" });
   view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
 
@@ -468,7 +471,7 @@ test("dragging snaps to the grid, and Shift lets go of it", () => {
 });
 
 test("a drag never leaves the floor plan", () => {
-  const view = panel(model(), { edit: true });
+  const view = panel(model(), { edit: true, what: "icons" });
   const target = element({ "data-node": "a:one" });
   view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
   view._onPointerMove(pointer(-500, 4000, { shift: true }));
@@ -1224,9 +1227,11 @@ test("the floor tabs claim the free space themselves", () => {
          "spatial-hub-panel.js"),
     "utf8",
   );
-  // Otherwise the spacer takes it and the last storeys end up unreachable
-  // underneath the search box on a narrow window.
-  assert.match(source, /\.tabs \{[^}]*flex:1 1 auto/);
+  // "1 1 auto" was this line for a while, and it is how the strip ended up
+  // exactly zero pixels wide on a phone: it claims free space, but it also
+  // gives up all of its own when there is none. A stated basis is the half
+  // that was missing.
+  assert.match(source, /\.tabs \{[^}]*flex:1 1 220px/);
 });
 
 // ── Search ─────────────────────────────────────────────────
@@ -1247,7 +1252,7 @@ test("no search means no opinion", () => {
 // ── Undo ───────────────────────────────────────────────────
 
 test("a drag can be taken back", async () => {
-  const view = panel(model(), { edit: true });
+  const view = panel(model(), { edit: true, what: "icons" });
   const written = [];
   view._setLayout = SpatialHubPanel.prototype._setLayout;
   view._hass.callWS = async (message) => {
@@ -1817,8 +1822,23 @@ test("a plain room already has four corners to grab", () => {
   view._corners = true;
   const html = view._areaHandlesHtml(view._model.areas[0]);
 
-  assert.equal((html.match(/data-corner-index/g) || []).length, 8,
-               "four corners and four wall midpoints to add one with");
+  assert.equal((html.match(/data-corner-area/g) || []).length, 4,
+               "four corners to grab");
+  assert.equal((html.match(/data-corner-add/g) || []).length, 4,
+               "four wall midpoints to add one with");
+  assert.equal((html.match(/data-corner-drop/g) || []).length, 4,
+               "and a visible × on each, because Alt+click is not a button");
+});
+
+test("removing a corner is a button, not a hidden key combination", () => {
+  // Alt+click cannot be seen, cannot be guessed, and on a tablet cannot
+  // be pressed at all -- three good reasons it was not the answer.
+  const view = panel(model(), { edit: true });
+  view._corners = true;
+  const html = view._areaHandlesHtml(view._model.areas[0]);
+
+  assert.doesNotMatch(html, /Alt\+Klick/, "the × replaced it in the tooltip");
+  assert.match(html, /data-corner-drop="wohnzimmer"/);
 });
 
 test("adding a corner splits the wall it sits on", () => {
@@ -1988,4 +2008,246 @@ test("a cloud gets the same room around the house that a garden does", () => {
 
   assert.ok(view._frame.min < 0);
   assert.ok(view._frame.span > 1);
+});
+
+// ── Ein Redraw mitten im Ziehen ────────────────────────────
+
+test("a refresh never rebuilds the plan out of a hand that is holding it", () => {
+  // The reported symptom: the room stops dead after about a second and is
+  // suddenly invisible until the button comes up. That second is the hub
+  // pushing an update -- the redraw replaces the held element, every
+  // further move writes to a node that is no longer in the document, and
+  // the plan only agrees again on release.
+  const view = panel(model(), { edit: true });
+  let drawn = 0;
+  view._renderShell = () => { drawn += 1; };
+  view._root = { setAttribute() {}, innerHTML: "", querySelector: () => null,
+                 style: { setProperty() {} } };
+  view._fitted = true;
+  view._applyCamera = () => {};
+  view._revealCurrentTab = () => {};
+
+  const target = element({ "data-area": "wohnzimmer" });
+  view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
+  view._render();
+
+  assert.equal(drawn, 0, "not while a room is being dragged");
+
+  view._onPointerMove(pointer(300, 700));
+  assert.equal(target.style.left, "30%", "so the room keeps following");
+});
+
+test("what arrived during the drag is drawn the moment it ends", () => {
+  // Deferred, never dropped: a plan that silently ignored an update would
+  // be a worse bug than the one being fixed.
+  const view = panel(model(), { edit: true });
+  let drawn = 0;
+  view._renderShell = () => { drawn += 1; };
+  view._root = { setAttribute() {}, innerHTML: "", querySelector: () => null,
+                 style: { setProperty() {} } };
+  view._fitted = true;
+  view._applyCamera = () => {};
+  view._revealCurrentTab = () => {};
+
+  view._onPointerDown(pointer(0, 0, {
+    target: [element({ "data-area": "wohnzimmer" }), stage()],
+  }));
+  view._render();
+  view._onPointerMove(pointer(300, 700));
+  view._onPointerUp();
+
+  assert.equal(drawn, 1, "exactly once, after the hand let go");
+});
+
+// ── Zwei Bearbeiten-Modi ───────────────────────────────────
+
+test("rooms mode leaves the devices where they are", () => {
+  const view = panel(model(), { edit: true, what: "rooms" });
+  view._onPointerDown(pointer(0, 0, {
+    target: [element({ "data-node": "a:one" }), stage()],
+  }));
+
+  assert.equal(view._drag, null, "a dot is not what this mode moves");
+});
+
+test("device mode leaves the walls where they are", () => {
+  const view = panel(model(), { edit: true, what: "icons" });
+  view._onPointerDown(pointer(0, 0, {
+    target: [element({ "data-area": "wohnzimmer" }), stage()],
+  }));
+
+  assert.equal(view._drag, null, "a room is not what this mode moves");
+});
+
+test("the devices are out of the way while the rooms are being drawn", () => {
+  const view = panel(model(), { edit: true, what: "rooms" });
+  assert.match(view._stageHtml(), /editing-rooms/);
+  const icons = panel(model(), { edit: true, what: "icons" });
+  assert.match(icons._stageHtml(), /editing-icons/);
+});
+
+test("rooms mode is the one with the wall tools", () => {
+  const rooms = panel(model(), { edit: true, what: "rooms" });
+  assert.match(rooms._headerHtml(), /data-toggle-corners/);
+  const icons = panel(model(), { edit: true, what: "icons" });
+  assert.doesNotMatch(icons._headerHtml(), /data-toggle-corners/);
+});
+
+// ── Das Grundstück ist so groß wie der Garten ──────────────
+
+test("the plot can be grown past the walls, and the view grows with it", () => {
+  // Everybody's garden is a different size. A boundary that stopped at a
+  // fixed apron would either hit an invisible wall or be drawn outside
+  // the picture.
+  const view = panel(model(), { edit: true });
+  view._floor.plot = [
+    { x: -0.2, y: -0.2 }, { x: 1.2, y: -0.2 },
+    { x: 1.2, y: 1.2 }, { x: -0.2, y: 1.2 },
+  ];
+  const before = view._frame.span;
+
+  view._scalePlot(1.5);
+  const [, , values] = view._written[0];
+  view._floor.plot = values.plot;
+
+  assert.ok(values.plot.every((point) => point.x < -0.3 || point.x > 1.3),
+            "every corner moved outwards");
+  assert.ok(view._frame.span > before, "and the window opened up for it");
+});
+
+test("shrinking the plot is the same press the other way", () => {
+  const view = panel(model(), { edit: true });
+  view._floor.plot = [
+    { x: -0.5, y: -0.5 }, { x: 1.5, y: -0.5 }, { x: 1.5, y: 1.5 },
+  ];
+  view._scalePlot(0.5);
+  const [, , values] = view._written[0];
+
+  assert.ok(Math.abs(values.plot[0].x - 0.1667) < 0.01, "halved around its middle");
+});
+
+test("a plot keeps its shape when it changes size", () => {
+  const view = panel(model(), { edit: true });
+  view._floor.plot = [
+    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0.5 }, { x: 0, y: 0.5 },
+  ];
+  view._scalePlot(2);
+  const [, , values] = view._written[0];
+  const width = values.plot[1].x - values.plot[0].x;
+  const height = values.plot[2].y - values.plot[1].y;
+
+  assert.ok(Math.abs(width / height - 2) < 0.01,
+            "twice as wide as it is tall, before and after");
+});
+
+// ── Meter, für die die es genau wollen ─────────────────────
+
+test("nothing asks for a number until somebody wants numbers", () => {
+  const view = panel(model(), { edit: true });
+  assert.equal(view._metersHtml(), "", "the editor works by eye");
+  assert.doesNotMatch(view._areasHtml(), /area-dim/);
+});
+
+test("expert mode measures everything against one number", () => {
+  const view = panel(model(), { edit: true });
+  view._meters = true;
+  view._floor.metres = 10;
+
+  assert.match(view._metersHtml(), /value="10"/);
+  // Every room is measured against that one number, in metres.
+  assert.match(view._areasHtml(), /class="area-dim">\d+,\d × \d+,\d m</);
+});
+
+test("a house with no stated width still measures something sane", () => {
+  const view = panel(model(), { edit: true });
+  view._meters = true;
+
+  assert.match(view._metersHtml(), /value="12"/, "twelve metres, not zero");
+});
+
+// ── Wie deutlich das Haus da ist ───────────────────────────
+
+test("the house has a dial rather than a decision", () => {
+  const view = panel(model(), { edit: true });
+  view._model.theme = { ...view._model.theme, house_weight: 0.4 };
+
+  assert.match(view._themeVars, /--fp-house:0\.4/);
+});
+
+test("an untouched dial forces nothing onto the page", () => {
+  const view = panel(model(), { edit: true });
+  assert.doesNotMatch(view._themeVars, /--fp-house/);
+});
+
+test("a stored zero cannot erase the house", () => {
+  const view = panel(model(), { edit: true });
+  view._model.theme = { ...view._model.theme, house_weight: 0 };
+
+  assert.match(view._themeVars, /--fp-house:0\.2/, "clamped, not obeyed");
+});
+
+// ── Die Kopfzeile auf einem Telefon ────────────────────────
+
+/** The panel's stylesheet, read from the source it ships. */
+const styleSheet = () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  const start = source.indexOf("const STYLES = `");
+  assert.ok(start > 0, "the stylesheet moved");
+  return source.slice(start, source.indexOf("`;", start));
+};
+
+test("the storey tabs can never be squeezed to nothing", () => {
+  // Measured in a real browser at 390px: the tab strip was exactly 0
+  // pixels wide, so the header appeared to start with the search box.
+  // The storeys were not hidden -- they had no width. Everything else in
+  // that row refuses to shrink, so the strip must either keep a usable
+  // width or take a line of its own.
+  const style = styleSheet();
+
+  assert.match(style, /\.tabs\s*{[^}]*flex:1 1 220px/,
+               "a basis wide enough to hold a storey name");
+  assert.match(style, /header\s*{[^}]*flex-wrap:wrap/,
+               "and a header that gives it its own line rather than crushing it");
+});
+
+test("the tab strip is the first thing in the header, wrapped or not", () => {
+  const style = styleSheet();
+  assert.match(style, /\.tabs\s*{[^}]*order:-1/,
+               "so a wrapped header still starts with the storeys");
+});
+
+// ── Ein Bildschirm, der doppelt so hoch wie breit ist ──────
+
+test("the legend follows the plan instead of sinking to the bottom", () => {
+  // Measured on a 373×910 window: the plan ended at 485px and the legend
+  // started at 866px -- 381 empty pixels in between, because `main` was
+  // told to take all the leftover height and the plan sat at its top.
+  const style = styleSheet();
+
+  assert.match(style, /\nmain \{[^}]*flex:0 0 auto/,
+               "the plan takes the height it needs and no more");
+});
+
+test("a tall screen opens the legend rather than leaving half of it empty", () => {
+  // A square plan on a 22:9 phone can only be as wide as the phone, so
+  // the lower half is going spare. Filling it with the layers and the
+  // providers beats filling it with nothing.
+  const tall = { addEventListener() {}, removeEventListener() {},
+                 confirm: () => true, innerWidth: 373, innerHeight: 910 };
+  const wide = { ...tall, innerWidth: 1400, innerHeight: 900 };
+
+  const previous = globalThis.window;
+  try {
+    globalThis.window = tall;
+    assert.equal(new SpatialHubPanel()._legendOpen, true);
+    globalThis.window = wide;
+    assert.equal(new SpatialHubPanel()._legendOpen, false,
+                 "on a normal screen the house still comes first");
+  } finally {
+    globalThis.window = previous;
+  }
 });
