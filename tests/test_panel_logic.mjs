@@ -2626,3 +2626,86 @@ test("an entity pulled out of its device is announced as just itself", async () 
 
   assert.match(view._stageHtml(), /nur diese Entität/);
 });
+
+test("wall grips keep their screen size instead of growing with the zoom", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  // Same counter-scale the device icons use: the grips live inside the
+  // canvas the camera scales, so at 600 % an untouched 16px dot covered
+  // the wall it was there to place.
+  assert.match(
+    source,
+    /\.corner, \.handle \{ --grip-counter:min\(1, 1 \/ var\(--camera-zoom,1\)\); \}/,
+  );
+  assert.match(source, /\.corner \{[^}]*transform:scale\(var\(--grip-counter\)\)/s);
+  assert.match(source, /\.handle \{[^}]*transform:scale\(var\(--grip-counter\)\)/s);
+  // Hovering must not throw the counter away -- that was a grip that
+  // jumped back to full size the moment the pointer arrived.
+  assert.match(
+    source,
+    /\.corner:hover \{ transform:scale\(calc\(var\(--grip-counter\) \* 1\.15\)\); \}/,
+  );
+});
+
+test("a grip is drawn small and hit large", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  const size = (selector) =>
+    Number(
+      new RegExp(`\\${selector} \\{[^}]*width:(\\d+)px`, "s").exec(source)[1],
+    );
+  assert.ok(size(".corner") <= 10, "the corner dot is still a blob");
+  assert.ok(size(".handle") <= 9, "the wall grip is still a blob");
+  // The invisible target around it grew as the dot shrank.
+  assert.match(source, /\.corner::before \{[^}]*width:56px/s);
+  assert.match(source, /\.handle::before \{[^}]*inset:-16px/s);
+});
+
+test("a tall house uses the width of a wide window instead of one long tower", () => {
+  const data = model();
+  data.floors = ["a", "b", "c", "d", "e", "f"].map((id, level) => ({
+    id, name: id.toUpperCase(), level, icon: "",
+  }));
+  const view = panel(data, { floor: null });
+  view._root = { querySelector: () => ({ clientWidth: 1400 }) };
+
+  assert.equal(view._stackColumns, 2);
+  assert.equal(view._stackRows, 3);
+  // Second column, first row: to the right of the first column and back
+  // up at the top -- not further down the same tower.
+  assert.ok(view._project(3, 0, 0).x > view._project(2, 0, 0).x);
+  assert.ok(view._project(3, 0, 0).y < view._project(2, 0, 0).y);
+  // The drawing is now wider than tall-ish rather than a ribbon.
+  assert.ok(view._stackWidth > 1200, "the second column got no room");
+
+  // Narrow window, same house: one stack, the way it always was.
+  view._root = { querySelector: () => ({ clientWidth: 600 }) };
+  assert.equal(view._stackColumns, 1);
+  assert.equal(view._project(3, 0, 0).x, view._project(3, 0, 0).x);
+});
+
+test("two storeys are never split into columns", () => {
+  const view = panel(model(), { floor: null });
+  view._root = { querySelector: () => ({ clientWidth: 2400 }) };
+  assert.equal(view._stackColumns, 1, "a bungalow next to a bungalow");
+});
+
+test("fit-to-screen fills the window instead of parking the plan in a corner", () => {
+  const view = panel();
+  view._root = {
+    querySelector: (selector) =>
+      selector === ".canvas"
+        ? { offsetWidth: 400, offsetHeight: 300, style: { setProperty() {} } }
+        : { clientWidth: 1600, clientHeight: 900, getBoundingClientRect: () => ({}) },
+  };
+  view._fitToScreen();
+  // 900/300 = 3 is the tighter axis; 0.9 of it keeps a margin.
+  assert.equal(view._view.zoom, 2.7);
+  assert.ok(view._view.zoom > 1, "a small plan used to stay small");
+});

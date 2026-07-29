@@ -49,6 +49,13 @@ const STACK = {
   // thing a paper floor plan does, and the reason one can be read from
   // across a room.
   wall: 8, outerWall: 13,
+  // Luft zwischen zwei Etagen-Spalten. Schmaler als der Versatz einer
+  // Etage waere zu wenig: die Spalten muessen als zwei Stapel lesbar
+  // bleiben, nicht als ein breiter Streifen.
+  gutter: 90,
+  // Ab hier lohnt sich die zweite Spalte. Darunter steht ein Haus mit
+  // zwei Etagen nebeneinander wie ein Bungalow neben einem Bungalow.
+  columnFloors: 4, columnWidth: 900,
   // Storeys sit slightly behind each other instead of exactly above.
   // Dead-aligned, the upper floor's outline lands on the lower one's and
   // the eye has nothing to separate them by except the gap; offset, each
@@ -139,6 +146,11 @@ const BACK_WALL = (index) => !FRONT_WALL(index);
 // How far the camera may be pushed in either direction. Beyond this a plan
 // is either a single icon or a smear, and the way back is not obvious.
 const ZOOM = { min: 0.4, max: 6, step: 1.15 };
+
+/** Wie voll "einpassen" das Fenster macht. 0.9 der knapperen Achse: das
+ *  Haus fuellt den Blick, behaelt aber einen Rand -- randlos sieht nicht
+ *  nach Uebersicht aus, sondern nach abgeschnitten. */
+const FIT = { fill: 0.9 };
 
 /** The house occupies 0..1; a garden lives outside it.
  *
@@ -804,12 +816,55 @@ class SpatialHubPanel extends HTMLElement {
       0,
       ...this._stackFloors.map((_floor, at) => this._planeLift(at)),
     );
+    // Zwei Spalten, wenn das Fenster breit genug ist: die Etagen liegen
+    // spaltenweise untereinander, nicht alle in einem einzigen langen
+    // Turm. Ein hoher schmaler Stapel zwingt den Auto-Zoom auf die Hoehe
+    // und laesst links und rechts die halbe Flaeche leer -- genau das
+    // "leere Dashboard". Spaltenweise gefuellt bleibt jede Spalte ein
+    // zusammenhaengender Stapel, und die Verbindungen zwischen zwei
+    // Stockwerken werden weiterhin aus denselben projizierten Punkten
+    // gezogen, laufen also einfach quer.
+    const rows = this._stackRows;
+    const column = Math.floor(floorIndex / rows);
+    const row = floorIndex % rows;
     return {
-      x: STACK.pad + STACK.stagger * floorIndex +
+      x: STACK.pad + column * (this._stackColumnSpan + STACK.gutter) +
+        STACK.stagger * row +
         nx * STACK.width + (1 - ny) * STACK.skew,
-      y: STACK.top + sky + floorIndex * STACK.gap + ny * STACK.depth -
+      y: STACK.top + sky + row * STACK.gap + ny * STACK.depth -
         this._planeLift(floorIndex),
     };
+  }
+
+  /** Wie viele Etagen-Spalten nebeneinander stehen.
+   *
+   *  Eine Frage an das Fenster, nicht an das Haus: dasselbe Modell wird
+   *  auf einem Tablet hochkant als ein Stapel gezeichnet und auf einem
+   *  breiten Monitor in zwei. Ohne echtes DOM (erster Aufbau, Test)
+   *  bleibt es bei einer Spalte -- die Ansicht, die immer geht.
+   */
+  get _stackColumns() {
+    if (this._stackFloors.length < STACK.columnFloors) return 1;
+    const viewport = this._root && this._root.querySelector
+      ? this._root.querySelector(".viewport")
+      : null;
+    const wide = (viewport && viewport.clientWidth) ||
+      (typeof window !== "undefined" && window.innerWidth) || 0;
+    return wide >= STACK.columnWidth ? 2 : 1;
+  }
+
+  /** Etagen je Spalte. Die erste Spalte wird voll, dann die zweite. */
+  get _stackRows() {
+    return Math.ceil(this._stackFloors.length / this._stackColumns);
+  }
+
+  /** Wie breit eine einzelne Spalte wird -- eine Etage plus die Schraege
+   *  plus den Versatz, den die unterste Etage dieser Spalte hat. */
+  get _stackColumnSpan() {
+    return (
+      STACK.width + STACK.skew +
+      Math.max(0, this._stackRows - 1) * STACK.stagger
+    );
   }
 
   /** How tall the drawing has to be to hold the house.
@@ -827,17 +882,19 @@ class SpatialHubPanel extends HTMLElement {
     const sky = Math.max(0, ...this._stackFloors.map((_f, at) => this._planeLift(at)));
     return (
       STACK.top + sky +
-      Math.max(0, this._stackFloors.length - 1) * STACK.gap +
+      Math.max(0, this._stackRows - 1) * STACK.gap +
       STACK.depth + STACK.slab + STACK.pad
     );
   }
 
   /** How wide the drawing has to be. Every storey is offset a little
-   *  further right than the one above it, so the bottom one decides. */
+   *  further right than the one above it, so the bottom one of a column
+   *  decides -- times the number of columns, plus the air between them. */
   get _stackWidth() {
+    const columns = this._stackColumns;
     return (
-      STACK.pad * 2 + STACK.width + STACK.skew +
-      Math.max(0, this._stackFloors.length - 1) * STACK.stagger
+      STACK.pad * 2 + columns * this._stackColumnSpan +
+      Math.max(0, columns - 1) * STACK.gutter
     );
   }
 
@@ -1261,8 +1318,13 @@ class SpatialHubPanel extends HTMLElement {
    *  "Show everything" has to mean it. The plan is square and a screen is
    *  not, so on a wide monitor 100 % is not the whole house -- the bottom
    *  storey sits below the fold and the button that promises to fix that
-   *  did nothing. Zoom out until it fits, never in: filling a 16:9 window
-   *  with a magnified plan is not what the button says either.
+   *  did nothing.
+   *
+   *  Es zoomt inzwischen in beide Richtungen. Nur herauszoomen hiess:
+   *  ein kleiner Grundriss blieb bei 100 % in der Ecke eines grossen
+   *  Monitors liegen, und "alles zeigen" zeigte vor allem Hintergrund.
+   *  Ziel ist FIT.fill der knapperen Achse -- ein Rand bleibt, damit das
+   *  Haus nicht am Fensterrand klebt, aber die Flaeche wird benutzt.
    */
   _fitToScreen() {
     this._view = { zoom: 1, x: 0, y: 0 };
@@ -1272,9 +1334,9 @@ class SpatialHubPanel extends HTMLElement {
       const fits = Math.min(
         viewport.clientWidth / canvas.offsetWidth,
         viewport.clientHeight / canvas.offsetHeight,
-      );
-      if (fits > 0 && fits < 1) {
-        this._view.zoom = Math.max(ZOOM.min, fits);
+      ) * FIT.fill;
+      if (fits > 0) {
+        this._view.zoom = Math.min(ZOOM.max, Math.max(ZOOM.min, fits));
       }
     }
     this._applyCamera();
@@ -4688,7 +4750,13 @@ main { flex:0 0 auto; min-width:0; }
    wird -- beim Hineinzoomen werden die Icons dadurch unscharf statt neu
    gezeichnet. Chromium tut das konsequent, Firefox nicht, daher sah es
    auf dem einen Rechner scharf und auf dem anderen matschig aus. */
-.canvas { transform-origin:0 0; width:min(100%, 1280px); }
+/* Untergrenze, Obergrenze, Mitte. Die Zeichnung skaliert mit der Breite
+   des Fensters, und ohne Untergrenze wurde aus einem schmalen Fenster ein
+   noch schmalerer Turm: der Grundriss schrumpfte weiter, obwohl die
+   Kamera ohnehin schieben und zoomen kann. Unter 560px wird jetzt nicht
+   mehr gequetscht, sondern geschoben. */
+.canvas { transform-origin:0 0; width:clamp(560px, 100%, 1280px);
+          margin-inline:auto; }
 
 .stack { background:var(--fp-surface, var(--card-background-color,#fff));
          border-radius:12px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12));
@@ -4858,31 +4926,43 @@ main { flex:0 0 auto; min-width:0; }
              outline:1px solid var(--fp-outdoor-line, rgba(76,175,80,.6)); }
 /* Ecken-Modus: ein Griff je Ecke, ein kleinerer in jeder Wandmitte zum
    Einfügen. Damit werden Nischen und Wandversätze gezeichnet. */
-/* Anfasser sind so gross wie ein Finger, nicht so gross wie ein Punkt.
-   Zwoelf Pixel trifft eine Maus mit Muehe und ein Daumen gar nicht --
-   und eine Ecke, die man dreimal antippen muss, fuehlt sich kaputt an,
-   nicht praezise. Der sichtbare Punkt bleibt klein, das Ziel darum
-   herum ist gross: ein Kreis mit unsichtbarem Rand. */
-.corner { position:absolute; width:16px; height:16px; margin:-8px 0 0 -8px;
+/* Der sichtbare Punkt bleibt klein, das Ziel darum herum ist gross: ein
+   Kreis mit unsichtbarem Rand. Zehn Pixel sind genug, um zu sagen "hier
+   ist die Ecke" -- ein fetter Punkt verdeckt genau die Wand, die man
+   gerade ausrichten will. Getroffen wird ohnehin der unsichtbare Rand.
+
+   Und wie die Geraetepunkte haelt der Griff beim Zoomen seine Groesse:
+   er sitzt im mitskalierenden .canvas, also zieht --grip-counter die
+   Kamera wieder heraus. Ohne das wird derselbe Griff bei sechsfachem
+   Zoom zum Teller ueber dem halben Zimmer -- also genau dann riesig,
+   wenn man herangefahren ist, um praezise zu arbeiten. Gedeckelt bei 1,
+   aus demselben Grund wie bei den Geraeten: herausgezoomt darf er mit
+   dem Plan schrumpfen, statt als einziges Ding in Originalgroesse
+   stehenzubleiben. */
+.corner, .handle { --grip-counter:min(1, 1 / var(--camera-zoom,1)); }
+.corner { position:absolute; width:10px; height:10px; margin:-5px 0 0 -5px;
           border-radius:50%; cursor:move; z-index:4; touch-action:none;
           display:flex; align-items:center; justify-content:center;
           background:var(--primary-color,#03a9f4);
-          box-shadow:0 0 0 3px var(--card-background-color,#fff),
-                     0 1px 4px rgba(0,0,0,.35); }
-.corner::before { content:""; position:absolute; width:38px; height:38px;
+          transform:scale(var(--grip-counter));
+          box-shadow:0 0 0 2px var(--card-background-color,#fff),
+                     0 1px 3px rgba(0,0,0,.35); }
+/* Das Ziel waechst mit dem Kehrwert mit: der Griff wird kleiner
+   gezeichnet, der Daumen bekommt trotzdem seine Flaeche. */
+.corner::before { content:""; position:absolute; width:56px; height:56px;
                   border-radius:50%; }
-.corner:hover { transform:scale(1.15); }
+.corner:hover { transform:scale(calc(var(--grip-counter) * 1.15)); }
 /* Die Ecke einfuegen ist ein Plus und die Ecke entfernen ein Kreuz --
    beides steht dran. Vorher hiess "entfernen" Alt+Klick, was niemand
    sieht und auf einem Tablet nicht einmal existiert. */
-.corner.add { width:18px; height:18px; margin:-9px 0 0 -9px; cursor:copy;
-              font:600 13px/1 system-ui,sans-serif;
+.corner.add { width:12px; height:12px; margin:-6px 0 0 -6px; cursor:copy;
+              font:600 9px/1 system-ui,sans-serif;
               color:var(--primary-color,#03a9f4);
               background:var(--card-background-color,#fff);
               box-shadow:0 0 0 2px var(--primary-color,#03a9f4),
                          0 1px 4px rgba(0,0,0,.3); }
 .corner.add:hover { background:var(--primary-color,#03a9f4); color:#fff; }
-.corner-drop { position:absolute; top:-14px; right:-14px; width:18px; height:18px;
+.corner-drop { position:absolute; top:-11px; right:-11px; width:16px; height:16px;
                border:0; border-radius:50%; cursor:pointer; padding:0;
                font:600 13px/1 system-ui,sans-serif;
                background:var(--error-color,#db4437); color:#fff;
@@ -4983,16 +5063,20 @@ select { font:inherit; padding:6px; border-radius:8px;
   background-size:4% 4%; }
 /* Acht Griffe: jede Wand und jede Ecke lässt sich ziehen. */
 .handle { position:absolute; background:var(--primary-color,#03a9f4);
-          border:2px solid var(--card-background-color,#fff); border-radius:50%;
-          width:13px; height:13px; opacity:.9; }
-.handle-n { top:-7px; left:50%; margin-left:-6px; cursor:ns-resize; }
-.handle-s { bottom:-7px; left:50%; margin-left:-6px; cursor:ns-resize; }
-.handle-w { left:-7px; top:50%; margin-top:-6px; cursor:ew-resize; }
-.handle-e { right:-7px; top:50%; margin-top:-6px; cursor:ew-resize; }
-.handle-nw { top:-7px; left:-7px; cursor:nwse-resize; }
-.handle-se { bottom:-7px; right:-7px; cursor:nwse-resize; }
-.handle-ne { top:-7px; right:-7px; cursor:nesw-resize; }
-.handle-sw { bottom:-7px; left:-7px; cursor:nesw-resize; }
+          border:1px solid var(--card-background-color,#fff); border-radius:50%;
+          width:9px; height:9px; opacity:.9;
+          transform:scale(var(--grip-counter)); }
+/* Wie bei der Ecke: klein gezeichnet, gross zu treffen. */
+.handle::before { content:""; position:absolute; inset:-16px;
+                  border-radius:50%; }
+.handle-n { top:-5px; left:50%; margin-left:-5px; cursor:ns-resize; }
+.handle-s { bottom:-5px; left:50%; margin-left:-5px; cursor:ns-resize; }
+.handle-w { left:-5px; top:50%; margin-top:-5px; cursor:ew-resize; }
+.handle-e { right:-5px; top:50%; margin-top:-5px; cursor:ew-resize; }
+.handle-nw { top:-5px; left:-5px; cursor:nwse-resize; }
+.handle-se { bottom:-5px; right:-5px; cursor:nwse-resize; }
+.handle-ne { top:-5px; right:-5px; cursor:nesw-resize; }
+.handle-sw { bottom:-5px; left:-5px; cursor:nesw-resize; }
 .area-config { position:absolute; top:2px; right:26px; border:0; background:transparent;
                color:var(--secondary-text-color,#727272); cursor:pointer; padding:2px;
                display:flex; border-radius:50%; }
