@@ -37,7 +37,10 @@ Wer mehr will, installiert genau die, die er braucht — **nicht alle**.
 | **[ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline)** | Powerline-Adapter mit ihrer echten Topologie, Linkraten und eigenen Icons |
 | **[ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p)** | ESPEasy-P2P-Mesh: welche Unit sich zuletzt gemeldet hat, bevor sie ausfällt |
 | **[ha-spatial-zwave](https://github.com/Chance-Konstruktion/ha-spatial-zwave)** | Z-Wave-Mesh: Controller, jeder Node in seinem Raum, Kanten nach Signalstärke |
-| **ESPHome** | über die generische Ebene — kein Adapter nötig, siehe [docs/PROVIDERS.md](docs/PROVIDERS.md) |
+| **[ha-spatial-esphome](https://github.com/Chance-Konstruktion/ha-spatial-esphome)** | ESPHome-Boards als *ein* Punkt pro Platine statt einem pro Entität |
+
+Einzelne ESPHome-Entitäten stehen auch ohne Adapter auf dem Plan — dafür ist
+die generische Ebene da, siehe [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
 `ha-espeasy-p2p` kommt ohne `DataUpdateCoordinator` aus, was zwei Löcher im
 SDK ans Licht gebracht hat — genau wofür diese Adapter da sind.
