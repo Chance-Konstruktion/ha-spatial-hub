@@ -1088,8 +1088,58 @@ test("the garden sits outside the house but on the same floor", () => {
 
 test("a floor without a garden is drawn exactly as before", () => {
   const view = panel();
-  assert.deepEqual(view._frame, { min: 0, span: 1 });
+  // Vier Raender, alle null: das Haus fuellt das Fenster, in beiden
+  // Achsen. Der Rahmen fuehrt die Achsen seit dem Grundstueck je
+  // Himmelsrichtung getrennt.
+  assert.deepEqual(view._frame, { min: 0, span: 1, minY: 0, spanY: 1 });
   assert.match(view._areasHtml(), /left:25%/);
+});
+
+test("300m of garden behind the house does not put 300m in front of it", () => {
+  // Gemeldet als "ich kann das Grundstueck nicht einfach nach rechts
+  // erweitern, obwohl ich hinterm Haus 300m Garten habe". Der Rand war
+  // eine einzige Zahl fuer alle vier Seiten: was hinten gebraucht wurde,
+  // kam vorne, links und rechts genauso dazu -- und das Haus schrumpfte
+  // in der Mitte eines fast leeren Bildes.
+  const view = panel(model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "",
+               has_outdoor: true, outdoor_margin: 0.28 }],
+    areas: [
+      { id: "wohnzimmer", name: "Wohnzimmer", floor_id: "eg", kind: "indoor",
+        position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 } },
+      // Ein tiefer Garten hinter dem Haus, sonst nichts.
+      { id: "garten", name: "Garten", floor_id: "eg", kind: "outdoor",
+        outdoor: true, position: at(0.5, 2.2), size: { width: 0.9, height: 2.2 } },
+    ],
+  }));
+  const frame = view._frame;
+
+  // Hinten ist Platz ...
+  assert.ok(frame.minY + frame.spanY > 3, "der Garten passt nicht ins Bild");
+  // ... vorne, links und rechts bleibt es bei der Schuerze.
+  assert.equal(frame.min, -0.28, "links wuchs mit, ohne Grund");
+  assert.equal(Number(frame.span.toFixed(4)), 1.56, "rechts wuchs mit");
+  assert.equal(frame.minY, -0.28, "vorne wuchs mit");
+});
+
+test("a lopsided plot leaves the rooms square", () => {
+  // Sobald der Rahmen nicht mehr quadratisch ist, muss die Buehne sein
+  // Seitenverhaeltnis uebernehmen -- sonst rechnen die Raeume in Prozent
+  // von etwas Falschem und ein quadratisches Zimmer wird zum Rechteck.
+  const data = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "", aspect: 1,
+               has_outdoor: true, outdoor_margin: 0.28,
+               plot: [{ x: -0.28, y: -0.28 }, { x: 1.28, y: -0.28 },
+                      { x: 1.28, y: 3 }, { x: -0.28, y: 3 }] }],
+  });
+  const view = panel(data);
+  const frame = view._frame;
+  const stage = view._stageHtml();
+
+  const ratio = frame.span / frame.spanY;
+  assert.ok(ratio < 0.6, "der Rahmen ist gar nicht schief");
+  assert.match(stage, new RegExp(`aspect-ratio:${ratio.toFixed(4)}`),
+               "die Buehne folgt dem Rahmen nicht");
 });
 
 test("dragging in the garden keeps the coordinates outside the house", () => {
@@ -1782,8 +1832,10 @@ test("only the ground floor gets grass, a balcony upstairs just gets a room", ()
   });
   const html = panel(data, { floor: null })._stackHtml();
   const planes = html.split('class="plane').slice(1);
-  const eg = planes.find((plane) => plane.includes("Erdgeschoss"));
-  const og = planes.find((plane) => plane.includes("Obergeschoss"));
+  // Der Etagenname steht in Versalien im Rand, wie in einer
+  // Schnittzeichnung -- danach wird hier gesucht.
+  const eg = planes.find((plane) => plane.includes("ERDGESCHOSS"));
+  const og = planes.find((plane) => plane.includes("OBERGESCHOSS"));
 
   assert.match(eg, /class="apron"/, "the ground floor gets the field");
   assert.doesNotMatch(og, /class="apron"/, "the storey above does not");
@@ -2339,24 +2391,156 @@ test("the legend follows the plan instead of sinking to the bottom", () => {
                "the plan takes the height it needs and no more");
 });
 
-test("a tall screen opens the legend rather than leaving half of it empty", () => {
-  // A square plan on a 22:9 phone can only be as wide as the phone, so
-  // the lower half is going spare. Filling it with the layers and the
-  // providers beats filling it with nothing.
-  const tall = { addEventListener() {}, removeEventListener() {},
-                 confirm: () => true, innerWidth: 373, innerHeight: 910 };
-  const wide = { ...tall, innerWidth: 1400, innerHeight: 900 };
+const screen = (innerWidth, innerHeight) => ({
+  addEventListener() {}, removeEventListener() {}, confirm: () => true,
+  innerWidth, innerHeight,
+});
 
+/** Baut ein Panel so, als stuende es auf diesem Bildschirm. */
+const onScreen = (width, height, build = (view) => view) => {
   const previous = globalThis.window;
   try {
-    globalThis.window = tall;
-    assert.equal(new SpatialHubPanel()._legendOpen, true);
-    globalThis.window = wide;
-    assert.equal(new SpatialHubPanel()._legendOpen, false,
-                 "on a normal screen the house still comes first");
+    globalThis.window = screen(width, height);
+    return build(new SpatialHubPanel());
   } finally {
     globalThis.window = previous;
   }
+};
+
+test("a tall screen opens the legend rather than leaving half of it empty", () => {
+  // A square plan on a tall narrow window can only be as wide as the
+  // window, so the lower half is going spare. Filling it with the layers
+  // and the providers beats filling it with nothing.
+  //
+  // Nicht auf dem Telefon: dort fuellt der Plan seit dem Vollbild den
+  // ganzen Schirm, und die Legende liegt als Blatt darueber. Offen zu
+  // starten hiesse da, ein Stueck Haus zuzudecken, bevor es jemand
+  // gesehen hat.
+  assert.equal(onScreen(800, 1600, (view) => view._legendOpen), true,
+               "a tall tablet has room under the plan");
+  assert.equal(onScreen(1400, 900, (view) => view._legendOpen), false,
+               "on a normal screen the house still comes first");
+  assert.equal(onScreen(373, 910, (view) => view._legendOpen), false,
+               "on a phone the plan gets the screen");
+});
+
+// ── Vollbild auf dem Telefon ──────────────────────────────
+
+test("a phone starts without any bars, a monitor keeps them", () => {
+  assert.equal(onScreen(373, 910, (view) => view._bars), false);
+  assert.equal(onScreen(1400, 900, (view) => view._bars), true);
+  // Ein Panel neben offener Seitenleiste ist genauso schmal wie ein
+  // Telefon und hat dasselbe Platzproblem -- die Breite entscheidet,
+  // nicht das Geraet.
+  assert.equal(onScreen(720, 900, (view) => view._bars), false);
+});
+
+test("the phone's only bar is the button that brings the bars back", () => {
+  onScreen(373, 910, (view) => {
+    assert.match(view._barsButtonHtml(), /data-bars/);
+    assert.match(view._shellClasses(), /\bphone\b/);
+    assert.match(view._shellClasses(), /\bbare\b/,
+                 "no bars means the shell says so, and the stylesheet listens");
+
+    view._bars = true;
+    assert.doesNotMatch(view._shellClasses(), /\bbare\b/);
+  });
+
+  // Auf dem Monitor gibt es den Knopf nicht: dort sind die Leisten das
+  // Werkzeug und kein Platzproblem.
+  assert.equal(onScreen(1400, 900, (v) => v._barsButtonHtml()), "");
+});
+
+test("the plan gets the whole phone, not a card with margins around it", () => {
+  const style = styleSheet();
+  // "dvh" und nicht nur "vh": mit der ein- und ausfahrenden Adressleiste
+  // ist "vh" zu hoch, und genau die Leiste, die weg sollte, kommt als
+  // Scrollbalken zurueck.
+  assert.match(style, /\.app\.phone \{[^}]*height:100dvh/);
+  assert.match(style, /\.app\.phone \.body \{[^}]*padding:0/);
+  assert.match(style, /\.app\.phone \.viewport \{[^}]*max-height:none/);
+});
+
+// ── Das Legendenblatt ─────────────────────────────────────
+
+test("the legend can be pushed away downwards when a room needs the room", () => {
+  onScreen(373, 910, () => {
+    const view = panel();
+    view._legendOpen = true;
+    assert.match(view._legendHtml(), /data-legend-grab/);
+  });
+
+  // Auf dem Monitor steht die Legende unter dem Plan und nimmt ihm
+  // nichts weg -- ein Griff waere dort eine Geste ohne Wirkung.
+  onScreen(1400, 900, () => {
+    const view = panel();
+    view._legendOpen = true;
+    assert.doesNotMatch(view._legendHtml(), /data-legend-grab/);
+  });
+});
+
+/** Eine Ziehgeste auf dem Blatt, von oben nach unten, in Millisekunden. */
+const dragSheet = (view, { by, ms = 400, height = 400 }) => {
+  const sheet = { offsetHeight: height, style: {} };
+  view._legendOpen = true;
+  view._onSheetDown({ pointerId: 1, clientY: 100, target: {},
+                      preventDefault() {} }, sheet);
+  const started = view._sheet.time;
+  view._onSheetMove({ pointerId: 1, clientY: 100 + by, preventDefault() {} });
+  view._sheet.time = started - ms;
+  view._onSheetUp();
+  return sheet;
+};
+
+test("a short tug springs back, a real pull closes the sheet", () => {
+  const view = onScreen(373, 910);
+  view._render = () => {};
+
+  dragSheet(view, { by: 40 });
+  assert.equal(view._legendOpen, true, "40 of 400 is a wobble, not a decision");
+
+  dragSheet(view, { by: 200 });
+  assert.equal(view._legendOpen, false, "half the sheet is unmistakable");
+});
+
+test("a quick flick down closes the sheet without dragging it all the way", () => {
+  // Ein Blatt, das nur bei genau der richtigen Zugweite schliesst, fuehlt
+  // sich kaputt an. Ein schneller Wisch meint immer "weg damit".
+  const view = onScreen(373, 910);
+  view._render = () => {};
+
+  dragSheet(view, { by: 90, ms: 120 });
+  assert.equal(view._legendOpen, false);
+});
+
+test("dragging the sheet writes to the element, never through a re-render", () => {
+  // Ein Neuaufbau mitten in der Bewegung ersetzt genau das Element, das
+  // der Finger haelt -- dieselbe Falle wie beim Ziehen eines Raumes.
+  const view = onScreen(373, 910);
+  let renders = 0;
+  view._render = () => { renders += 1; };
+  view._legendOpen = true;
+
+  const sheet = { offsetHeight: 400, style: {} };
+  view._onSheetDown({ pointerId: 1, clientY: 100, target: {},
+                      preventDefault() {} }, sheet);
+  view._onSheetMove({ pointerId: 1, clientY: 160, preventDefault() {} });
+
+  assert.equal(sheet.style.transform, "translateY(60px)");
+  assert.equal(renders, 0);
+});
+
+test("the sheet only goes down: upwards there is nothing behind it", () => {
+  const view = onScreen(373, 910);
+  view._render = () => {};
+  view._legendOpen = true;
+
+  const sheet = { offsetHeight: 400, style: {} };
+  view._onSheetDown({ pointerId: 1, clientY: 300, target: {},
+                      preventDefault() {} }, sheet);
+  view._onSheetMove({ pointerId: 1, clientY: 120, preventDefault() {} });
+
+  assert.equal(sheet.style.transform, "translateY(0px)");
 });
 
 test("the widest storey sets the window, not the first one with a garden", () => {
@@ -2625,4 +2809,148 @@ test("an entity pulled out of its device is announced as just itself", async () 
   await view._moveIntoArea(view._model.nodes[0], 0.7, 0.5);
 
   assert.match(view._stageHtml(), /nur diese Entität/);
+});
+
+test("wall grips keep their screen size instead of growing with the zoom", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  // Same counter-scale the device icons use: the grips live inside the
+  // canvas the camera scales, so at 600 % an untouched 16px dot covered
+  // the wall it was there to place.
+  assert.match(
+    source,
+    /\.corner, \.handle \{ --grip-counter:min\(1, 1 \/ var\(--camera-zoom,1\)\); \}/,
+  );
+  assert.match(source, /\.corner \{[^}]*transform:scale\(var\(--grip-counter\)\)/s);
+  assert.match(source, /\.handle \{[^}]*transform:scale\(var\(--grip-counter\)\)/s);
+  // Hovering must not throw the counter away -- that was a grip that
+  // jumped back to full size the moment the pointer arrived.
+  assert.match(
+    source,
+    /\.corner:hover \{ transform:scale\(calc\(var\(--grip-counter\) \* 1\.15\)\); \}/,
+  );
+});
+
+test("a grip is drawn small and hit large", () => {
+  const source = readFileSync(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "spatial-hub-panel.js"),
+    "utf8",
+  );
+  const size = (selector) =>
+    Number(
+      new RegExp(`\\${selector} \\{[^}]*width:(\\d+)px`, "s").exec(source)[1],
+    );
+  assert.ok(size(".corner") <= 10, "the corner dot is still a blob");
+  assert.ok(size(".handle") <= 9, "the wall grip is still a blob");
+  // The invisible target around it grew as the dot shrank.
+  assert.match(source, /\.corner::before \{[^}]*width:56px/s);
+  assert.match(source, /\.handle::before \{[^}]*inset:-16px/s);
+});
+
+test("the house is one stack, however wide the window gets", () => {
+  // Es gab hier einmal zwei Spalten, damit ein breiter Monitor nicht
+  // links und rechts leer bleibt. Das hat aus vier Etagen vier Platten in
+  // einem Raster gemacht, und ein Raster ist kein Haus: nebeneinander
+  // liest man als zwei Gebaeude, untereinander als Stockwerke. Gegen
+  // leeren Rand hilft der Zoom.
+  const data = model();
+  data.floors = ["a", "b", "c", "d", "e", "f"].map((id, level) => ({
+    id, name: id.toUpperCase(), level, icon: "",
+  }));
+  const view = panel(data, { floor: null });
+  view._root = { querySelector: () => ({ clientWidth: 2400 }) };
+
+  // Jede Etage liegt unter der vorigen und nur um den Versatz weiter
+  // rechts -- keine springt zurueck nach oben.
+  for (let at = 1; at < data.floors.length; at += 1) {
+    const above = view._project(at - 1, 0, 0);
+    const here = view._project(at, 0, 0);
+    assert.ok(here.y > above.y, `Etage ${at} steht nicht unter der vorigen`);
+    assert.ok(here.x - above.x < 40, `Etage ${at} ist in eine Spalte gerutscht`);
+  }
+
+  // Und die Zeichnung ist so breit wie ein Stapel, nicht wie zwei.
+  // Zwei Spalten waren gut 2000 breit; ein Stapel ist es nie.
+  assert.ok(view._stackWidth < 1400, "so breit wird ein einzelner Stapel nie");
+});
+
+test("the stack is a line drawing, not four grey plates", () => {
+  // Vorlage ist eine Schnittzeichnung: schwarze Flaechen, weisse Linien.
+  // Vorher war jede Flaeche mit einem blaugrauen Schleier gefuellt, und
+  // sechzehn davon uebereinander ergaben Grau auf Grau.
+  const style = styleSheet();
+
+  // Waende fuellen sich mit dem Hintergrund, damit sie einander wirklich
+  // verdecken -- nicht mit einem Grauton, der sich aufsummiert.
+  for (const part of ["room-wall", "room-cap", "shell-face", "shell-cap"]) {
+    assert.match(style, new RegExp(`\\.${part} \\{[^}]*fill:var\\(--fp-[a-z-]+, var\\(--fp-surface`),
+                 `${part} malt noch einen eigenen Grauton`);
+  }
+  // Der Boden im Raum bleibt der Hintergrund.
+  assert.match(style, /\.stack \.room \{[^}]*fill:none/);
+});
+
+test("every storey says its name, in the margin and out of the plan", () => {
+  const data = model({
+    floors: [{ id: "kg", name: "Keller", level: -1, icon: "" },
+             { id: "eg", name: "EG", level: 0, icon: "" }],
+  });
+  const view = panel(data, { floor: null });
+  const html = view._stackHtml();
+
+  // Versalien, wie in einer Schnittzeichnung.
+  assert.match(html, /KELLER/);
+
+  // Und links neben der Etage, nicht auf ihr: der Name steht weiter
+  // links als der linkeste Punkt der Platte. Vorher wurde er am Bildrand
+  // abgeschnitten, weil es dort keinen Rand gab.
+  const leftmost = view._project(0, 0, 1).x;
+  const name = /translate\((-?[\d.]+),/.exec(
+    html.slice(html.indexOf("storey-name") - 300),
+  );
+  assert.ok(Number(name[1]) < leftmost, "der Name klebt an der Platte");
+  assert.ok(Number(name[1]) > 0, "der Name faellt aus dem Bild");
+});
+
+test("the plan is centred once, not twice into the right-hand half", () => {
+  // Gemeldet als "es kann nur die rechte Seite des Bildschirms benutzt
+  // werden, das Modell schiebt sich immer wieder dorthin". Die Zeichnung
+  // wurde zweimal zentriert: die Box per "margin-inline:auto" um den
+  // halben Rest der *ungezoomten* Breite, und der Inhalt per translate um
+  // den halben Rest der *gezoomten*. Beides addiert sich, und weil jeder
+  // Klick neu klemmt, kam es nach jedem Schieben zurueck.
+  const style = styleSheet();
+  assert.doesNotMatch(style, /\.canvas \{[^}]*margin-inline:auto/,
+                      "die Box zentriert sich wieder selbst");
+
+  // Und die Kamera zentriert weiterhin: kleiner als das Fenster heisst
+  // Mitte, egal wo die Ansicht vorher stand.
+  const view = panel();
+  view._root = {
+    querySelector: (selector) =>
+      selector === ".canvas"
+        ? { offsetWidth: 1280, offsetHeight: 800 }
+        : { clientWidth: 1990, clientHeight: 900 },
+  };
+  view._view = { zoom: 0.78, x: 700, y: 0 };
+  view._clampView({ offsetWidth: 1280, offsetHeight: 800 });
+  assert.equal(Math.round(view._view.x), Math.round((1990 - 1280 * 0.78) / 2));
+});
+
+test("fit-to-screen fills the window instead of parking the plan in a corner", () => {
+  const view = panel();
+  view._root = {
+    querySelector: (selector) =>
+      selector === ".canvas"
+        ? { offsetWidth: 400, offsetHeight: 300, style: { setProperty() {} } }
+        : { clientWidth: 1600, clientHeight: 900, getBoundingClientRect: () => ({}) },
+  };
+  view._fitToScreen();
+  // 900/300 = 3 is the tighter axis; 0.9 of it keeps a margin.
+  assert.equal(view._view.zoom, 2.7);
+  assert.ok(view._view.zoom > 1, "a small plan used to stay small");
 });

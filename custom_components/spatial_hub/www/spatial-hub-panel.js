@@ -37,7 +37,9 @@ const ALL_FLOORS = "__all__";
 // a true isometric projection: rooms stay rectangles-in-parallel, which
 // keeps them recognisable as the same rooms from the detail view.
 const STACK = {
-  pad: 40, width: 620, depth: 300, skew: 260, top: 50, gap: 340,
+  // "pad" ist links breiter als noetig, und zwar mit Absicht: dort steht
+  // der Etagenname. Vorher lag er bei 40 halb ausserhalb des Bildes.
+  pad: 40, margin: 150, width: 620, depth: 300, skew: 260, top: 50, gap: 340,
   // Rooms have standing walls and a storey has thickness. Flat outlines
   // drawn on top of each other are what turned this view into porridge:
   // four sheets of the same weight, and nothing in the picture saying
@@ -140,6 +142,22 @@ const BACK_WALL = (index) => !FRONT_WALL(index);
 // is either a single icon or a smear, and the way back is not obvious.
 const ZOOM = { min: 0.4, max: 6, step: 1.15 };
 
+/** Wie voll "einpassen" das Fenster macht. 0.9 der knapperen Achse: das
+ *  Haus fuellt den Blick, behaelt aber einen Rand -- randlos sieht nicht
+ *  nach Uebersicht aus, sondern nach abgeschnitten. */
+const FIT = { fill: 0.9 };
+
+/** Ab wann ein Bildschirm ein Telefon ist -- dieselbe Grenze wie im
+ *  Stylesheet, damit Vollbild und Umbruch nicht bei verschiedenen
+ *  Breiten umschalten und sich gegenseitig widersprechen. */
+const PHONE = 760;
+
+/** Das Legendenblatt: wie weit man ziehen muss, damit es zubleibt, und
+ *  ab welcher Wurfgeschwindigkeit die Strecke egal ist. Ein Blatt, das
+ *  nur bei genau der richtigen Zugweite schliesst, fuehlt sich kaputt an;
+ *  ein schneller Wisch nach unten meint immer "weg damit". */
+const SHEET = { close: 0.3, fling: 0.5 };
+
 /** The house occupies 0..1; a garden lives outside it.
  *
  *  Everything drawn shares one coordinate system, and a floor that carries
@@ -169,61 +187,117 @@ const houseWeight = (theme) => {
   return Math.min(1.6, Math.max(0.2, value));
 };
 
+/** Wie viel Umland das Bild zeigt -- je Himmelsrichtung einzeln.
+ *
+ *  Frueher war das eine einzige Zahl fuer alle vier Seiten. Wer hinter
+ *  dem Haus 300m Garten hat und davor die Strasse, bekam damit auch vorn,
+ *  links und rechts 300m: das Haus schrumpfte in der Mitte eines fast
+ *  leeren Bildes zusammen, und der Garten liess sich nicht nach hinten
+ *  erweitern, ohne alles andere mitzuziehen. Ein Grundstueck ist selten
+ *  quadratisch und das Haus steht fast nie in seiner Mitte.
+ *
+ *  Deshalb vier Raender. Der Rahmen ist danach nicht mehr quadratisch --
+ *  darum tragen die Achsen getrennte Spannen, und die Buehne bekommt das
+ *  Seitenverhaeltnis des Rahmens, damit ein quadratischer Raum
+ *  quadratisch bleibt.
+ */
 const frameOf = (floor, areas) => {
   // Sky gets the same room as garden. A cloud belongs *around* the house,
   // not squeezed into its footprint -- the internet is not a room on the
   // second floor, and a plane exactly as wide as the walls says it is.
   const wide = floor && (floor.has_outdoor || floor.virtual);
-  let margin = wide ? floor.outdoor_margin || 0.28 : 0;
+  const base = wide ? floor.outdoor_margin || 0.28 : 0;
+  // links, rechts, oben, unten -- das Haus liegt immer auf 0..1.
+  const side = { left: base, right: base, top: base, bottom: base };
+  const widen = (box, extra) => {
+    side.left = Math.max(side.left, -box.left + extra);
+    side.right = Math.max(side.right, box.right - 1 + extra);
+    side.top = Math.max(side.top, -box.top + extra);
+    side.bottom = Math.max(side.bottom, box.bottom - 1 + extra);
+  };
+
   // A drawn plot decides how much surroundings there are. Everybody's
   // garden is a different size, and a fixed apron would mean the boundary
   // either stops at an invisible wall or is drawn outside the picture --
-  // so the window grows to hold whatever was drawn, and the house keeps
-  // its place in the middle of it.
+  // so the window grows to hold whatever was drawn.
+  //
+  // Und mit demselben Zuschlag wie ein gezogener Garten: wer eine Ecke an
+  // den Rand zieht, soll beim naechsten Mal Platz haben, sie weiter zu
+  // ziehen -- statt "ziehen, loslassen, ziehen" ein Dutzend Mal.
   const plot = floor && Array.isArray(floor.plot) ? floor.plot : null;
   if (plot && plot.length >= 3) {
+    const reach = { left: 0, right: 0, top: 0, bottom: 0 };
     for (const point of plot) {
       if (!point || typeof point.x !== "number" || typeof point.y !== "number") {
         continue;
       }
-      margin = Math.max(
-        margin,
-        -point.x, point.x - 1,
-        -point.y, point.y - 1,
-      );
+      reach.left = Math.max(reach.left, -point.x);
+      reach.right = Math.max(reach.right, point.x - 1);
+      reach.top = Math.max(reach.top, -point.y);
+      reach.bottom = Math.max(reach.bottom, point.y - 1);
     }
-    margin = Math.min(margin + 0.04, 4);
+    for (const where of ["left", "right", "top", "bottom"]) {
+      if (reach[where] > side[where]) side[where] = reach[where] + 0.5;
+      else side[where] = Math.max(side[where], reach[where] + 0.04);
+    }
   }
   // Same idea without a drawn plot: a garden dragged bigger than the
   // default apron is still something somebody drew on purpose, not an
-  // overflow to clip away. Without this the fixed 0.28 apron is a wall
-  // nobody can see, and growing a garden past it takes a dozen trips
-  // through "drag to the edge, let go, drag again" before it is even
-  // visible.
+  // overflow to clip away. Without this the fixed apron is a wall nobody
+  // can see, and growing a garden past it takes a dozen trips through
+  // "drag to the edge, let go, drag again" before it is even visible.
+  //
+  // Der Zuschlag ist grosszuegig, damit einmal Ziehen Platz fuer das
+  // naechste Mal schafft -- aber er gilt nur noch fuer die Seite, an der
+  // wirklich etwas hinausragt.
+  //
+  // Der Zuschlag greift nur an der Seite, an der wirklich etwas ueber den
+  // Standardrand hinausragt: ein kleiner Garten, der in die Schuerze
+  // passt, darf das Fenster nicht trotzdem aufziehen.
   if (wide && floor && Array.isArray(areas)) {
-    let needed = 0;
+    const reach = { left: 0, right: 0, top: 0, bottom: 0 };
     for (const area of areas) {
       if (kindOf(area) !== AREA_KIND.OUTDOOR) continue;
       if (area.floor_id !== floor.id || !area.position) continue;
       const box = boxOf(area);
-      needed = Math.max(
-        needed,
-        -box.left, box.right - 1,
-        -box.top, box.bottom - 1,
-      );
+      reach.left = Math.max(reach.left, -box.left);
+      reach.right = Math.max(reach.right, box.right - 1);
+      reach.top = Math.max(reach.top, -box.top);
+      reach.bottom = Math.max(reach.bottom, box.bottom - 1);
     }
-    // Only kicks in once something outdoor actually needs more room than
-    // the default apron -- a small garden that fits inside it must not
-    // grow the window anyway. And then a generous buffer, not a tight
-    // one: the point is that dragging a garden's edge out once gives room
-    // to drag it further next time, instead of hugging the last position
-    // and asking for another twenty small steps to get anywhere.
-    if (needed > margin) margin = Math.min(needed + 0.5, 4);
+    for (const where of ["left", "right", "top", "bottom"]) {
+      if (reach[where] > side[where]) side[where] = reach[where] + 0.5;
+    }
   }
-  return { min: margin ? -margin : 0, span: 1 + 2 * margin };
+
+  // Vier Hausbreiten je Seite sind schon ein Park; darueber wird das Haus
+  // zum Punkt, und niemand findet mehr ein Geraet darin.
+  const cap = (value) => Math.min(4, Math.max(0, value));
+  const left = cap(side.left);
+  const right = cap(side.right);
+  const top = cap(side.top);
+  const bottom = cap(side.bottom);
+  return {
+    min: left ? -left : 0,
+    span: 1 + left + right,
+    minY: top ? -top : 0,
+    spanY: 1 + top + bottom,
+  };
 };
 
+/** Die y-Spanne eines Rahmens. Aeltere Rahmen (Tests, gespeicherte
+ *  Zustaende) kennen nur eine Spanne fuer beides -- die gilt dann fuer
+ *  beide Achsen, und alles verhaelt sich wie vorher. */
+const spanY = (frame) => (frame.spanY === undefined ? frame.span : frame.spanY);
+const minY = (frame) => (frame.minY === undefined ? frame.min : frame.minY);
+
+/** Der Rahmen der y-Achse als eigener Rahmen -- fuer alles, was mit
+ *  einer Achse rechnet und nicht wissen muss, welche es ist. */
+const yFrame = (frame) => ({ min: minY(frame), span: spanY(frame) });
+
 const inFrame = (value, frame) => ((value - frame.min) / frame.span) * 100;
+const inFrameY = (value, frame) =>
+  ((value - minY(frame)) / spanY(frame)) * 100;
 
 /** A room is a rectangle until somebody says otherwise.
  *
@@ -458,16 +532,24 @@ class SpatialHubPanel extends HTMLElement {
     // The legend starts folded away. It is a reference, not a destination:
     // the first thing somebody wants to see is their house, not a list of
     // the layers it is made of. One click opens it and it stays open.
-    // Zugeklappt, weil zuerst das Haus kommt -- aber nicht auf einem
-    // Bildschirm, der doppelt so hoch wie breit ist. Dort ist der Plan
-    // von der Breite begrenzt, die untere Haelfte bleibt sonst leer, und
-    // eine leere Haelfte ist keine Zurueckhaltung, sondern verschenkter
-    // Platz. Einmal beim Start entschieden: danach gehoert der Schalter
-    // dem Nutzer.
+    // Auf einem hohen schmalen Bildschirm war sie frueher offen, weil der
+    // Plan von der Breite begrenzt war und die untere Haelfte sonst leer
+    // blieb. Auf dem Telefon fuellt der Plan jetzt den Schirm, und die
+    // Legende liegt als Blatt darueber -- offen zu starten hiesse dort,
+    // ein Drittel des Hauses zuzudecken, bevor es jemand gesehen hat.
     this._legendOpen =
-      typeof window !== "undefined" && window.innerHeight
+      typeof window !== "undefined" && window.innerHeight && !this._isPhone()
         ? window.innerHeight / window.innerWidth > 1.9
         : false;
+    // Vollbild auf dem Telefon: der Grundriss bekommt den Schirm, die
+    // Leisten kommen auf Knopfdruck zurueck. Auf einem Monitor ist Platz
+    // fuer beides, und eine Kopfzeile, die man erst hervorholen muss,
+    // waere dort nur eine Klickstrecke mehr.
+    this._bars = !this._isPhone();
+    // Wie weit das Legendenblatt gerade nach unten gezogen ist, in Pixeln.
+    // Nur waehrend der Geste gesetzt; danach ist es entweder offen oder
+    // zu, und nichts dazwischen.
+    this._sheet = null;
     // The other storeys' walls, shown while editing. On by default: the
     // whole point is to notice the drift without having gone looking for
     // a setting first.
@@ -509,10 +591,28 @@ class SpatialHubPanel extends HTMLElement {
 
   connectedCallback() {
     this._renderShell();
+    // Ein gedrehtes Telefon ist ein anderer Bildschirm: quer ist Platz
+    // fuer die Leisten, hoch nicht. Ohne das bliebe das Vollbild an der
+    // Breite haengen, die beim Oeffnen zufaellig galt.
+    if (typeof window !== "undefined" && window.addEventListener) {
+      this._onResize = () => {
+        const phone = this._isPhone();
+        if (phone === this._wasPhone) return;
+        this._wasPhone = phone;
+        this._bars = !phone;
+        if (this._model) this._render();
+      };
+      this._wasPhone = this._isPhone();
+      window.addEventListener("resize", this._onResize);
+    }
     if (this._hass && !this._unsubscribe) this._connect();
   }
 
   disconnectedCallback() {
+    if (this._onResize && typeof window !== "undefined") {
+      window.removeEventListener("resize", this._onResize);
+      this._onResize = null;
+    }
     if (this._unsubscribe) {
       Promise.resolve(this._unsubscribe).then((off) => off && off());
       this._unsubscribe = null;
@@ -718,8 +818,12 @@ class SpatialHubPanel extends HTMLElement {
     let span = 0;
     for (const floor of this._floors) {
       const frame = frameOf(floor, this._model.areas);
-      if (frame.span > span) {
-        span = frame.span;
+      // Die groessere der beiden Spannen entscheidet: ein Grundstueck,
+      // das nur nach hinten reicht, macht die Etage genauso "weit" wie
+      // eines, das nur nach rechts reicht.
+      const reach = Math.max(frame.span, spanY(frame));
+      if (reach > span) {
+        span = reach;
         widest = floor;
       }
     }
@@ -797,20 +901,31 @@ class SpatialHubPanel extends HTMLElement {
   _project(floorIndex, x, y) {
     const frame = this._frame;
     const nx = (x - frame.min) / frame.span;
-    const ny = (y - frame.min) / frame.span;
+    const ny = (y - minY(frame)) / spanY(frame);
     // Headroom for the sky, added to everything so the lift pushes the
     // clouds up *within* the drawing instead of off the top of it.
     const sky = Math.max(
       0,
       ...this._stackFloors.map((_floor, at) => this._planeLift(at)),
     );
+    // Ein Stapel. Immer.
+    //
+    // Es gab hier einmal zwei Spalten, damit ein hoher schmaler Turm auf
+    // einem breiten Monitor nicht links und rechts die Flaeche leer
+    // laesst. Das hat den freien Platz gefuellt und dafuer das Bild
+    // zerstoert: vier Etagen wurden zu vier Platten in einem Raster, und
+    // ein Raster ist kein Haus. Ein Sandwich hat eine Achse, sonst ist es
+    // keins -- man liest oben-nach-unten als Stockwerke, nebeneinander
+    // liest man als zwei Gebaeude. Leerer Rand ist der guenstigere Preis;
+    // dagegen hilft der Zoom, nicht das Umbrechen.
     return {
-      x: STACK.pad + STACK.stagger * floorIndex +
+      x: STACK.margin + STACK.stagger * floorIndex +
         nx * STACK.width + (1 - ny) * STACK.skew,
       y: STACK.top + sky + floorIndex * STACK.gap + ny * STACK.depth -
         this._planeLift(floorIndex),
     };
   }
+
 
   /** How tall the drawing has to be to hold the house.
    *
@@ -836,7 +951,7 @@ class SpatialHubPanel extends HTMLElement {
    *  further right than the one above it, so the bottom one decides. */
   get _stackWidth() {
     return (
-      STACK.pad * 2 + STACK.width + STACK.skew +
+      STACK.margin + STACK.pad + STACK.width + STACK.skew +
       Math.max(0, this._stackFloors.length - 1) * STACK.stagger
     );
   }
@@ -1093,9 +1208,11 @@ class SpatialHubPanel extends HTMLElement {
     if (!model) return;
 
     this._root.setAttribute("style", this._themeVars);
+    this._root.className = this._shellClasses();
     this._root.innerHTML = `
-      ${this._headerHtml()}
+      ${this._bars || !this._isPhone() ? this._headerHtml() : ""}
       <div class="body">
+        ${this._barsButtonHtml()}
         <main>${this._stageHtml()}</main>
         ${this._legendHtml()}
       </div>
@@ -1131,6 +1248,110 @@ class SpatialHubPanel extends HTMLElement {
     const tab = this._root.querySelector(".tab.on");
     if (!tab || !tab.scrollIntoView) return;
     tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+
+  // ── Vollbild und das Legendenblatt ──────────────────────
+
+  /** Ist das hier ein Telefon?
+   *
+   *  Nur die Breite, kein "user agent". Ein Panel neben einer offenen
+   *  Seitenleiste ist genauso schmal wie ein Telefon und will dasselbe;
+   *  ein Telefon im Querformat ist breit und bekommt seine Leisten
+   *  zurueck, weil dort Platz dafuer ist.
+   */
+  _isPhone() {
+    if (typeof window === "undefined" || !window.innerWidth) return false;
+    return window.innerWidth <= PHONE;
+  }
+
+  /** Die Klassen am Wurzelelement: was gerade Vollbild ist und was nicht.
+   *
+   *  Als Klasse und nicht als Media Query, weil "Leisten aus" eine
+   *  Entscheidung des Nutzers ist und keine Eigenschaft des Geraets. Die
+   *  Breite bestimmt nur den Startwert.
+   */
+  _shellClasses() {
+    const phone = this._isPhone();
+    return [
+      "app",
+      phone ? "phone" : "",
+      phone && !this._bars ? "bare" : "",
+      this._legendOpen ? "legend-open" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  /** Leisten zeigen oder verstecken.
+   *
+   *  Der Grundriss behaelt dabei seinen Zoom: die Flaeche waechst, das
+   *  Haus bleibt, wo es war. Neu einpassen waere hier falsch -- wer
+   *  hineingezoomt hat, um eine Wand zu ziehen, will nicht bei jedem
+   *  Ein- und Ausblenden von vorn anfangen.
+   */
+  _toggleBars() {
+    this._bars = !this._bars;
+    this._render();
+  }
+
+  /** Das Legendenblatt nach unten wegziehen.
+   *
+   *  Wer einen Raum einrichtet, braucht Platz, und der Platz liegt unter
+   *  dem Blatt. Ein Knopf dafuer gibt es auch, aber die Hand ist beim
+   *  Konfigurieren ohnehin auf dem Blatt -- also darf sie es einfach
+   *  wegschieben.
+   *
+   *  Waehrend der Geste wird direkt in den Stil geschrieben, nie neu
+   *  gerendert: ein Neuaufbau mitten in der Bewegung ersetzt genau das
+   *  Element, das der Finger gerade haelt.
+   */
+  _onSheetDown(event, sheet) {
+    if (!sheet || !this._legendOpen) return;
+    const height = sheet.offsetHeight || 1;
+    this._sheet = {
+      id: event.pointerId,
+      from: event.clientY,
+      at: event.clientY,
+      time: Date.now(),
+      height,
+      sheet,
+    };
+    sheet.style.transition = "none";
+    if (event.target && event.target.setPointerCapture) {
+      try {
+        event.target.setPointerCapture(event.pointerId);
+      } catch (err) {
+        /* kein Capture, kein Beinbruch: pointermove kommt trotzdem */
+      }
+    }
+    event.preventDefault();
+  }
+
+  _onSheetMove(event) {
+    const drag = this._sheet;
+    if (!drag || event.pointerId !== drag.id) return;
+    drag.at = event.clientY;
+    // Nur nach unten. Nach oben zu ziehen wuerde das Blatt ueber den
+    // Bildschirmrand schieben, und dahinter ist nichts.
+    const moved = Math.max(0, drag.at - drag.from);
+    drag.sheet.style.transform = `translateY(${moved}px)`;
+    event.preventDefault();
+  }
+
+  /** Loslassen: entweder weit genug gezogen, oder schnell genug geworfen. */
+  _onSheetUp() {
+    const drag = this._sheet;
+    if (!drag) return;
+    this._sheet = null;
+    const moved = Math.max(0, drag.at - drag.from);
+    const seconds = Math.max(0.001, (Date.now() - drag.time) / 1000);
+    const speed = moved / seconds / drag.height;
+    drag.sheet.style.transition = "";
+    drag.sheet.style.transform = "";
+    if (moved > drag.height * SHEET.close || speed > SHEET.fling) {
+      this._legendOpen = false;
+      this._render();
+    }
   }
 
   // ── Camera: zoom, pan, fit ──────────────────────────────
@@ -1261,8 +1482,13 @@ class SpatialHubPanel extends HTMLElement {
    *  "Show everything" has to mean it. The plan is square and a screen is
    *  not, so on a wide monitor 100 % is not the whole house -- the bottom
    *  storey sits below the fold and the button that promises to fix that
-   *  did nothing. Zoom out until it fits, never in: filling a 16:9 window
-   *  with a magnified plan is not what the button says either.
+   *  did nothing.
+   *
+   *  Es zoomt inzwischen in beide Richtungen. Nur herauszoomen hiess:
+   *  ein kleiner Grundriss blieb bei 100 % in der Ecke eines grossen
+   *  Monitors liegen, und "alles zeigen" zeigte vor allem Hintergrund.
+   *  Ziel ist FIT.fill der knapperen Achse -- ein Rand bleibt, damit das
+   *  Haus nicht am Fensterrand klebt, aber die Flaeche wird benutzt.
    */
   _fitToScreen() {
     this._view = { zoom: 1, x: 0, y: 0 };
@@ -1272,9 +1498,9 @@ class SpatialHubPanel extends HTMLElement {
       const fits = Math.min(
         viewport.clientWidth / canvas.offsetWidth,
         viewport.clientHeight / canvas.offsetHeight,
-      );
-      if (fits > 0 && fits < 1) {
-        this._view.zoom = Math.max(ZOOM.min, fits);
+      ) * FIT.fill;
+      if (fits > 0) {
+        this._view.zoom = Math.min(ZOOM.max, Math.max(ZOOM.min, fits));
       }
     }
     this._applyCamera();
@@ -1535,12 +1761,17 @@ class SpatialHubPanel extends HTMLElement {
       ]),
     );
 
-    const corners = (at, from, to) =>
-      [[from, from], [to, from], [to, to], [from, to]]
+    // Die y-Grenzen duerfen von den x-Grenzen abweichen: der Rahmen ist
+    // nicht mehr quadratisch, seit jede Himmelsrichtung ihren eigenen
+    // Rand hat. Ohne Angabe gelten die x-Grenzen fuer beides -- das ist
+    // das Haus selbst, und das liegt auf 0..1 in beiden Achsen.
+    const corners = (at, from, to, fromY = from, toY = to) =>
+      [[from, fromY], [to, fromY], [to, toY], [from, toY]]
         .map(([x, y]) => this._project(at, x, y));
 
-    const outline = (at, from, to) =>
-      corners(at, from, to).map((point) => `${point.x},${point.y}`).join(" ");
+    const outline = (at, from, to, fromY, toY) =>
+      corners(at, from, to, fromY, toY)
+        .map((point) => `${point.x},${point.y}`).join(" ");
 
     const plans = floors.map((floor, at) => {
       const frame = this._frame;
@@ -1555,12 +1786,17 @@ class SpatialHubPanel extends HTMLElement {
       const apron = floor.has_outdoor && floor.ground
         ? `<polygon class="apron" points="${outline(
             at, frame.min, frame.min + frame.span,
+            minY(frame), minY(frame) + spanY(frame),
           )}"/>`
         : "";
-      // Hung off the storey's left-most corner, not its top-left one.
-      // The plan is skewed, so "top left" is a third of the way into the
-      // drawing -- the name landed on the rooms it was labelling.
-      const label = this._project(at, 0, 1);
+      // Der Name steht links neben der Etage, im Rand -- nicht an ihrer
+      // Kante. Die x-Koordinate kommt vom linkesten Punkt der Platte,
+      // die y-Koordinate aus der oberen Haelfte: so steht der Name auf
+      // Hoehe der Etage, statt an ihrer Unterkante zu haengen.
+      const label = {
+        x: this._project(at, 0, 1).x - 34,
+        y: this._project(at, 0, 0.35).y,
+      };
       // Back to front. Rooms have height now, so a room further back can
       // be hidden behind the walls of one in front -- which is what depth
       // looks like. Drawn in storage order instead, a back room paints
@@ -1596,10 +1832,12 @@ class SpatialHubPanel extends HTMLElement {
       if (floor.virtual) {
         return `<g class="plane virtual">
           ${rooms}
-          <g data-at-x="${label.x - 12}" data-at-y="${label.y}"
-             transform="translate(${label.x - 12},${label.y}) scale(${
+          <g data-at-x="${label.x}" data-at-y="${label.y}"
+             transform="translate(${label.x},${label.y}) scale(${
                this._counterScale
-             })"><text class="storey-name">${escapeHtml(floor.name)}</text></g>
+             })"><text class="storey-name">${escapeHtml(
+               String(floor.name || "").toLocaleUpperCase("de"),
+             )}</text></g>
         </g>`;
       }
       // The storey is a floor slab, not a sheet of paper: a thin band of
@@ -1619,10 +1857,12 @@ class SpatialHubPanel extends HTMLElement {
         ${rooms}
         ${wallsOf(house, STACK.rise, "shell-face", FRONT_WALL)}
         ${capsOf(crown, STACK.outerWall, "shell-cap")}
-        <g data-at-x="${label.x - 12}" data-at-y="${label.y}"
-           transform="translate(${label.x - 12},${label.y}) scale(${
+        <g data-at-x="${label.x}" data-at-y="${label.y}"
+           transform="translate(${label.x},${label.y}) scale(${
              this._counterScale
-           })"><text class="storey-name">${escapeHtml(floor.name)}</text></g>
+           })"><text class="storey-name">${escapeHtml(
+             String(floor.name || "").toLocaleUpperCase("de"),
+           )}</text></g>
       </g>`;
     });
 
@@ -1815,7 +2055,16 @@ class SpatialHubPanel extends HTMLElement {
 
     if (this._stacked) return `${moved}${banner}${this._stackHtml()}`;
 
-    const aspect = (floor && floor.aspect) || 1.6;
+    // Das Seitenverhaeltnis des Hauses mal dem des Rahmens. Sonst wuerde
+    // ein Grundstueck, das nur nach hinten reicht, die Buehne in die
+    // Breite ziehen und jeden quadratischen Raum zu einem Rechteck
+    // machen: die Raeume rechnen in Prozent der Buehne, und Prozent von
+    // etwas Falschem bleibt falsch.
+    const houseAspect = (floor && floor.aspect) || 1.6;
+    const frameShape = this._frame;
+    const aspect = (
+      houseAspect * (frameShape.span / spanY(frameShape))
+    ).toFixed(4);
     const background = floor && floor.background;
     const nodes = this._visibleNodes;
     const edges = this._visibleEdges;
@@ -1946,9 +2195,9 @@ class SpatialHubPanel extends HTMLElement {
     const box = floor.outline;
     return `<div class="building-line" style="
       left:${inFrame(box.x, frame)}%;
-      top:${inFrame(box.y, frame)}%;
+      top:${inFrameY(box.y, frame)}%;
       width:${(box.width / frame.span) * 100}%;
-      height:${(box.height / frame.span) * 100}%;"></div>`;
+      height:${(box.height / spanY(frame)) * 100}%;"></div>`;
   }
 
   /** The strip under the house: everything still waiting for a room.
@@ -2088,11 +2337,14 @@ class SpatialHubPanel extends HTMLElement {
   _defaultPlot() {
     const frame = this._frame;
     const inset = frame.span * 0.04;
+    const insetY = spanY(frame) * 0.04;
     const low = frame.min + inset;
     const high = frame.min + frame.span - inset;
+    const lowY = minY(frame) + insetY;
+    const highY = minY(frame) + spanY(frame) - insetY;
     return [
-      { x: low, y: low }, { x: high, y: low },
-      { x: high, y: high }, { x: low, y: high },
+      { x: low, y: lowY }, { x: high, y: lowY },
+      { x: high, y: highY }, { x: low, y: highY },
     ].map((point) => ({
       x: Number(point.x.toFixed(4)),
       y: Number(point.y.toFixed(4)),
@@ -2145,7 +2397,7 @@ class SpatialHubPanel extends HTMLElement {
     if (!plot) return "";
     const frame = this._frame;
     const spot = (point) =>
-      `left:${inFrame(point.x, frame).toFixed(2)}%;top:${inFrame(
+      `left:${inFrame(point.x, frame).toFixed(2)}%;top:${inFrameY(
         point.y,
         frame,
       ).toFixed(2)}%`;
@@ -2328,9 +2580,9 @@ class SpatialHubPanel extends HTMLElement {
         return `
         <div class="ghost" style="
               left:${((box.x - frame.min) / frame.span) * 100}%;
-              top:${((box.y - frame.min) / frame.span) * 100}%;
+              top:${((box.y - minY(frame)) / spanY(frame)) * 100}%;
               width:${(box.width / frame.span) * 100}%;
-              height:${(box.height / frame.span) * 100}%;">
+              height:${(box.height / spanY(frame)) * 100}%;">
           <span class="ghost-name">${escapeHtml(floor.name)}</span>
         </div>`;
       })
@@ -2365,9 +2617,9 @@ class SpatialHubPanel extends HTMLElement {
           shaped ? "shaped" : ""
         }" data-area="${escapeHtml(area.id)}" style="
               left:${inFrame(area.position.x, frame)}%;
-              top:${inFrame(area.position.y, frame)}%;
+              top:${inFrameY(area.position.y, frame)}%;
               width:${(size.width / frame.span) * 100}%;
-              height:${(size.height / frame.span) * 100}%;">
+              height:${(size.height / spanY(frame)) * 100}%;">
           ${fill}
           ${kindOf(area) === AREA_KIND.VIRTUAL ? CLOUD_SVG : ""}
           <span class="area-name">
@@ -2464,11 +2716,11 @@ class SpatialHubPanel extends HTMLElement {
     const frame = this._frame;
     const [x1, y1] = [
       inFrame(edge.from.x, frame) * 10,
-      inFrame(edge.from.y, frame) * 10,
+      inFrameY(edge.from.y, frame) * 10,
     ];
     const [x2, y2] = [
       inFrame(edge.to.x, frame) * 10,
-      inFrame(edge.to.y, frame) * 10,
+      inFrameY(edge.to.y, frame) * 10,
     ];
 
     if (this._theme.edge_style === "curved") {
@@ -2550,12 +2802,32 @@ class SpatialHubPanel extends HTMLElement {
         data-node="${escapeHtml(node.id)}"
         title="${escapeHtml(node.label)}${node.floor_id ? "" : " (keiner Etage zugeordnet)"}"
         style="left:${inFrame(node.position.x, frame)}%;
-               top:${inFrame(node.position.y, frame)}%;
+               top:${inFrameY(node.position.y, frame)}%;
                --node-color:${escapeHtml(colour)}; --node-scale:${scale};
                --layer-opacity:${this._providerOpacity(node.id)};
                ${node.rotation ? `--node-rotation:${node.rotation}deg;` : ""}">
         <span class="dot">${icon}</span>
         <span class="label">${escapeHtml(node.label)}</span>
+      </button>`;
+  }
+
+  /** Der einzige Knopf, der im Vollbild uebrig bleibt.
+   *
+   *  Er liegt ueber dem Plan statt in einer Leiste, denn eine Leiste, die
+   *  nur den Knopf zum Ausblenden der Leisten enthaelt, hat nichts
+   *  ausgeblendet. Auf dem Monitor gibt es ihn nicht: dort sind die
+   *  Leisten kein Platzproblem, sondern das Werkzeug.
+   */
+  _barsButtonHtml() {
+    if (!this._isPhone()) return "";
+    const open = this._bars;
+    return `
+      <button class="bars-btn ${open ? "on" : ""}" data-bars="1"
+              aria-expanded="${open ? "true" : "false"}"
+              title="${open ? "Vollbild: Leisten ausblenden" : "Leisten einblenden"}">
+        <ha-icon icon="${
+          open ? "mdi:fullscreen" : "mdi:fullscreen-exit"
+        }"></ha-icon>
       </button>`;
   }
 
@@ -2568,8 +2840,21 @@ class SpatialHubPanel extends HTMLElement {
    */
   _legendHtml() {
     const open = this._legendOpen;
+    // Der Griff steht ueber dem Schalter, nicht daneben: nach unten
+    // wegziehen ist auf dem Telefon die schnellere Geste, und ein Blatt
+    // ohne sichtbaren Griff sieht nicht aus, als koennte man es ziehen.
+    // Nur auf dem Telefon: dort ist die Legende ein Blatt ueber dem Plan.
+    // Auf einem Monitor steht sie unter dem Grundriss und nimmt ihm
+    // nichts weg -- ein Griff, der dort nur eine Zeile verschiebt, waere
+    // eine Geste ohne Wirkung.
+    const grab =
+      open && this._isPhone()
+        ? `<div class="grab" data-legend-grab
+                title="Nach unten ziehen, um Platz zu machen"></div>`
+        : "";
     return `
       <section class="legend ${open ? "open" : ""}">
+        ${grab}
         <button class="legend-toggle" data-legend
                 aria-expanded="${open ? "true" : "false"}">
           <ha-icon icon="${
@@ -3408,6 +3693,30 @@ class SpatialHubPanel extends HTMLElement {
           element.getAttribute && element.getAttribute(attribute) !== null,
       );
 
+    // Der Griff des Legendenblatts kommt vor allem anderen: er liegt
+    // ueber dem Plan, und was darunter liegt, geht ihn nichts an.
+    if (find("data-legend-grab")) {
+      this._onSheetDown(
+        event,
+        path.find(
+          (element) =>
+            element.classList && element.classList.contains("legend"),
+        ),
+      );
+      if (!this._sheet) return;
+      const move = (moveEvent) => this._onSheetMove(moveEvent);
+      const up = (upEvent) => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+        this._onSheetUp(upEvent);
+      };
+      window.addEventListener("pointermove", move, { passive: false });
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+      return;
+    }
+
     const stage = path.find(
       (element) =>
         element.classList &&
@@ -3582,7 +3891,8 @@ class SpatialHubPanel extends HTMLElement {
     const frame = drag.frame;
     return {
       x: frame.min + ((event.clientX - drag.box.left) / drag.box.width) * frame.span,
-      y: frame.min + ((event.clientY - drag.box.top) / drag.box.height) * frame.span,
+      y: minY(frame) +
+        ((event.clientY - drag.box.top) / drag.box.height) * spanY(frame),
     };
   }
 
@@ -3602,7 +3912,7 @@ class SpatialHubPanel extends HTMLElement {
       if (!plot[drag.index]) return;
       plot[drag.index] = {
         x: this._snap(x, event, frame),
-        y: this._snap(y, event, frame),
+        y: this._snap(y, event, yFrame(frame)),
       };
       drag.value = { plot };
       const shell = drag.element.parentElement &&
@@ -3611,7 +3921,7 @@ class SpatialHubPanel extends HTMLElement {
         shell.style.clipPath = `polygon(${plot
           .map(
             (point) =>
-              `${inFrame(point.x, frame).toFixed(2)}% ${inFrame(
+              `${inFrame(point.x, frame).toFixed(2)}% ${inFrameY(
                 point.y,
                 frame,
               ).toFixed(2)}%`,
@@ -3619,7 +3929,7 @@ class SpatialHubPanel extends HTMLElement {
           .join(",")})`;
       }
       drag.element.style.left = `${inFrame(plot[drag.index].x, frame).toFixed(2)}%`;
-      drag.element.style.top = `${inFrame(plot[drag.index].y, frame).toFixed(2)}%`;
+      drag.element.style.top = `${inFrameY(plot[drag.index].y, frame).toFixed(2)}%`;
       return;
     }
 
@@ -3674,11 +3984,11 @@ class SpatialHubPanel extends HTMLElement {
       }
       if (drag.edge.includes("n")) {
         rect.top = Math.min(
-          this._magnet(y, "y", event, frame, lines), rect.bottom - minimum);
+          this._magnet(y, "y", event, yFrame(frame), lines), rect.bottom - minimum);
       }
       if (drag.edge.includes("s")) {
         rect.bottom = Math.max(
-          this._magnet(y, "y", event, frame, lines), rect.top + minimum);
+          this._magnet(y, "y", event, yFrame(frame), lines), rect.top + minimum);
       }
       drag.value = {
         position: { x: (rect.left + rect.right) / 2,
@@ -3686,15 +3996,15 @@ class SpatialHubPanel extends HTMLElement {
         size: { width: rect.right - rect.left, height: rect.bottom - rect.top },
       };
       drag.element.style.left = `${inFrame(drag.value.position.x, frame)}%`;
-      drag.element.style.top = `${inFrame(drag.value.position.y, frame)}%`;
+      drag.element.style.top = `${inFrameY(drag.value.position.y, frame)}%`;
       drag.element.style.width = `${(drag.value.size.width / frame.span) * 100}%`;
-      drag.element.style.height = `${(drag.value.size.height / frame.span) * 100}%`;
+      drag.element.style.height = `${(drag.value.size.height / spanY(frame)) * 100}%`;
       return;
     }
 
     drag.value = {
       x: this._snap(x, event, frame),
-      y: this._snap(y, event, frame),
+      y: this._snap(y, event, yFrame(frame)),
     };
     // A room lands by its walls, not by its middle. Snapping the centre
     // puts a wall wherever half the room's width happens to fall, which
@@ -3715,7 +4025,7 @@ class SpatialHubPanel extends HTMLElement {
       );
     }
     drag.element.style.left = `${inFrame(drag.value.x, frame)}%`;
-    drag.element.style.top = `${inFrame(drag.value.y, frame)}%`;
+    drag.element.style.top = `${inFrameY(drag.value.y, frame)}%`;
   }
 
   /** How far to shift a room so one of its walls lands on a neighbour's.
@@ -4155,6 +4465,11 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
+    if (hit("data-bars")) {
+      this._toggleBars();
+      return;
+    }
+
     if (hit("data-undo")) {
       this._undoStep();
       return;
@@ -4468,13 +4783,13 @@ class SpatialHubPanel extends HTMLElement {
     if (this._placing && stage) {
       const box = stage.getBoundingClientRect();
       const frame = this._frame;
-      const place = (offset, size) =>
+      const place = (offset, size, along) =>
         Math.min(
-          frame.min + frame.span,
-          Math.max(frame.min, frame.min + (offset / size) * frame.span),
+          along.min + along.span,
+          Math.max(along.min, along.min + (offset / size) * along.span),
         );
-      const x = place(event.clientX - box.left, box.width);
-      const y = place(event.clientY - box.top, box.height);
+      const x = place(event.clientX - box.left, box.width, frame);
+      const y = place(event.clientY - box.top, box.height, yFrame(frame));
       const { section, key } = this._placing;
       this._placing = null;
       this._setLayout(section, key, {
@@ -4574,6 +4889,31 @@ const STYLES = `
 :host { display:block; height:100%; background:var(--primary-background-color,#f5f5f5); }
 .app { display:flex; flex-direction:column; height:100%; color:var(--primary-text-color,#212121);
        font-family:var(--paper-font-body1_-_font-family, Roboto, sans-serif); }
+/* Auf dem Telefon ist der Grundriss der Bildschirm.
+ *
+ * "100dvh" und nicht "100vh": die Adressleiste eines mobilen Browsers
+ * faehrt beim Scrollen ein und aus, und "vh" rechnet mit der Hoehe ohne
+ * sie -- der Plan waere immer ein Stueck laenger als das Fenster, also
+ * genau die Leiste zurueck, die weg sollte. Fuer Browser ohne dvh steht
+ * die alte Einheit als Rueckfall darueber. */
+.app.phone { height:100vh; height:100dvh; }
+/* Vollbild heisst randlos: kein Innenabstand, keine Karte, keine
+ * Schatten. Was hier noch Platz kostet, kostet ihn am Haus. */
+.app.phone .body { padding:0; gap:0; overflow:hidden; position:relative; }
+.app.phone main { flex:1 1 auto; min-height:0; display:flex; }
+.app.phone .viewport { max-height:none; height:100%; width:100%;
+                       border-radius:0; }
+.app.phone .stage, .app.phone .stack { border-radius:0; box-shadow:none; }
+/* Die Kopfzeile ist im Vollbild nicht schmaler, sondern weg -- und mit
+ * ihr die Etagenreiter. Deshalb bleibt der eine Knopf, der sie
+ * zurueckholt, immer sichtbar. */
+.bars-btn { position:absolute; top:8px; left:8px; z-index:6; border:0;
+            border-radius:50%; padding:8px; cursor:pointer; display:flex;
+            color:var(--primary-text-color,#212121);
+            background:var(--card-background-color,#fff);
+            box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.3));
+            opacity:.85; }
+.bars-btn:active { opacity:1; }
 header { display:flex; align-items:center; gap:8px; padding:8px 12px;
          background:var(--fp-accent, var(--app-header-background-color, var(--primary-color,#03a9f4)));
          color:var(--app-header-text-color,#fff);
@@ -4657,6 +4997,36 @@ main { flex:0 0 auto; min-width:0; }
 @media (orientation: portrait) {
   .legend.open { max-height:38vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
 }
+/* Auf dem Telefon liegt die Legende ueber dem Plan statt darunter.
+ *
+ * Darunter hiesse: der Plan wird kuerzer, sobald jemand nachsieht,
+ * welche Ebene was zeichnet -- und beim Einrichten eines Raumes ist das
+ * genau der falsche Moment, um Flaeche zu verlieren. Als Blatt kostet
+ * sie nichts, solange sie zu ist, und laesst sich mit dem Daumen wieder
+ * wegschieben, ohne den kleinen Schalter treffen zu muessen. */
+.app.phone .legend { position:absolute; left:0; right:0; bottom:0; z-index:5;
+                     background:var(--card-background-color,#fff);
+                     border-radius:16px 16px 0 0;
+                     box-shadow:0 -2px 12px rgba(0,0,0,.22);
+                     padding:0 8px 8px;
+                     transition:transform .18s ease-out; }
+.app.phone .legend.open { max-height:60dvh; overflow-y:auto;
+                          -webkit-overflow-scrolling:touch; }
+/* Zu heisst zu: nur die Zeile mit dem Schalter, der Rest ist Plan. */
+.app.phone .legend:not(.open) { box-shadow:none;
+                                background:var(--card-background-color,#fff); }
+.app.phone .legend .dock { box-shadow:none; border-radius:0; padding:0 8px 8px; }
+.app.phone .legend-toggle { padding:8px 4px; }
+/* Der Griff. Breit genug fuer einen Daumen, schmal genug, um nicht wie
+   ein Knopf auszusehen -- er tut ja nichts, wenn man nur tippt.
+   Sichtbar sind 5px, zu treffen sind 33: der Innenabstand gehoert zur
+   Flaeche, gemalt wird nur der Inhalt ("background-clip:content-box").
+   Ein Griff, den man verfehlt, ist schlimmer als gar keiner. */
+.grab { display:block; margin:0 auto; width:44px; height:5px;
+        padding:14px 0; box-sizing:content-box; background-clip:content-box;
+        border-radius:3px; background-color:var(--divider-color,#d0d0d0);
+        cursor:grab; touch-action:none; }
+.grab:active { cursor:grabbing; }
 .dock { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start;
         background:var(--card-background-color,#fff); border-radius:12px;
         padding:4px 16px 14px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
@@ -4688,7 +5058,20 @@ main { flex:0 0 auto; min-width:0; }
    wird -- beim Hineinzoomen werden die Icons dadurch unscharf statt neu
    gezeichnet. Chromium tut das konsequent, Firefox nicht, daher sah es
    auf dem einen Rechner scharf und auf dem anderen matschig aus. */
-.canvas { transform-origin:0 0; width:min(100%, 1280px); }
+/* Untergrenze, Obergrenze, Mitte. Die Zeichnung skaliert mit der Breite
+   des Fensters, und ohne Untergrenze wurde aus einem schmalen Fenster ein
+   noch schmalerer Turm: der Grundriss schrumpfte weiter, obwohl die
+   Kamera ohnehin schieben und zoomen kann. Unter 560px wird jetzt nicht
+   mehr gequetscht, sondern geschoben. */
+/* Kein "margin-inline:auto". Zentriert wird die Zeichnung von der
+   Kamera: ist sie kleiner als das Fenster, setzt "_clampView" sie in die
+   Mitte. Beides zusammen zentriert zweimal -- einmal die Box im Fenster
+   (halber Rest der *ungezoomten* Breite) und einmal den Inhalt per
+   translate (halber Rest der *gezoomten*) -- und die Summe schob den
+   Grundriss auf einem breiten Bildschirm in die rechte Haelfte, immer
+   wieder, weil jeder Klick neu klemmt. Eine Zentrierung genuegt, und die
+   der Kamera ist die, die auch beim Zoomen noch stimmt. */
+.canvas { transform-origin:0 0; width:clamp(560px, 100%, 1280px); }
 
 .stack { background:var(--fp-surface, var(--card-background-color,#fff));
          border-radius:12px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12));
@@ -4702,15 +5085,27 @@ main { flex:0 0 auto; min-width:0; }
    Stockwerks am staerksten, die Innenwaende leiser, der Garten nur
    gestrichelt. Vorher hatte alles dieselbe Staerke -- deshalb war das
    Sandwich ein Brei. */
-.storey { fill:var(--fp-slab, rgba(128,145,170,.05));
-          stroke:var(--divider-color,rgba(128,128,128,.55));
-          stroke-width:calc(2.4px * var(--fp-house,1)); }
+/* Bodenplatte: fast schwarz, eine helle Kante darum. Eine Bauzeichnung
+   fuellt nichts -- was die Etage traegt, ist die Linie. */
+.storey { fill:var(--fp-slab, var(--fp-surface, var(--card-background-color,#fff)));
+          fill-opacity:var(--fp-slab-opacity, .92);
+          stroke:var(--fp-house-line, currentColor);
+          stroke-opacity:calc(.75 * var(--fp-house,1));
+          stroke-width:calc(1.6px * var(--fp-house,1));
+          vector-effect:non-scaling-stroke; }
 /* Die Kante unter dem Stockwerk. Sie traegt die Etage, deshalb ist sie
    etwas dunkler als die Flaeche darueber. */
-.storey-side { fill:var(--fp-slab-side, rgba(128,145,170,.16));
-               stroke:var(--divider-color,rgba(128,128,128,.4));
-               stroke-width:calc(1px * var(--fp-house,1)); }
-.storey-name { font-size:26px; fill:currentColor; opacity:.65; text-anchor:end; }
+.storey-side { fill:var(--fp-slab-side, var(--fp-surface, var(--card-background-color,#fff)));
+               stroke:var(--fp-house-line, currentColor);
+               stroke-opacity:calc(.6 * var(--fp-house,1));
+               stroke-width:calc(1.2px * var(--fp-house,1));
+               vector-effect:non-scaling-stroke; }
+/* Der Etagenname steht im linken Rand, gross und ruhig, auf Hoehe der
+   Etage -- das Erste, was man in einer Schnittzeichnung liest. Vorher
+   klebte er bei .65 Deckkraft an der Plattenkante und wurde vom Rand des
+   Bildes abgeschnitten, weil links kein Rand war. */
+.storey-name { font-size:30px; fill:var(--fp-ink, currentColor); opacity:.8;
+               letter-spacing:.1em; text-anchor:end; }
 .stack-cloud { fill:var(--fp-virtual, rgba(120,144,180,.16));
                stroke:var(--fp-virtual-line, rgba(120,144,180,.7));
                stroke-width:1.5; vector-effect:non-scaling-stroke;
@@ -4720,25 +5115,26 @@ main { flex:0 0 auto; min-width:0; }
    Platte mit Punkten darauf. Jetzt eine Wand: sichtbar, aber immer noch
    leiser als die Aussenwand, die sie umschliesst. Der Regler bewegt
    beide, damit das Verhaeltnis stimmt. */
-.stack .room { fill:rgba(128,128,128,calc(.07 * var(--fp-house,1)));
-               stroke:none; }
+/* Der Boden im Raum bleibt der Hintergrund. Eine Fuellung hier war der
+   Grund, warum sich sechzehn Raeume zu einer grauen Flaeche addierten. */
+.stack .room { fill:none; stroke:none; }
 /* Stehende Waende: die Aussenseite. Gefuellt, damit sie einander wirklich
    verdecken -- eine Wand, durch die man den Raum dahinter sieht, ist
    keine. Deckend, nicht durchscheinend, sonst summieren sich sechzehn
    Waende zu Grau. */
-.room-wall { fill:var(--fp-wall, rgba(128,145,170,.20));
-             stroke:var(--fp-shell-line, rgba(128,145,170,.5));
-             stroke-width:calc(1px * var(--fp-house,1));
+.room-wall { fill:var(--fp-wall, var(--fp-surface, var(--card-background-color,#fff)));
+             stroke:var(--fp-shell-line, currentColor);
+             stroke-width:calc(1.1px * var(--fp-house,1));
              stroke-opacity:calc(.8 * var(--fp-house,1));
              stroke-linejoin:round;
              vector-effect:non-scaling-stroke; }
 /* Die Mauerkrone: das Band zwischen Aussen- und Innenkante. Das ist der
    Unterschied zwischen einem Grundriss und einem Rechteck mit Strich
    drumherum -- eine Wand hat zwei Seiten, und genau die sieht man hier. */
-.room-cap { fill:var(--fp-wall-top, rgba(128,145,170,.42));
-            stroke:var(--fp-shell-line, rgba(128,145,170,.75));
-            stroke-width:calc(1px * var(--fp-house,1));
-            stroke-opacity:calc(.9 * var(--fp-house,1));
+.room-cap { fill:var(--fp-wall-top, var(--fp-surface, var(--card-background-color,#fff)));
+            stroke:var(--fp-shell-line, currentColor);
+            stroke-width:calc(1.1px * var(--fp-house,1));
+            stroke-opacity:calc(.95 * var(--fp-house,1));
             stroke-linejoin:round;
             vector-effect:non-scaling-stroke; }
 /* Die Marke auf einer gemeinsamen Wand. Rotes × trennt, gruenes + fuegt
@@ -4762,17 +5158,23 @@ main { flex:0 0 auto; min-width:0; }
   pointer-events:none; }
 /* Die Aussenwand traegt das Haus und ist deshalb staerker als die
    Zwischenwaende -- dasselbe, was eine Bauzeichnung auf Papier macht. */
-.shell-face { fill:var(--fp-wall, rgba(128,145,170,.26));
-              stroke:var(--divider-color,rgba(128,128,128,.5));
-              stroke-width:calc(1.2px * var(--fp-house,1));
+.shell-face { fill:var(--fp-wall, var(--fp-surface, var(--card-background-color,#fff)));
+              stroke:var(--fp-house-line, currentColor);
+              stroke-opacity:calc(.85 * var(--fp-house,1));
+              stroke-width:calc(1.4px * var(--fp-house,1));
               stroke-linejoin:round;
               vector-effect:non-scaling-stroke; }
-.shell-cap { fill:var(--fp-wall-top, rgba(128,145,170,.5));
-             stroke:var(--divider-color,rgba(128,128,128,.7));
-             stroke-width:calc(1.4px * var(--fp-house,1));
+.shell-cap { fill:var(--fp-wall-top, var(--fp-surface, var(--card-background-color,#fff)));
+             stroke:var(--fp-house-line, currentColor);
+             stroke-opacity:var(--fp-house,1);
+             stroke-width:calc(1.6px * var(--fp-house,1));
              stroke-linejoin:round;
              vector-effect:non-scaling-stroke; }
-.stack .room-label { font-size:17px; fill:currentColor; opacity:.55;
+/* Raumnamen wie in einer Bauzeichnung: Versalien, gesperrt, ruhig. Bei
+   .55 Deckkraft standen sie auf dem dunklen Boden praktisch nicht da --
+   ein Grundriss, dessen Raeume man nicht lesen kann, ist ein Muster. */
+.stack .room-label { font-size:16px; fill:var(--fp-ink, currentColor);
+                     opacity:.92; letter-spacing:.06em;
                      text-anchor:middle; dominant-baseline:middle; }
 .stack-edge { stroke-linecap:round; opacity:var(--layer-opacity,1); }
 /* A connection between two storeys is the whole reason this view exists. */
@@ -4858,31 +5260,43 @@ main { flex:0 0 auto; min-width:0; }
              outline:1px solid var(--fp-outdoor-line, rgba(76,175,80,.6)); }
 /* Ecken-Modus: ein Griff je Ecke, ein kleinerer in jeder Wandmitte zum
    Einfügen. Damit werden Nischen und Wandversätze gezeichnet. */
-/* Anfasser sind so gross wie ein Finger, nicht so gross wie ein Punkt.
-   Zwoelf Pixel trifft eine Maus mit Muehe und ein Daumen gar nicht --
-   und eine Ecke, die man dreimal antippen muss, fuehlt sich kaputt an,
-   nicht praezise. Der sichtbare Punkt bleibt klein, das Ziel darum
-   herum ist gross: ein Kreis mit unsichtbarem Rand. */
-.corner { position:absolute; width:16px; height:16px; margin:-8px 0 0 -8px;
+/* Der sichtbare Punkt bleibt klein, das Ziel darum herum ist gross: ein
+   Kreis mit unsichtbarem Rand. Zehn Pixel sind genug, um zu sagen "hier
+   ist die Ecke" -- ein fetter Punkt verdeckt genau die Wand, die man
+   gerade ausrichten will. Getroffen wird ohnehin der unsichtbare Rand.
+
+   Und wie die Geraetepunkte haelt der Griff beim Zoomen seine Groesse:
+   er sitzt im mitskalierenden .canvas, also zieht --grip-counter die
+   Kamera wieder heraus. Ohne das wird derselbe Griff bei sechsfachem
+   Zoom zum Teller ueber dem halben Zimmer -- also genau dann riesig,
+   wenn man herangefahren ist, um praezise zu arbeiten. Gedeckelt bei 1,
+   aus demselben Grund wie bei den Geraeten: herausgezoomt darf er mit
+   dem Plan schrumpfen, statt als einziges Ding in Originalgroesse
+   stehenzubleiben. */
+.corner, .handle { --grip-counter:min(1, 1 / var(--camera-zoom,1)); }
+.corner { position:absolute; width:10px; height:10px; margin:-5px 0 0 -5px;
           border-radius:50%; cursor:move; z-index:4; touch-action:none;
           display:flex; align-items:center; justify-content:center;
           background:var(--primary-color,#03a9f4);
-          box-shadow:0 0 0 3px var(--card-background-color,#fff),
-                     0 1px 4px rgba(0,0,0,.35); }
-.corner::before { content:""; position:absolute; width:38px; height:38px;
+          transform:scale(var(--grip-counter));
+          box-shadow:0 0 0 2px var(--card-background-color,#fff),
+                     0 1px 3px rgba(0,0,0,.35); }
+/* Das Ziel waechst mit dem Kehrwert mit: der Griff wird kleiner
+   gezeichnet, der Daumen bekommt trotzdem seine Flaeche. */
+.corner::before { content:""; position:absolute; width:56px; height:56px;
                   border-radius:50%; }
-.corner:hover { transform:scale(1.15); }
+.corner:hover { transform:scale(calc(var(--grip-counter) * 1.15)); }
 /* Die Ecke einfuegen ist ein Plus und die Ecke entfernen ein Kreuz --
    beides steht dran. Vorher hiess "entfernen" Alt+Klick, was niemand
    sieht und auf einem Tablet nicht einmal existiert. */
-.corner.add { width:18px; height:18px; margin:-9px 0 0 -9px; cursor:copy;
-              font:600 13px/1 system-ui,sans-serif;
+.corner.add { width:12px; height:12px; margin:-6px 0 0 -6px; cursor:copy;
+              font:600 9px/1 system-ui,sans-serif;
               color:var(--primary-color,#03a9f4);
               background:var(--card-background-color,#fff);
               box-shadow:0 0 0 2px var(--primary-color,#03a9f4),
                          0 1px 4px rgba(0,0,0,.3); }
 .corner.add:hover { background:var(--primary-color,#03a9f4); color:#fff; }
-.corner-drop { position:absolute; top:-14px; right:-14px; width:18px; height:18px;
+.corner-drop { position:absolute; top:-11px; right:-11px; width:16px; height:16px;
                border:0; border-radius:50%; cursor:pointer; padding:0;
                font:600 13px/1 system-ui,sans-serif;
                background:var(--error-color,#db4437); color:#fff;
@@ -4983,16 +5397,20 @@ select { font:inherit; padding:6px; border-radius:8px;
   background-size:4% 4%; }
 /* Acht Griffe: jede Wand und jede Ecke lässt sich ziehen. */
 .handle { position:absolute; background:var(--primary-color,#03a9f4);
-          border:2px solid var(--card-background-color,#fff); border-radius:50%;
-          width:13px; height:13px; opacity:.9; }
-.handle-n { top:-7px; left:50%; margin-left:-6px; cursor:ns-resize; }
-.handle-s { bottom:-7px; left:50%; margin-left:-6px; cursor:ns-resize; }
-.handle-w { left:-7px; top:50%; margin-top:-6px; cursor:ew-resize; }
-.handle-e { right:-7px; top:50%; margin-top:-6px; cursor:ew-resize; }
-.handle-nw { top:-7px; left:-7px; cursor:nwse-resize; }
-.handle-se { bottom:-7px; right:-7px; cursor:nwse-resize; }
-.handle-ne { top:-7px; right:-7px; cursor:nesw-resize; }
-.handle-sw { bottom:-7px; left:-7px; cursor:nesw-resize; }
+          border:1px solid var(--card-background-color,#fff); border-radius:50%;
+          width:9px; height:9px; opacity:.9;
+          transform:scale(var(--grip-counter)); }
+/* Wie bei der Ecke: klein gezeichnet, gross zu treffen. */
+.handle::before { content:""; position:absolute; inset:-16px;
+                  border-radius:50%; }
+.handle-n { top:-5px; left:50%; margin-left:-5px; cursor:ns-resize; }
+.handle-s { bottom:-5px; left:50%; margin-left:-5px; cursor:ns-resize; }
+.handle-w { left:-5px; top:50%; margin-top:-5px; cursor:ew-resize; }
+.handle-e { right:-5px; top:50%; margin-top:-5px; cursor:ew-resize; }
+.handle-nw { top:-5px; left:-5px; cursor:nwse-resize; }
+.handle-se { bottom:-5px; right:-5px; cursor:nwse-resize; }
+.handle-ne { top:-5px; right:-5px; cursor:nesw-resize; }
+.handle-sw { bottom:-5px; left:-5px; cursor:nesw-resize; }
 .area-config { position:absolute; top:2px; right:26px; border:0; background:transparent;
                color:var(--secondary-text-color,#727272); cursor:pointer; padding:2px;
                display:flex; border-radius:50%; }
