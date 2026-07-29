@@ -2339,24 +2339,156 @@ test("the legend follows the plan instead of sinking to the bottom", () => {
                "the plan takes the height it needs and no more");
 });
 
-test("a tall screen opens the legend rather than leaving half of it empty", () => {
-  // A square plan on a 22:9 phone can only be as wide as the phone, so
-  // the lower half is going spare. Filling it with the layers and the
-  // providers beats filling it with nothing.
-  const tall = { addEventListener() {}, removeEventListener() {},
-                 confirm: () => true, innerWidth: 373, innerHeight: 910 };
-  const wide = { ...tall, innerWidth: 1400, innerHeight: 900 };
+const screen = (innerWidth, innerHeight) => ({
+  addEventListener() {}, removeEventListener() {}, confirm: () => true,
+  innerWidth, innerHeight,
+});
 
+/** Baut ein Panel so, als stuende es auf diesem Bildschirm. */
+const onScreen = (width, height, build = (view) => view) => {
   const previous = globalThis.window;
   try {
-    globalThis.window = tall;
-    assert.equal(new SpatialHubPanel()._legendOpen, true);
-    globalThis.window = wide;
-    assert.equal(new SpatialHubPanel()._legendOpen, false,
-                 "on a normal screen the house still comes first");
+    globalThis.window = screen(width, height);
+    return build(new SpatialHubPanel());
   } finally {
     globalThis.window = previous;
   }
+};
+
+test("a tall screen opens the legend rather than leaving half of it empty", () => {
+  // A square plan on a tall narrow window can only be as wide as the
+  // window, so the lower half is going spare. Filling it with the layers
+  // and the providers beats filling it with nothing.
+  //
+  // Nicht auf dem Telefon: dort fuellt der Plan seit dem Vollbild den
+  // ganzen Schirm, und die Legende liegt als Blatt darueber. Offen zu
+  // starten hiesse da, ein Stueck Haus zuzudecken, bevor es jemand
+  // gesehen hat.
+  assert.equal(onScreen(800, 1600, (view) => view._legendOpen), true,
+               "a tall tablet has room under the plan");
+  assert.equal(onScreen(1400, 900, (view) => view._legendOpen), false,
+               "on a normal screen the house still comes first");
+  assert.equal(onScreen(373, 910, (view) => view._legendOpen), false,
+               "on a phone the plan gets the screen");
+});
+
+// ── Vollbild auf dem Telefon ──────────────────────────────
+
+test("a phone starts without any bars, a monitor keeps them", () => {
+  assert.equal(onScreen(373, 910, (view) => view._bars), false);
+  assert.equal(onScreen(1400, 900, (view) => view._bars), true);
+  // Ein Panel neben offener Seitenleiste ist genauso schmal wie ein
+  // Telefon und hat dasselbe Platzproblem -- die Breite entscheidet,
+  // nicht das Geraet.
+  assert.equal(onScreen(720, 900, (view) => view._bars), false);
+});
+
+test("the phone's only bar is the button that brings the bars back", () => {
+  onScreen(373, 910, (view) => {
+    assert.match(view._barsButtonHtml(), /data-bars/);
+    assert.match(view._shellClasses(), /\bphone\b/);
+    assert.match(view._shellClasses(), /\bbare\b/,
+                 "no bars means the shell says so, and the stylesheet listens");
+
+    view._bars = true;
+    assert.doesNotMatch(view._shellClasses(), /\bbare\b/);
+  });
+
+  // Auf dem Monitor gibt es den Knopf nicht: dort sind die Leisten das
+  // Werkzeug und kein Platzproblem.
+  assert.equal(onScreen(1400, 900, (v) => v._barsButtonHtml()), "");
+});
+
+test("the plan gets the whole phone, not a card with margins around it", () => {
+  const style = styleSheet();
+  // "dvh" und nicht nur "vh": mit der ein- und ausfahrenden Adressleiste
+  // ist "vh" zu hoch, und genau die Leiste, die weg sollte, kommt als
+  // Scrollbalken zurueck.
+  assert.match(style, /\.app\.phone \{[^}]*height:100dvh/);
+  assert.match(style, /\.app\.phone \.body \{[^}]*padding:0/);
+  assert.match(style, /\.app\.phone \.viewport \{[^}]*max-height:none/);
+});
+
+// ── Das Legendenblatt ─────────────────────────────────────
+
+test("the legend can be pushed away downwards when a room needs the room", () => {
+  onScreen(373, 910, () => {
+    const view = panel();
+    view._legendOpen = true;
+    assert.match(view._legendHtml(), /data-legend-grab/);
+  });
+
+  // Auf dem Monitor steht die Legende unter dem Plan und nimmt ihm
+  // nichts weg -- ein Griff waere dort eine Geste ohne Wirkung.
+  onScreen(1400, 900, () => {
+    const view = panel();
+    view._legendOpen = true;
+    assert.doesNotMatch(view._legendHtml(), /data-legend-grab/);
+  });
+});
+
+/** Eine Ziehgeste auf dem Blatt, von oben nach unten, in Millisekunden. */
+const dragSheet = (view, { by, ms = 400, height = 400 }) => {
+  const sheet = { offsetHeight: height, style: {} };
+  view._legendOpen = true;
+  view._onSheetDown({ pointerId: 1, clientY: 100, target: {},
+                      preventDefault() {} }, sheet);
+  const started = view._sheet.time;
+  view._onSheetMove({ pointerId: 1, clientY: 100 + by, preventDefault() {} });
+  view._sheet.time = started - ms;
+  view._onSheetUp();
+  return sheet;
+};
+
+test("a short tug springs back, a real pull closes the sheet", () => {
+  const view = onScreen(373, 910);
+  view._render = () => {};
+
+  dragSheet(view, { by: 40 });
+  assert.equal(view._legendOpen, true, "40 of 400 is a wobble, not a decision");
+
+  dragSheet(view, { by: 200 });
+  assert.equal(view._legendOpen, false, "half the sheet is unmistakable");
+});
+
+test("a quick flick down closes the sheet without dragging it all the way", () => {
+  // Ein Blatt, das nur bei genau der richtigen Zugweite schliesst, fuehlt
+  // sich kaputt an. Ein schneller Wisch meint immer "weg damit".
+  const view = onScreen(373, 910);
+  view._render = () => {};
+
+  dragSheet(view, { by: 90, ms: 120 });
+  assert.equal(view._legendOpen, false);
+});
+
+test("dragging the sheet writes to the element, never through a re-render", () => {
+  // Ein Neuaufbau mitten in der Bewegung ersetzt genau das Element, das
+  // der Finger haelt -- dieselbe Falle wie beim Ziehen eines Raumes.
+  const view = onScreen(373, 910);
+  let renders = 0;
+  view._render = () => { renders += 1; };
+  view._legendOpen = true;
+
+  const sheet = { offsetHeight: 400, style: {} };
+  view._onSheetDown({ pointerId: 1, clientY: 100, target: {},
+                      preventDefault() {} }, sheet);
+  view._onSheetMove({ pointerId: 1, clientY: 160, preventDefault() {} });
+
+  assert.equal(sheet.style.transform, "translateY(60px)");
+  assert.equal(renders, 0);
+});
+
+test("the sheet only goes down: upwards there is nothing behind it", () => {
+  const view = onScreen(373, 910);
+  view._render = () => {};
+  view._legendOpen = true;
+
+  const sheet = { offsetHeight: 400, style: {} };
+  view._onSheetDown({ pointerId: 1, clientY: 300, target: {},
+                      preventDefault() {} }, sheet);
+  view._onSheetMove({ pointerId: 1, clientY: 120, preventDefault() {} });
+
+  assert.equal(sheet.style.transform, "translateY(0px)");
 });
 
 test("the widest storey sets the window, not the first one with a garden", () => {

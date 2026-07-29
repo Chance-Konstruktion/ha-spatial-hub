@@ -152,6 +152,17 @@ const ZOOM = { min: 0.4, max: 6, step: 1.15 };
  *  nach Uebersicht aus, sondern nach abgeschnitten. */
 const FIT = { fill: 0.9 };
 
+/** Ab wann ein Bildschirm ein Telefon ist -- dieselbe Grenze wie im
+ *  Stylesheet, damit Vollbild und Umbruch nicht bei verschiedenen
+ *  Breiten umschalten und sich gegenseitig widersprechen. */
+const PHONE = 760;
+
+/** Das Legendenblatt: wie weit man ziehen muss, damit es zubleibt, und
+ *  ab welcher Wurfgeschwindigkeit die Strecke egal ist. Ein Blatt, das
+ *  nur bei genau der richtigen Zugweite schliesst, fuehlt sich kaputt an;
+ *  ein schneller Wisch nach unten meint immer "weg damit". */
+const SHEET = { close: 0.3, fling: 0.5 };
+
 /** The house occupies 0..1; a garden lives outside it.
  *
  *  Everything drawn shares one coordinate system, and a floor that carries
@@ -470,16 +481,24 @@ class SpatialHubPanel extends HTMLElement {
     // The legend starts folded away. It is a reference, not a destination:
     // the first thing somebody wants to see is their house, not a list of
     // the layers it is made of. One click opens it and it stays open.
-    // Zugeklappt, weil zuerst das Haus kommt -- aber nicht auf einem
-    // Bildschirm, der doppelt so hoch wie breit ist. Dort ist der Plan
-    // von der Breite begrenzt, die untere Haelfte bleibt sonst leer, und
-    // eine leere Haelfte ist keine Zurueckhaltung, sondern verschenkter
-    // Platz. Einmal beim Start entschieden: danach gehoert der Schalter
-    // dem Nutzer.
+    // Auf einem hohen schmalen Bildschirm war sie frueher offen, weil der
+    // Plan von der Breite begrenzt war und die untere Haelfte sonst leer
+    // blieb. Auf dem Telefon fuellt der Plan jetzt den Schirm, und die
+    // Legende liegt als Blatt darueber -- offen zu starten hiesse dort,
+    // ein Drittel des Hauses zuzudecken, bevor es jemand gesehen hat.
     this._legendOpen =
-      typeof window !== "undefined" && window.innerHeight
+      typeof window !== "undefined" && window.innerHeight && !this._isPhone()
         ? window.innerHeight / window.innerWidth > 1.9
         : false;
+    // Vollbild auf dem Telefon: der Grundriss bekommt den Schirm, die
+    // Leisten kommen auf Knopfdruck zurueck. Auf einem Monitor ist Platz
+    // fuer beides, und eine Kopfzeile, die man erst hervorholen muss,
+    // waere dort nur eine Klickstrecke mehr.
+    this._bars = !this._isPhone();
+    // Wie weit das Legendenblatt gerade nach unten gezogen ist, in Pixeln.
+    // Nur waehrend der Geste gesetzt; danach ist es entweder offen oder
+    // zu, und nichts dazwischen.
+    this._sheet = null;
     // The other storeys' walls, shown while editing. On by default: the
     // whole point is to notice the drift without having gone looking for
     // a setting first.
@@ -521,10 +540,28 @@ class SpatialHubPanel extends HTMLElement {
 
   connectedCallback() {
     this._renderShell();
+    // Ein gedrehtes Telefon ist ein anderer Bildschirm: quer ist Platz
+    // fuer die Leisten, hoch nicht. Ohne das bliebe das Vollbild an der
+    // Breite haengen, die beim Oeffnen zufaellig galt.
+    if (typeof window !== "undefined" && window.addEventListener) {
+      this._onResize = () => {
+        const phone = this._isPhone();
+        if (phone === this._wasPhone) return;
+        this._wasPhone = phone;
+        this._bars = !phone;
+        if (this._model) this._render();
+      };
+      this._wasPhone = this._isPhone();
+      window.addEventListener("resize", this._onResize);
+    }
     if (this._hass && !this._unsubscribe) this._connect();
   }
 
   disconnectedCallback() {
+    if (this._onResize && typeof window !== "undefined") {
+      window.removeEventListener("resize", this._onResize);
+      this._onResize = null;
+    }
     if (this._unsubscribe) {
       Promise.resolve(this._unsubscribe).then((off) => off && off());
       this._unsubscribe = null;
@@ -1150,9 +1187,11 @@ class SpatialHubPanel extends HTMLElement {
     if (!model) return;
 
     this._root.setAttribute("style", this._themeVars);
+    this._root.className = this._shellClasses();
     this._root.innerHTML = `
-      ${this._headerHtml()}
+      ${this._bars || !this._isPhone() ? this._headerHtml() : ""}
       <div class="body">
+        ${this._barsButtonHtml()}
         <main>${this._stageHtml()}</main>
         ${this._legendHtml()}
       </div>
@@ -1188,6 +1227,110 @@ class SpatialHubPanel extends HTMLElement {
     const tab = this._root.querySelector(".tab.on");
     if (!tab || !tab.scrollIntoView) return;
     tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+
+  // ── Vollbild und das Legendenblatt ──────────────────────
+
+  /** Ist das hier ein Telefon?
+   *
+   *  Nur die Breite, kein "user agent". Ein Panel neben einer offenen
+   *  Seitenleiste ist genauso schmal wie ein Telefon und will dasselbe;
+   *  ein Telefon im Querformat ist breit und bekommt seine Leisten
+   *  zurueck, weil dort Platz dafuer ist.
+   */
+  _isPhone() {
+    if (typeof window === "undefined" || !window.innerWidth) return false;
+    return window.innerWidth <= PHONE;
+  }
+
+  /** Die Klassen am Wurzelelement: was gerade Vollbild ist und was nicht.
+   *
+   *  Als Klasse und nicht als Media Query, weil "Leisten aus" eine
+   *  Entscheidung des Nutzers ist und keine Eigenschaft des Geraets. Die
+   *  Breite bestimmt nur den Startwert.
+   */
+  _shellClasses() {
+    const phone = this._isPhone();
+    return [
+      "app",
+      phone ? "phone" : "",
+      phone && !this._bars ? "bare" : "",
+      this._legendOpen ? "legend-open" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  /** Leisten zeigen oder verstecken.
+   *
+   *  Der Grundriss behaelt dabei seinen Zoom: die Flaeche waechst, das
+   *  Haus bleibt, wo es war. Neu einpassen waere hier falsch -- wer
+   *  hineingezoomt hat, um eine Wand zu ziehen, will nicht bei jedem
+   *  Ein- und Ausblenden von vorn anfangen.
+   */
+  _toggleBars() {
+    this._bars = !this._bars;
+    this._render();
+  }
+
+  /** Das Legendenblatt nach unten wegziehen.
+   *
+   *  Wer einen Raum einrichtet, braucht Platz, und der Platz liegt unter
+   *  dem Blatt. Ein Knopf dafuer gibt es auch, aber die Hand ist beim
+   *  Konfigurieren ohnehin auf dem Blatt -- also darf sie es einfach
+   *  wegschieben.
+   *
+   *  Waehrend der Geste wird direkt in den Stil geschrieben, nie neu
+   *  gerendert: ein Neuaufbau mitten in der Bewegung ersetzt genau das
+   *  Element, das der Finger gerade haelt.
+   */
+  _onSheetDown(event, sheet) {
+    if (!sheet || !this._legendOpen) return;
+    const height = sheet.offsetHeight || 1;
+    this._sheet = {
+      id: event.pointerId,
+      from: event.clientY,
+      at: event.clientY,
+      time: Date.now(),
+      height,
+      sheet,
+    };
+    sheet.style.transition = "none";
+    if (event.target && event.target.setPointerCapture) {
+      try {
+        event.target.setPointerCapture(event.pointerId);
+      } catch (err) {
+        /* kein Capture, kein Beinbruch: pointermove kommt trotzdem */
+      }
+    }
+    event.preventDefault();
+  }
+
+  _onSheetMove(event) {
+    const drag = this._sheet;
+    if (!drag || event.pointerId !== drag.id) return;
+    drag.at = event.clientY;
+    // Nur nach unten. Nach oben zu ziehen wuerde das Blatt ueber den
+    // Bildschirmrand schieben, und dahinter ist nichts.
+    const moved = Math.max(0, drag.at - drag.from);
+    drag.sheet.style.transform = `translateY(${moved}px)`;
+    event.preventDefault();
+  }
+
+  /** Loslassen: entweder weit genug gezogen, oder schnell genug geworfen. */
+  _onSheetUp() {
+    const drag = this._sheet;
+    if (!drag) return;
+    this._sheet = null;
+    const moved = Math.max(0, drag.at - drag.from);
+    const seconds = Math.max(0.001, (Date.now() - drag.time) / 1000);
+    const speed = moved / seconds / drag.height;
+    drag.sheet.style.transition = "";
+    drag.sheet.style.transform = "";
+    if (moved > drag.height * SHEET.close || speed > SHEET.fling) {
+      this._legendOpen = false;
+      this._render();
+    }
   }
 
   // ── Camera: zoom, pan, fit ──────────────────────────────
@@ -2621,6 +2764,26 @@ class SpatialHubPanel extends HTMLElement {
       </button>`;
   }
 
+  /** Der einzige Knopf, der im Vollbild uebrig bleibt.
+   *
+   *  Er liegt ueber dem Plan statt in einer Leiste, denn eine Leiste, die
+   *  nur den Knopf zum Ausblenden der Leisten enthaelt, hat nichts
+   *  ausgeblendet. Auf dem Monitor gibt es ihn nicht: dort sind die
+   *  Leisten kein Platzproblem, sondern das Werkzeug.
+   */
+  _barsButtonHtml() {
+    if (!this._isPhone()) return "";
+    const open = this._bars;
+    return `
+      <button class="bars-btn ${open ? "on" : ""}" data-bars="1"
+              aria-expanded="${open ? "true" : "false"}"
+              title="${open ? "Vollbild: Leisten ausblenden" : "Leisten einblenden"}">
+        <ha-icon icon="${
+          open ? "mdi:fullscreen" : "mdi:fullscreen-exit"
+        }"></ha-icon>
+      </button>`;
+  }
+
   /** The legend, folded away until somebody asks for it.
    *
    *  Collapsed is the honest default: layers and providers are how you
@@ -2630,8 +2793,21 @@ class SpatialHubPanel extends HTMLElement {
    */
   _legendHtml() {
     const open = this._legendOpen;
+    // Der Griff steht ueber dem Schalter, nicht daneben: nach unten
+    // wegziehen ist auf dem Telefon die schnellere Geste, und ein Blatt
+    // ohne sichtbaren Griff sieht nicht aus, als koennte man es ziehen.
+    // Nur auf dem Telefon: dort ist die Legende ein Blatt ueber dem Plan.
+    // Auf einem Monitor steht sie unter dem Grundriss und nimmt ihm
+    // nichts weg -- ein Griff, der dort nur eine Zeile verschiebt, waere
+    // eine Geste ohne Wirkung.
+    const grab =
+      open && this._isPhone()
+        ? `<div class="grab" data-legend-grab
+                title="Nach unten ziehen, um Platz zu machen"></div>`
+        : "";
     return `
       <section class="legend ${open ? "open" : ""}">
+        ${grab}
         <button class="legend-toggle" data-legend
                 aria-expanded="${open ? "true" : "false"}">
           <ha-icon icon="${
@@ -3470,6 +3646,30 @@ class SpatialHubPanel extends HTMLElement {
           element.getAttribute && element.getAttribute(attribute) !== null,
       );
 
+    // Der Griff des Legendenblatts kommt vor allem anderen: er liegt
+    // ueber dem Plan, und was darunter liegt, geht ihn nichts an.
+    if (find("data-legend-grab")) {
+      this._onSheetDown(
+        event,
+        path.find(
+          (element) =>
+            element.classList && element.classList.contains("legend"),
+        ),
+      );
+      if (!this._sheet) return;
+      const move = (moveEvent) => this._onSheetMove(moveEvent);
+      const up = (upEvent) => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+        this._onSheetUp(upEvent);
+      };
+      window.addEventListener("pointermove", move, { passive: false });
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+      return;
+    }
+
     const stage = path.find(
       (element) =>
         element.classList &&
@@ -4217,6 +4417,11 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
+    if (hit("data-bars")) {
+      this._toggleBars();
+      return;
+    }
+
     if (hit("data-undo")) {
       this._undoStep();
       return;
@@ -4636,6 +4841,31 @@ const STYLES = `
 :host { display:block; height:100%; background:var(--primary-background-color,#f5f5f5); }
 .app { display:flex; flex-direction:column; height:100%; color:var(--primary-text-color,#212121);
        font-family:var(--paper-font-body1_-_font-family, Roboto, sans-serif); }
+/* Auf dem Telefon ist der Grundriss der Bildschirm.
+ *
+ * "100dvh" und nicht "100vh": die Adressleiste eines mobilen Browsers
+ * faehrt beim Scrollen ein und aus, und "vh" rechnet mit der Hoehe ohne
+ * sie -- der Plan waere immer ein Stueck laenger als das Fenster, also
+ * genau die Leiste zurueck, die weg sollte. Fuer Browser ohne dvh steht
+ * die alte Einheit als Rueckfall darueber. */
+.app.phone { height:100vh; height:100dvh; }
+/* Vollbild heisst randlos: kein Innenabstand, keine Karte, keine
+ * Schatten. Was hier noch Platz kostet, kostet ihn am Haus. */
+.app.phone .body { padding:0; gap:0; overflow:hidden; position:relative; }
+.app.phone main { flex:1 1 auto; min-height:0; display:flex; }
+.app.phone .viewport { max-height:none; height:100%; width:100%;
+                       border-radius:0; }
+.app.phone .stage, .app.phone .stack { border-radius:0; box-shadow:none; }
+/* Die Kopfzeile ist im Vollbild nicht schmaler, sondern weg -- und mit
+ * ihr die Etagenreiter. Deshalb bleibt der eine Knopf, der sie
+ * zurueckholt, immer sichtbar. */
+.bars-btn { position:absolute; top:8px; left:8px; z-index:6; border:0;
+            border-radius:50%; padding:8px; cursor:pointer; display:flex;
+            color:var(--primary-text-color,#212121);
+            background:var(--card-background-color,#fff);
+            box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.3));
+            opacity:.85; }
+.bars-btn:active { opacity:1; }
 header { display:flex; align-items:center; gap:8px; padding:8px 12px;
          background:var(--fp-accent, var(--app-header-background-color, var(--primary-color,#03a9f4)));
          color:var(--app-header-text-color,#fff);
@@ -4719,6 +4949,36 @@ main { flex:0 0 auto; min-width:0; }
 @media (orientation: portrait) {
   .legend.open { max-height:38vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
 }
+/* Auf dem Telefon liegt die Legende ueber dem Plan statt darunter.
+ *
+ * Darunter hiesse: der Plan wird kuerzer, sobald jemand nachsieht,
+ * welche Ebene was zeichnet -- und beim Einrichten eines Raumes ist das
+ * genau der falsche Moment, um Flaeche zu verlieren. Als Blatt kostet
+ * sie nichts, solange sie zu ist, und laesst sich mit dem Daumen wieder
+ * wegschieben, ohne den kleinen Schalter treffen zu muessen. */
+.app.phone .legend { position:absolute; left:0; right:0; bottom:0; z-index:5;
+                     background:var(--card-background-color,#fff);
+                     border-radius:16px 16px 0 0;
+                     box-shadow:0 -2px 12px rgba(0,0,0,.22);
+                     padding:0 8px 8px;
+                     transition:transform .18s ease-out; }
+.app.phone .legend.open { max-height:60dvh; overflow-y:auto;
+                          -webkit-overflow-scrolling:touch; }
+/* Zu heisst zu: nur die Zeile mit dem Schalter, der Rest ist Plan. */
+.app.phone .legend:not(.open) { box-shadow:none;
+                                background:var(--card-background-color,#fff); }
+.app.phone .legend .dock { box-shadow:none; border-radius:0; padding:0 8px 8px; }
+.app.phone .legend-toggle { padding:8px 4px; }
+/* Der Griff. Breit genug fuer einen Daumen, schmal genug, um nicht wie
+   ein Knopf auszusehen -- er tut ja nichts, wenn man nur tippt.
+   Sichtbar sind 5px, zu treffen sind 33: der Innenabstand gehoert zur
+   Flaeche, gemalt wird nur der Inhalt ("background-clip:content-box").
+   Ein Griff, den man verfehlt, ist schlimmer als gar keiner. */
+.grab { display:block; margin:0 auto; width:44px; height:5px;
+        padding:14px 0; box-sizing:content-box; background-clip:content-box;
+        border-radius:3px; background-color:var(--divider-color,#d0d0d0);
+        cursor:grab; touch-action:none; }
+.grab:active { cursor:grabbing; }
 .dock { display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start;
         background:var(--card-background-color,#fff); border-radius:12px;
         padding:4px 16px 14px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
