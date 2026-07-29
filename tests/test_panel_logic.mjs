@@ -1728,3 +1728,264 @@ test("a cloud never swallows the grip that resizes it", () => {
   );
   assert.match(source, /\.area\.virtual \.cloud \{[^}]*pointer-events:none/);
 });
+
+// ── Rooms that are not rectangles ─────────────────────────
+
+const shaped = (points) =>
+  model({
+    areas: [
+      { id: "wohnzimmer", name: "Wohnzimmer", floor_id: "eg",
+        position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 },
+        shape: points, auto: false },
+    ],
+  });
+
+// An L: the bottom-right quarter bitten out of the box.
+const L_SHAPE = [
+  { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0.5 },
+  { x: 0.5, y: 0.5 }, { x: 0.5, y: 1 }, { x: 0, y: 1 },
+];
+
+test("an L-shaped room is drawn as an L, not as its box", () => {
+  const view = panel(shaped(L_SHAPE));
+  const html = view._areasHtml();
+
+  assert.match(html, /class="area-fill"/);
+  assert.match(html, /clip-path:polygon\(/);
+  // The step in the wall really is in the markup, not just a class name.
+  assert.match(html, /50\.00% 50\.00%/);
+});
+
+test("an ordinary room stays an ordinary box", () => {
+  // No shape is not "a rectangle drawn the long way round": nothing extra
+  // gets rendered at all, so nothing extra can go wrong on the floors
+  // nobody has edited.
+  const html = panel(model())._areasHtml();
+
+  assert.equal(html.includes("area-fill"), false);
+  assert.equal(html.includes("clip-path"), false);
+});
+
+test("a stored outline nobody can read falls back to the box", () => {
+  // A plan that refuses to draw because one corner arrived as a string is
+  // a worse outcome than a room that is briefly a rectangle again.
+  for (const broken of [null, [], [{ x: 0, y: 0 }], "square",
+                        [{ x: "a", y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }]]) {
+    const html = panel(shaped(broken))._areasHtml();
+    assert.equal(html.includes("clip-path"), false);
+  }
+});
+
+test("the clip goes on the fill, never on the box itself", () => {
+  // Clipping the box would clip its own handles away and make an
+  // L-shaped room the one room nobody can edit.
+  const view = panel(shaped(L_SHAPE), { edit: true });
+  const html = view._areasHtml();
+  const box = html.slice(0, html.indexOf("area-fill"));
+
+  assert.equal(box.includes("clip-path"), false);
+  assert.match(html, /data-resize-area/);
+});
+
+test("the house view draws the same outline the floor view does", () => {
+  // The two views disagreeing about the shape of a room is the bug that
+  // made a cloud a rectangle in the house view.
+  const view = panel(shaped(L_SHAPE), { floor: null });
+  const svg = view._roomPolygon(0, view._model.areas[0]);
+
+  // Six corners on the polygon, not four.
+  const points = svg.match(/points="([^"]+)"/)[1].trim().split(/\s+/);
+  assert.equal(points.length, 6);
+});
+
+// ── Editing corners ───────────────────────────────────────
+
+test("corner mode replaces the wall handles rather than joining them", () => {
+  // Both sit in the same places and would fight over every pointer press.
+  const view = panel(model(), { edit: true });
+  assert.match(view._areaHandlesHtml(view._model.areas[0]), /data-resize-area/);
+
+  view._corners = true;
+  const html = view._areaHandlesHtml(view._model.areas[0]);
+  assert.equal(html.includes("data-resize-area"), false);
+  assert.match(html, /data-corner-area/);
+});
+
+test("a plain room already has four corners to grab", () => {
+  // Nothing to drag before anything has been decided is no editor at all.
+  const view = panel(model(), { edit: true });
+  view._corners = true;
+  const html = view._areaHandlesHtml(view._model.areas[0]);
+
+  assert.equal((html.match(/data-corner-index/g) || []).length, 8,
+               "four corners and four wall midpoints to add one with");
+});
+
+test("adding a corner splits the wall it sits on", () => {
+  const view = panel(model(), { edit: true });
+  view._addCorner("wohnzimmer", 0);
+  const [section, key, values] = view._written[0];
+
+  assert.equal(section, "areas");
+  assert.equal(key, "wohnzimmer");
+  assert.equal(values.shape.length, 5);
+  // Inserted *after* its wall's first corner, so the winding survives.
+  assert.deepEqual(values.shape[1], { x: 0.5, y: 0 });
+});
+
+test("the last corner removed hands the room back to the wall handles", () => {
+  // Below four there is nothing left to shape, and a triangle nobody
+  // asked for is worse than the rectangle they started with.
+  const view = panel(model(), { edit: true });
+  view._dropCorner("wohnzimmer", 2);
+
+  assert.deepEqual(view._written[0][2], { shape: null });
+});
+
+test("a room with corners to spare just loses the one", () => {
+  const view = panel(shaped(L_SHAPE), { edit: true });
+  view._dropCorner("wohnzimmer", 2);
+
+  assert.equal(view._written[0][2].shape.length, 5);
+});
+
+test("undoing a corner edit restores no shape, not a rectangle", () => {
+  // Clearing the shape is how a room goes back to being an ordinary box,
+  // and an explicit four-corner rectangle is not the same thing.
+  const view = panel(model(), { edit: true });
+  assert.deepEqual(view._shapeBefore(view._model.areas[0]), { shape: null });
+});
+
+// ── The plot ──────────────────────────────────────────────
+
+const plotted = (plot) =>
+  model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "", has_outdoor: true,
+        plot },
+      { id: "og", name: "Obergeschoss", level: 1, icon: "" },
+    ],
+  });
+
+test("no plot is drawn until somebody draws one", () => {
+  // Home Assistant knows rooms, and a room is inside a building. Nothing
+  // in it says where the land ends, so there is nothing to derive.
+  assert.equal(panel(model())._plotHtml(), "");
+  assert.equal(panel(model())._plot, null);
+});
+
+test("a plot is drawn under everything on its floor", () => {
+  const square = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
+  const html = panel(plotted(square))._plotHtml();
+
+  assert.match(html, /class="plot"/);
+  assert.match(html, /clip-path:polygon\(/);
+});
+
+test("the first plot reaches past the walls, into the garden", () => {
+  // A plot the size of the house is a house, and says nothing.
+  const view = panel(plotted(null));
+  const first = view._defaultPlot();
+
+  assert.equal(first.length, 4);
+  assert.ok(first[0].x < 0, "the near corner sits outside the building");
+  assert.ok(first[2].x > 1, "and the far one on the other side of it");
+});
+
+test("drawing a plot turns corner editing on with it", () => {
+  // A plot nobody can reshape is a rectangle, which is not the point.
+  const view = panel(plotted(null), { edit: true });
+  view._togglePlot();
+
+  assert.equal(view._written[0][0], "floors");
+  assert.equal(view._corners, true);
+  assert.equal(view._written[0][2].plot.length, 4);
+});
+
+test("a plot is cleared by the same button that drew it", () => {
+  const square = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
+  const view = panel(plotted(square), { edit: true });
+  view._togglePlot();
+
+  assert.deepEqual(view._written[0][2], { plot: null });
+});
+
+test("a plot corner is stored in floor coordinates, not box ones", () => {
+  // The plot is the one outline with nothing around it to be relative to.
+  const square = [{ x: -0.2, y: -0.2 }, { x: 1.2, y: -0.2 },
+                  { x: 1.2, y: 1.2 }, { x: -0.2, y: 1.2 }];
+  const view = panel(plotted(square), { edit: true });
+  view._addPlotCorner(0);
+
+  assert.deepEqual(view._written[0][2].plot[1], { x: 0.5, y: -0.2 });
+});
+
+test("a plot cannot be whittled below a boundary", () => {
+  const triangle = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }];
+  const view = panel(plotted(triangle), { edit: true });
+  view._dropPlotCorner(1);
+
+  assert.deepEqual(view._written[0][2], { plot: null });
+});
+
+// ── Clouds over the roof ──────────────────────────────────
+
+const withSky = () =>
+  model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "", has_outdoor: true },
+      { id: "og", name: "Obergeschoss", level: 1, icon: "" },
+      { id: "sky", name: "Netz", level: 9, icon: "", virtual: true },
+    ],
+    areas: [
+      { id: "wohnzimmer", name: "Wohnzimmer", floor_id: "eg",
+        position: at(0.25, 0.5), size: { width: 0.4, height: 0.4 } },
+      { id: "lan", name: "LAN", floor_id: "sky", kind: "virtual",
+        position: at(0.5, 0.5), size: { width: 0.3, height: 0.2 } },
+    ],
+  });
+
+test("the sky is drawn first, whatever order the floors arrived in", () => {
+  // A cloud plane that inherits its position from a floor list ends up
+  // between two storeys, and the internet is not on the first floor.
+  const view = panel(withSky(), { floor: null });
+
+  assert.equal(view._stackFloors[0].id, "sky");
+});
+
+test("the clouds float clear of the roof rather than sitting on it", () => {
+  const view = panel(withSky(), { floor: null });
+  const sky = view._project(0, 0.5, 0.5);
+  const top = view._project(1, 0.5, 0.5);
+
+  assert.ok(sky.y < top.y, "sky above the top storey");
+  // The ridge sits roughly half the plan's depth above the top storey, so
+  // clearing it takes more than one ordinary storey gap.
+  assert.ok(top.y - sky.y > 300, `only ${top.y - sky.y} apart`);
+});
+
+test("the sky stays inside the drawing it floats in", () => {
+  // Lifting the clouds without making room for them puts them off the
+  // top of the canvas, where nobody scrolls.
+  const view = panel(withSky(), { floor: null });
+
+  assert.ok(view._project(0, 0.5, 0) .y > 0, "not off the top edge");
+});
+
+test("the sky plane is sky, not a storey with clouds painted on it", () => {
+  const view = panel(withSky(), { floor: null });
+  const html = view._stackHtml();
+  const sky = html.slice(html.indexOf('class="plane virtual"'));
+  const plane = sky.slice(0, sky.indexOf("</g>"));
+
+  assert.equal(plane.includes('class="storey"'), false);
+  assert.equal(plane.includes('class="apron"'), false);
+});
+
+test("a cloud gets the same room around the house that a garden does", () => {
+  // Squeezed into the footprint, a cloud reads as a room on the top floor.
+  const view = panel(withSky(), { floor: "sky" });
+
+  assert.ok(view._frame.min < 0);
+  assert.ok(view._frame.span > 1);
+});

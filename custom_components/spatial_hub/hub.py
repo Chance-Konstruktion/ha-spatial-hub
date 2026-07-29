@@ -544,8 +544,11 @@ class SpatialHub:
                 area["kind"] = stated or guessed
             else:
                 area["kind"] = guessed
+            # `shape` rides along with the rest: the hub stores and serves
+            # it and never reads it. A room that is not a rectangle is a
+            # question for whatever draws the plan, not for the model.
             for key in ("position", "size", "color", "name", "in_sandwich",
-                        "single_only"):
+                        "single_only", "shape"):
                 if key in override and override[key] is not None:
                     area[key] = override[key]
                     if key == "position":

@@ -871,3 +871,63 @@ async def test_a_floors_kind_goes_over_the_wire_as_a_word(hass):
         assert not isinstance(floor.get("kind"), object) or isinstance(
             floor.get("kind"), (str, type(None))
         )
+
+
+# ── The sky, the plot and rooms that are not rectangles ────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_cloud_is_spread_over_the_house_not_stacked_on_it(hass, hub):
+    """A cloud packed into the footprint reads as a room on the top floor."""
+    from homeassistant.helpers import area_registry as ar
+
+    for name in ("Cloud", "VPN", "Server", "Internet"):
+        area = FakeArea(name.lower(), name, floor_id="eg")
+        ar.async_get(hass).areas.append(area)
+        hub.store.update("areas", name.lower(), {"kind": "virtual"})
+    model = await hub.async_model()
+
+    clouds = [area for area in model["areas"] if area["kind"] == "virtual"]
+    assert len(clouds) == 4
+    left = min(a["position"]["x"] - a["size"]["width"] / 2 for a in clouds)
+    right = max(a["position"]["x"] + a["size"]["width"] / 2 for a in clouds)
+    assert left < 0 and right > 1, (
+        "the sky reaches past the walls, the same way the garden does"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_rooms_own_outline_is_carried_but_never_read(hass, hub):
+    """The hub stores and serves a shape. What it means is the renderer's."""
+    outline = [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 0.5},
+               {"x": 0.5, "y": 0.5}, {"x": 0.5, "y": 1}, {"x": 0, "y": 1}]
+    hub.store.update("areas", "wohnzimmer", {"shape": outline})
+    model = await hub.async_model()
+
+    room = next(area for area in model["areas"] if area["id"] == "wohnzimmer")
+    assert room["shape"] == outline
+
+
+@pytest.mark.asyncio
+async def test_a_room_says_nothing_about_its_outline_by_default(hass, hub):
+    """No shape is not a four-corner rectangle; it is no shape at all."""
+    model = await hub.async_model()
+    room = next(area for area in model["areas"] if area["id"] == "wohnzimmer")
+
+    assert "shape" not in room
+
+
+@pytest.mark.asyncio
+async def test_the_plot_is_the_users_and_nothing_derives_one(hass, hub):
+    """Home Assistant knows rooms; nothing in it says where the land ends."""
+    model = await hub.async_model()
+    ground = next(floor for floor in model["floors"] if floor["id"] == "eg")
+    assert "plot" not in ground
+
+    boundary = [{"x": -0.3, "y": -0.3}, {"x": 1.3, "y": -0.3},
+                {"x": 1.3, "y": 1.3}, {"x": -0.3, "y": 1.3}]
+    hub.store.update("floors", "eg", {"plot": boundary})
+    model = await hub.async_model()
+
+    ground = next(floor for floor in model["floors"] if floor["id"] == "eg")
+    assert ground["plot"] == boundary

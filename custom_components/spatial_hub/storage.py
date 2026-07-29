@@ -38,12 +38,18 @@ _LAYER_KEYS = {"visible", "z_index", "opacity"}
 # and nothing else, so a garden or a network diagram gets put where floors
 # go. Marking it here dissolves it -- outdoors into the ring around the
 # ground floor, virtual onto its own plane above the roof.
+# `plot` is the property the house stands on: a polygon in floor
+# coordinates, drawn under everything and reaching well past the walls.
+# Nothing in Home Assistant knows a plot boundary, so unlike `outline`
+# there is nothing to derive it from -- it exists only once drawn.
 _FLOOR_KEYS = {"background", "aspect", "name", "order", "in_sandwich",
-               "outline", "kind"}
+               "outline", "kind", "plot"}
 # `kind` is what an area *is* (room, garden, cloud); the two sandwich
 # flags are where it may be drawn. Both are the user's to decide.
+# `shape` is the room's own outline inside its box, in box-local
+# coordinates, so a niche or a wall offset survives moving and resizing.
 _AREA_KEYS = {"position", "size", "color", "hidden", "kind", "in_sandwich",
-              "single_only"}
+              "single_only", "shape"}
 # View-wide settings rather than one item's arrangement. One key, "view".
 _SETTINGS_KEYS = {"theme", "custom_layers"}
 
