@@ -454,6 +454,29 @@ Linie eine Wand ist und welche eine Bodenkante.
 - Drei Gewichte, nicht eines: Außenwand am stärksten, Innenwände leiser,
   Garten nur gestrichelt.
 
+### Ein Gerät in einen anderen Raum ziehen
+
+Der Hub ordnet sonst nur ein Bild an. Dies ist der **einzige** Befehl, der
+außerhalb des Hubs schreibt: `spatial_hub/area/assign` ändert die
+Bereichszuordnung in Home Assistant, sichtbar in jedem Dashboard und jeder
+Automatisierung.
+
+- **Admin-pflichtig.** Anordnen ist es nicht, das hier schon.
+- **Gerät oder Entität wird nicht gefragt, sondern hergeleitet.** Ein Punkt
+  liegt dort, wo er liegt, weil entweder eine Überschreibung an der Entität
+  oder der Bereich ihres Geräts das entschieden hat. Was den Punkt dorthin
+  gelegt hat, wird bewegt. Eine Platine zieht also alle ihre Entitäten mit;
+  eine Entität, die bewusst aus dem Raum ihres Geräts geholt wurde — ein
+  WiFi-CSI-Sensor, der das Gäste-WC beobachtet, während seine Lampe im
+  Vorgarten steht — bewegt sich allein.
+- Die Antwort enthält `scope`, `target`, `before` und `after` — genug, um es
+  vollständig zurückzunehmen.
+- Ein Umzug MUSS **sichtbar** sein: eine Zeile über dem Plan, die benennt was
+  wohin ging, mit „Rückgängig" darin. Eine Änderung an fremder Konfiguration
+  darf nie stillschweigend passieren.
+- Ein Punkt ohne `entity_id` bewegt nichts. Es gibt nichts, worauf man
+  schreiben könnte, und Raten ist schlechter als Nichtstun.
+
 ### Gemeinsame Wände
 
 Zwei Räume, deren Wände aufeinander liegen, haben **eine** Wand.
@@ -529,6 +552,7 @@ und behandelt nie eine Integration namentlich als Sonderfall.
 | `spatial_hub/action` | Provider-Action ausführen (Admin) |
 | `spatial_hub/diagnostics` | was jeder Provider geliefert hat, inklusive Fehler |
 | `spatial_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
+| `spatial_hub/area/assign` | ein Gerät oder eine Entität in einen anderen Bereich legen — **schreibt in Home Assistant**, nur Admin |
 
 Ein **lesender** Renderer braucht davon zwei: `model` und `subscribe`.
 

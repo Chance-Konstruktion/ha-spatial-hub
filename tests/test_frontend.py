@@ -199,6 +199,10 @@ def test_the_renderer_only_uses_documented_commands():
         "action",
         "diagnostics",
         "entities/facets",
+        # The one command that writes outside the hub. Documented in the
+        # command table of the README, the specification and the provider
+        # API -- if it were not, this test would be the thing that noticed.
+        "area/assign",
     }
     assert used <= documented, f"undocumented commands used: {sorted(used - documented)}"
 

@@ -11,6 +11,11 @@ import voluptuous as vol
 
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import (
+    area_registry as ar,
+    device_registry as dr,
+    entity_registry as er,
+)
 
 from .const import (
     API_VERSION,
@@ -127,6 +132,7 @@ def async_register(hass: HomeAssistant) -> None:
         websocket_subscribe,
         websocket_diagnostics,
         websocket_facets,
+        websocket_area_assign,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -374,3 +380,76 @@ def websocket_facets(hass: HomeAssistant, connection, msg: dict) -> None:
     rather than against a guessed list of integration names.
     """
     connection.send_result(msg["id"], async_facets(hass))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/area/assign",
+        vol.Required("entity_id"): str,
+        vol.Required("area_id"): vol.Any(None, str),
+        # Which registry to write to. Left out, the hub decides -- see
+        # below, and the reason it decides is the whole point.
+        vol.Optional("scope"): vol.In(["device", "entity"]),
+    }
+)
+@websocket_api.require_admin
+@callback
+def websocket_area_assign(hass: HomeAssistant, connection, msg: dict) -> None:
+    """Move a thing into a room -- in Home Assistant, not just in the plan.
+
+    This is the one command that writes outside the hub. Everything else
+    here arranges a picture; this changes the configuration that every
+    dashboard, every automation and every voice assistant reads. Hence
+    admin-only, and hence the answer it sends back: enough to put things
+    exactly as they were.
+
+    **Device or entity** is not asked, it is worked out. A dot sits where
+    it sits because *something* decided its area, and that something is
+    either an override on the entity or the area of its device. Whichever
+    one put the dot there is the one that moves it -- so dragging a board
+    moves the board, and dragging an entity that was deliberately pulled
+    out of its device's room (a WiFi-CSI sensor tracking the guest WC
+    while its lamp stands in the front garden) moves only that entity and
+    leaves the arrangement intact.
+    """
+    entities = er.async_get(hass)
+    entry = entities.async_get(msg["entity_id"])
+    if entry is None:
+        connection.send_error(
+            msg["id"], "not_found", f"No such entity: {msg['entity_id']}"
+        )
+        return
+
+    area_id = msg["area_id"]
+    if area_id is not None and ar.async_get(hass).async_get_area(area_id) is None:
+        connection.send_error(msg["id"], "not_found", f"No such area: {area_id}")
+        return
+
+    scope = msg.get("scope")
+    if scope is None:
+        scope = "entity" if entry.area_id is not None else "device"
+    if scope == "device" and not entry.device_id:
+        # An entity with no device has nowhere else to keep its area.
+        scope = "entity"
+
+    if scope == "device":
+        devices = dr.async_get(hass)
+        device = devices.async_get(entry.device_id)
+        if device is None:
+            connection.send_error(
+                msg["id"], "not_found", f"No such device: {entry.device_id}"
+            )
+            return
+        before = device.area_id
+        devices.async_update_device(device.id, area_id=area_id)
+        target = device.id
+    else:
+        before = entry.area_id
+        entities.async_update_entity(entry.entity_id, area_id=area_id)
+        target = entry.entity_id
+
+    # Everything the caller needs to undo it, and nothing it has to guess.
+    connection.send_result(
+        msg["id"],
+        {"scope": scope, "target": target, "before": before, "after": area_id},
+    )

@@ -403,6 +403,9 @@ class SpatialHubPanel extends HTMLElement {
     // popup sense -- clicking a room in room mode asks "what is this room
     // attached to", and nothing else on screen should change.
     this._joinArea = null;
+    // What the last drag changed in Home Assistant itself, kept only long
+    // enough to offer taking it back.
+    this._moved = null;
     this._history = null;
     this._placing = null; // { section, key } -- next stage click places it
     this._showDiagnostics = false;
@@ -557,6 +560,83 @@ class SpatialHubPanel extends HTMLElement {
       this._error = err && err.message ? err.message : String(err);
       this._render();
     }
+  }
+
+  /** Which room a point on this floor is in.
+   *
+   *  The smallest one that contains it. Rooms overlap -- a hallway drawn
+   *  under a stairwell -- and the smaller of two is always the more
+   *  specific answer.
+   */
+  _areaAt(x, y, floorId) {
+    let best = null;
+    let smallest = Infinity;
+    for (const area of this._visibleAreas) {
+      if (!area.position || area.floor_id !== floorId) continue;
+      if (kindOf(area) === AREA_KIND.VIRTUAL) continue;
+      const box = boxOf(area);
+      if (x < box.left || x > box.right || y < box.top || y > box.bottom) continue;
+      const size = (box.right - box.left) * (box.bottom - box.top);
+      if (size < smallest) {
+        smallest = size;
+        best = area;
+      }
+    }
+    return best;
+  }
+
+  /** A dot dragged into another room moves the thing itself.
+   *
+   *  This is the one gesture that writes outside the hub, so it says so:
+   *  the plan gets a line above it naming what moved where, with a way
+   *  back. Everything else in this panel arranges a picture; this changes
+   *  the configuration every dashboard and every automation reads, and a
+   *  change like that must never be silent.
+   */
+  async _moveIntoArea(node, x, y) {
+    if (!this._canEdit || !node || !node.entity_id) return;
+    const room = this._areaAt(x, y, node.floor_id);
+    const from = node.area_id || null;
+    const to = room ? room.id : null;
+    if (to === from || (!room && !from)) return;
+
+    try {
+      const done = await this._hass.callWS({
+        type: `${DOMAIN}/area/assign`,
+        entity_id: node.entity_id,
+        area_id: to,
+      });
+      this._moved = {
+        label: node.label,
+        room: room ? room.name : "keinem Bereich",
+        entity_id: node.entity_id,
+        ...done,
+      };
+    } catch (err) {
+      this._error = err && err.message ? err.message : String(err);
+    }
+    this._render();
+  }
+
+  /** Put back whatever the last drag changed in Home Assistant. */
+  async _undoMove() {
+    const move = this._moved;
+    this._moved = null;
+    if (!move) {
+      this._render();
+      return;
+    }
+    try {
+      await this._hass.callWS({
+        type: `${DOMAIN}/area/assign`,
+        entity_id: move.entity_id,
+        area_id: move.before,
+        scope: move.scope,
+      });
+    } catch (err) {
+      this._error = err && err.message ? err.message : String(err);
+    }
+    this._render();
   }
 
   async _undoStep() {
@@ -1678,6 +1758,17 @@ class SpatialHubPanel extends HTMLElement {
     }
 
     const floor = this._floor;
+    const moved = this._moved
+      ? `<p class="banner moved">
+           <b>${escapeHtml(this._moved.label)}</b> ist jetzt in
+           <b>${escapeHtml(this._moved.room)}</b>${
+             this._moved.scope === "device"
+               ? " — mit allen Entitäten des Geräts"
+               : " — nur diese Entität"
+           }. Das steht so in Home Assistant.
+           <button class="link" data-undo-move="1">Rückgängig</button>
+         </p>`
+      : "";
     const banner = floor && floor.unassigned
       ? `<p class="banner">Diese Bereiche sind in Home Assistant keiner Etage
          zugeordnet. Sobald du das dort nachträgst, wandern sie von selbst auf
@@ -1688,7 +1779,7 @@ class SpatialHubPanel extends HTMLElement {
          Integration räumliche Daten liefert, erscheint sie hier von selbst —
          einzurichten ist dafür nichts.</p>`;
 
-    if (this._stacked) return `${banner}${this._stackHtml()}`;
+    if (this._stacked) return `${moved}${banner}${this._stackHtml()}`;
 
     const aspect = (floor && floor.aspect) || 1.6;
     const background = floor && floor.background;
@@ -1724,7 +1815,7 @@ class SpatialHubPanel extends HTMLElement {
       </div>`;
 
     return `
-      ${banner}
+      ${moved}${banner}
       ${this._viewportHtml(stage)}
       ${this._trayHtml()}
       ${this._editHintHtml()}
@@ -3633,6 +3724,12 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
     this._storeDrag(drag);
+    // A device dragged across a wall did not just move on the picture --
+    // it moved house. Checked after the position is stored, so the dot
+    // stays where it was put even if Home Assistant refuses the move.
+    if (drag && drag.section === "nodes" && this._dragged && drag.value) {
+      this._moveIntoArea(this._node(drag.key), drag.value.x, drag.value.y);
+    }
     this._flushRender();
   }
 
@@ -4230,6 +4327,11 @@ class SpatialHubPanel extends HTMLElement {
           z_index: (layer.z_index || 10) + (layerUp ? 5 : -5),
         });
       }
+      return;
+    }
+
+    if (hit("data-undo-move")) {
+      this._undoMove();
       return;
     }
 
@@ -4918,6 +5020,13 @@ select { font:inherit; padding:6px; border-radius:8px;
 .edit-buttons { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
 .edit-buttons .chip { display:flex; align-items:center; gap:4px; }
 
+/* Der einzige Hinweis, der von einer Aenderung *ausserhalb* des Hubs
+   berichtet. Deshalb faellt er auf und deshalb steht der Weg zurueck
+   direkt darin. */
+.banner.moved { border-left:4px solid var(--fp-accent, var(--primary-color,#03a9f4)); }
+.banner.moved .link { background:none; border:none; padding:0 0 0 6px;
+                      color:var(--fp-accent, var(--primary-color,#03a9f4));
+                      font:inherit; cursor:pointer; text-decoration:underline; }
 .banner { margin:0 0 12px; padding:10px 14px; border-radius:10px; font-size:13px;
           background:var(--card-background-color,#fff); color:var(--secondary-text-color,#727272);
           box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }

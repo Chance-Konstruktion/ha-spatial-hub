@@ -2462,3 +2462,138 @@ test("a broken wall offers to be joined again", () => {
   assert.match(marks, /join-mark left off/);
   assert.match(marks, /\+<\/button>/);
 });
+
+// ── Dragging a device into another room ───────────────────────────────
+
+const twoRoomHouse = (nodeExtra = {}) =>
+  model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+    areas: [
+      { id: "kueche", name: "Küche", floor_id: "eg", kind: "indoor",
+        position: { x: 0.3, y: 0.5 }, size: { width: 0.2, height: 0.4 } },
+      { id: "bad", name: "Bad", floor_id: "eg", kind: "indoor",
+        position: { x: 0.7, y: 0.5 }, size: { width: 0.2, height: 0.4 } },
+    ],
+    nodes: [
+      node("esp:board", {
+        area_id: "kueche", position: at(0.3, 0.5),
+        entity_id: "sensor.temperatur", ...nodeExtra,
+      }),
+    ],
+  });
+
+/** The panel under test, wired to a fake Home Assistant.
+ *
+ *  `_render` is stubbed: these tests are about which command goes over
+ *  the wire, and the test harness has no shadow root to draw into.
+ */
+const movingPanel = (data, answer) => {
+  const view = panel(data, { edit: true, floor: "eg" });
+  view._render = () => {};
+  view._hass = spyHass(answer);
+  return view;
+};
+
+const spyHass = (answer = {}) => {
+  const calls = [];
+  return {
+    calls,
+    user: { is_admin: true },
+    callWS: async (message) => {
+      calls.push(message);
+      return { scope: "device", target: "board", before: "kueche",
+               after: message.area_id, ...answer };
+    },
+    connection: { subscribeMessage: async () => () => {} },
+  };
+};
+
+test("a dot dropped in another room says which room that is", () => {
+  const view = panel(twoRoomHouse(), { edit: true, floor: "eg" });
+
+  assert.equal(view._areaAt(0.7, 0.5, "eg").id, "bad");
+  assert.equal(view._areaAt(0.3, 0.5, "eg").id, "kueche");
+  assert.equal(view._areaAt(0.95, 0.95, "eg"), null, "between rooms is no room");
+});
+
+test("overlapping rooms: the smaller one wins", () => {
+  // A hallway drawn under a stairwell. The smaller room is always the
+  // more specific answer.
+  const data = twoRoomHouse();
+  data.areas.push({
+    id: "flur", name: "Flur", floor_id: "eg", kind: "indoor",
+    position: { x: 0.5, y: 0.5 }, size: { width: 1, height: 1 },
+  });
+  const view = panel(data, { edit: true, floor: "eg" });
+
+  assert.equal(view._areaAt(0.3, 0.5, "eg").id, "kueche");
+  assert.equal(view._areaAt(0.05, 0.05, "eg").id, "flur");
+});
+
+test("dragging a device across a wall moves it in Home Assistant", async () => {
+  const view = movingPanel(twoRoomHouse());
+
+  await view._moveIntoArea(view._model.nodes[0], 0.7, 0.5);
+
+  assert.deepEqual(view._hass.calls, [{
+    type: "spatial_hub/area/assign",
+    entity_id: "sensor.temperatur",
+    area_id: "bad",
+  }]);
+  assert.equal(view._moved.room, "Bad");
+});
+
+test("dropping a device back in its own room changes nothing", async () => {
+  // Every nudge inside a room would otherwise be a write to the registry.
+  const view = movingPanel(twoRoomHouse());
+
+  await view._moveIntoArea(view._model.nodes[0], 0.32, 0.52);
+
+  assert.deepEqual(view._hass.calls, []);
+  assert.equal(view._moved, null);
+});
+
+test("a node with no entity cannot be moved anywhere", async () => {
+  // Nothing to write to: the provider gave a dot and no way back to
+  // Home Assistant. Better to leave the plan alone than to guess.
+  const view = movingPanel(twoRoomHouse({ entity_id: null }));
+
+  await view._moveIntoArea(view._model.nodes[0], 0.7, 0.5);
+  assert.deepEqual(view._hass.calls, []);
+});
+
+test("a guest cannot rearrange the house", async () => {
+  const view = movingPanel(twoRoomHouse());
+  view._hass.user.is_admin = false;
+
+  await view._moveIntoArea(view._model.nodes[0], 0.7, 0.5);
+  assert.deepEqual(view._hass.calls, []);
+});
+
+test("the move is announced, and the way back is in the announcement", async () => {
+  const view = movingPanel(twoRoomHouse());
+  await view._moveIntoArea(view._model.nodes[0], 0.7, 0.5);
+
+  const html = view._stageHtml();
+  assert.match(html, /banner moved/);
+  assert.match(html, /mit allen Entitäten des Geräts/);
+  assert.match(html, /data-undo-move/);
+
+  view._hass.calls.length = 0;
+  await view._undoMove();
+  assert.deepEqual(view._hass.calls, [{
+    type: "spatial_hub/area/assign",
+    entity_id: "sensor.temperatur",
+    area_id: "kueche",
+    scope: "device",
+  }]);
+  assert.equal(view._moved, null);
+});
+
+test("an entity pulled out of its device is announced as just itself", async () => {
+  const view = movingPanel(twoRoomHouse(),
+                           { scope: "entity", target: "sensor.temperatur" });
+  await view._moveIntoArea(view._model.nodes[0], 0.7, 0.5);
+
+  assert.match(view._stageHtml(), /nur diese Entität/);
+});

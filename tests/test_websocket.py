@@ -273,3 +273,146 @@ def test_a_broken_wall_join_survives_the_schema():
 
     with pytest.raises(vol.Invalid):
         _layout_values({"unjoined": ["x"] * 65})
+
+
+# ── Moving a thing into a room, for real ──────────────────────────────
+
+
+class _Connection:
+    """Just enough of a websocket connection to see what came back."""
+
+    def __init__(self) -> None:
+        self.result = None
+        self.error = None
+
+    def send_result(self, _id, result=None):
+        self.result = result
+
+    def send_error(self, _id, code, message):
+        self.error = (code, message)
+
+
+def _house(hass):
+    """A board in the cellar with two entities, one pulled out of it."""
+    from homeassistant.helpers import (
+        area_registry as ar,
+        device_registry as dr,
+        entity_registry as er,
+    )
+    from tests.conftest import FakeArea, FakeDevice, FakeEntity
+
+    areas = ar.async_get(hass)
+    areas.areas.extend([FakeArea("keller", "Keller"), FakeArea("kueche", "Küche")])
+    dr.async_get(hass).devices["board"] = FakeDevice("board", area_id="keller")
+    entities = er.async_get(hass)
+    entities.entities["sensor.temperatur"] = FakeEntity(
+        "sensor.temperatur", device_id="board"
+    )
+    # Deliberately somewhere else than its board -- a CSI sensor watching
+    # a room the board is not in.
+    entities.entities["sensor.praesenz"] = FakeEntity(
+        "sensor.praesenz", device_id="board", area_id="kueche"
+    )
+    return entities, dr.async_get(hass)
+
+
+def test_dragging_a_board_moves_the_board(hass):
+    """A dot that sits where its device sits moves the device: every
+    entity on the board comes along, which is what "the ESP is in the
+    kitchen now" means."""
+    entities, devices = _house(hass)
+    connection = _Connection()
+
+    ws.websocket_area_assign(
+        hass, connection,
+        {"id": 1, "type": "x", "entity_id": "sensor.temperatur",
+         "area_id": "kueche"},
+    )
+
+    assert connection.error is None
+    assert devices.devices["board"].area_id == "kueche"
+    assert connection.result == {
+        "scope": "device", "target": "board",
+        "before": "keller", "after": "kueche",
+    }
+    # And the entity that was deliberately placed elsewhere is untouched.
+    assert entities.entities["sensor.praesenz"].area_id == "kueche"
+
+
+def test_dragging_an_entity_that_was_pulled_out_moves_only_it(hass):
+    """Whichever registry put the dot there is the one that moves it. The
+    override decided this dot's room, so the override moves -- dragging
+    the board's other entities along would undo a deliberate split."""
+    entities, devices = _house(hass)
+    connection = _Connection()
+
+    ws.websocket_area_assign(
+        hass, connection,
+        {"id": 1, "type": "x", "entity_id": "sensor.praesenz",
+         "area_id": "keller"},
+    )
+
+    assert connection.result["scope"] == "entity"
+    assert entities.entities["sensor.praesenz"].area_id == "keller"
+    assert devices.devices["board"].area_id == "keller", "the board did not move"
+
+
+def test_the_answer_is_enough_to_undo_the_move(hass):
+    """This writes outside the hub. Sending back what it was is the
+    difference between a change and a change you can take back."""
+    _, devices = _house(hass)
+    connection = _Connection()
+
+    ws.websocket_area_assign(
+        hass, connection,
+        {"id": 1, "type": "x", "entity_id": "sensor.temperatur",
+         "area_id": "kueche"},
+    )
+    undo = connection.result
+
+    ws.websocket_area_assign(
+        hass, _Connection(),
+        {"id": 2, "type": "x", "entity_id": "sensor.temperatur",
+         "area_id": undo["before"], "scope": undo["scope"]},
+    )
+    assert devices.devices["board"].area_id == "keller"
+
+
+def test_an_unknown_room_is_refused(hass):
+    """A typo must not quietly clear a device's area."""
+    _, devices = _house(hass)
+    connection = _Connection()
+
+    ws.websocket_area_assign(
+        hass, connection,
+        {"id": 1, "type": "x", "entity_id": "sensor.temperatur",
+         "area_id": "dachboden"},
+    )
+
+    assert connection.error[0] == "not_found"
+    assert devices.devices["board"].area_id == "keller"
+
+
+def test_an_entity_with_no_device_keeps_its_own_area(hass):
+    """A template sensor has nowhere else to put it."""
+    from homeassistant.helpers import entity_registry as er
+    from tests.conftest import FakeEntity
+
+    entities, _ = _house(hass)
+    entities.entities["sensor.frei"] = FakeEntity("sensor.frei")
+    connection = _Connection()
+
+    ws.websocket_area_assign(
+        hass, connection,
+        {"id": 1, "type": "x", "entity_id": "sensor.frei", "area_id": "kueche"},
+    )
+
+    assert connection.result["scope"] == "entity"
+    assert er.async_get(hass).entities["sensor.frei"].area_id == "kueche"
+
+
+def test_the_move_needs_an_admin():
+    """It changes the configuration every dashboard, every automation and
+    every voice assistant reads. Arranging a picture does not."""
+    assert getattr(ws.websocket_area_assign, "_ws_require_admin", False)
+    assert not getattr(ws.websocket_layout_set, "_ws_require_admin", False)

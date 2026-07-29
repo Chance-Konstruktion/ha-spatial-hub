@@ -115,6 +115,9 @@ if not hasattr(area_registry, "async_get"):
         def async_list_areas(self):
             return self.areas
 
+        def async_get_area(self, area_id):
+            return next((a for a in self.areas if a.id == area_id), None)
+
     class _FloorRegistry:
         def __init__(self) -> None:
             self.floors: list[FakeFloor] = []
@@ -170,12 +173,24 @@ if not hasattr(entity_registry, "async_get"):
         def async_get(self, entity_id):
             return self.entities.get(entity_id)
 
+        def async_update_entity(self, entity_id, **changes):
+            entry = self.entities[entity_id]
+            for field, value in changes.items():
+                setattr(entry, field, value)
+            return entry
+
     class _DeviceRegistry:
         def __init__(self) -> None:
             self.devices: dict[str, FakeDevice] = {}
 
         def async_get(self, device_id):
             return self.devices.get(device_id)
+
+        def async_update_device(self, device_id, **changes):
+            device = self.devices[device_id]
+            for field, value in changes.items():
+                setattr(device, field, value)
+            return device
 
         def async_get_device(self, identifiers=None, connections=None):
             """Home Assistant's own lookup, which adapters really use."""
@@ -226,7 +241,14 @@ if not hasattr(websocket_api, "websocket_command"):
     websocket_api.websocket_command = websocket_command
     websocket_api.async_register_command = async_register_command
     websocket_api.async_response = lambda func: func
-    websocket_api.require_admin = lambda func: func
+    def require_admin(func):
+        """Mark it, so a test can tell an admin-only command from any
+        other. Core enforces this; here the point is that the decorator
+        is actually on the commands that write outside the hub."""
+        func._ws_require_admin = True  # noqa: SLF001
+        return func
+
+    websocket_api.require_admin = require_admin
     websocket_api.event_message = lambda msg_id, event: {"id": msg_id,
                                                         "event": event}
     components.websocket_api = websocket_api
