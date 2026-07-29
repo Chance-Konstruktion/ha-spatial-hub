@@ -1761,6 +1761,35 @@ test("the wall is hung off the house, never off the garden", () => {
             "a face starts on the building line, not on the lawn");
 });
 
+test("only the ground floor gets grass, a balcony upstairs just gets a room", () => {
+  // has_outdoor is true on both storeys -- eg for the garden, og for a
+  // balcony -- but only eg is the actual ground. The balcony still has to
+  // be editable and drawn as a room; it must not turn the whole first
+  // floor into a second lawn.
+  const data = model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "",
+        has_outdoor: true, outdoor_margin: 0.28, ground: true },
+      { id: "og", name: "Obergeschoss", level: 1, icon: "",
+        has_outdoor: true, outdoor_margin: 0.28 },
+    ],
+    areas: [
+      { id: "garten", name: "Garten", floor_id: "eg", kind: "outdoor",
+        position: at(1.15, 0.5), size: { width: 0.2, height: 0.6 } },
+      { id: "balkon", name: "Balkon", floor_id: "og", kind: "outdoor",
+        position: at(1.15, 0.5), size: { width: 0.2, height: 0.3 } },
+    ],
+  });
+  const html = panel(data, { floor: null })._stackHtml();
+  const planes = html.split('class="plane').slice(1);
+  const eg = planes.find((plane) => plane.includes("Erdgeschoss"));
+  const og = planes.find((plane) => plane.includes("Obergeschoss"));
+
+  assert.match(eg, /class="apron"/, "the ground floor gets the field");
+  assert.doesNotMatch(og, /class="apron"/, "the storey above does not");
+  assert.match(og, /Balkon/, "the balcony is still drawn as a room");
+});
+
 test("the cloud gets no walls", () => {
   // The internet has no masonry, and a homeless storey is not a storey.
   const data = model({

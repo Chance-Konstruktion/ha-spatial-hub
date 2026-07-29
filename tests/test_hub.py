@@ -444,6 +444,7 @@ async def test_an_outdoor_area_with_no_storey_joins_the_ground_floor(hass, hub):
     ground = next(floor for floor in model["floors"] if floor["id"] == "eg")
     assert ground["has_outdoor"] is True
     assert ground["outdoor_margin"] > 0
+    assert ground["ground"] is True
 
 
 @pytest.mark.asyncio
@@ -469,6 +470,10 @@ async def test_a_balcony_stays_on_the_storey_it_is_on(hass, hub):
     upstairs = next(floor for floor in model["floors"] if floor["id"] == "og")
     assert upstairs["has_outdoor"] is True
     assert upstairs["outdoor_margin"] > 0
+    # But the ground itself stays the ground floor -- the stacked house
+    # view uses this to decide which storey gets the grass, and it is not
+    # "whichever storey happens to have a balcony".
+    assert not upstairs.get("ground"), "the first floor is not the ground"
 
     # And it is drawn outside the walls, like any other outdoor area.
     x, y = balcony["position"]["x"], balcony["position"]["y"]

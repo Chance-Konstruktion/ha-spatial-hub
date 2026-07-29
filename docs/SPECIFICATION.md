@@ -512,6 +512,15 @@ Erdgeschoss.
 - In der Hausansicht teilen sich alle Geschosse **ein** Fenster, und zwar das
   der **weitesten** Etage. Die erste zu nehmen, die etwas Draußen hat, schnitte
   ein gezeichnetes Grundstück im Erdgeschoss ab, sobald oben ein Balkon hängt.
+- Das Fenster wächst außerdem mit, sobald ein Außenbereich über den
+  Standardrand von 0,28 hinausgezogen wird — nicht nur beim gezeichneten
+  Grundstück. Sonst ist bei einem großen Garten irgendwann Schluss, ohne dass
+  eine Wand zu sehen wäre, die das erklärt.
+- Nur die tatsächliche Erdgeschoss-Etage bekommt in der Hausansicht die grüne
+  Fläche unter sich (`ground: true`, gesetzt von `_ground_floor`). Ein Balkon
+  oder eine Garage auf einer anderen Etage bleibt dort weiterhin als Fläche
+  definierbar und wird auch als Raum gezeichnet — nur eben ohne Rasenfläche
+  unter der ganzen Etage, denn ein Balkon ist kein zweiter Garten.
 
 ### Der Himmel
 
