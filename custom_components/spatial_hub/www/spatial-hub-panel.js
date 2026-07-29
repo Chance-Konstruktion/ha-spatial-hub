@@ -49,13 +49,6 @@ const STACK = {
   // thing a paper floor plan does, and the reason one can be read from
   // across a room.
   wall: 8, outerWall: 13,
-  // Luft zwischen zwei Etagen-Spalten. Schmaler als der Versatz einer
-  // Etage waere zu wenig: die Spalten muessen als zwei Stapel lesbar
-  // bleiben, nicht als ein breiter Streifen.
-  gutter: 90,
-  // Ab hier lohnt sich die zweite Spalte. Darunter steht ein Haus mit
-  // zwei Etagen nebeneinander wie ein Bungalow neben einem Bungalow.
-  columnFloors: 4, columnWidth: 900,
   // Storeys sit slightly behind each other instead of exactly above.
   // Dead-aligned, the upper floor's outline lands on the lower one's and
   // the eye has nothing to separate them by except the gap; offset, each
@@ -853,56 +846,24 @@ class SpatialHubPanel extends HTMLElement {
       0,
       ...this._stackFloors.map((_floor, at) => this._planeLift(at)),
     );
-    // Zwei Spalten, wenn das Fenster breit genug ist: die Etagen liegen
-    // spaltenweise untereinander, nicht alle in einem einzigen langen
-    // Turm. Ein hoher schmaler Stapel zwingt den Auto-Zoom auf die Hoehe
-    // und laesst links und rechts die halbe Flaeche leer -- genau das
-    // "leere Dashboard". Spaltenweise gefuellt bleibt jede Spalte ein
-    // zusammenhaengender Stapel, und die Verbindungen zwischen zwei
-    // Stockwerken werden weiterhin aus denselben projizierten Punkten
-    // gezogen, laufen also einfach quer.
-    const rows = this._stackRows;
-    const column = Math.floor(floorIndex / rows);
-    const row = floorIndex % rows;
+    // Ein Stapel. Immer.
+    //
+    // Es gab hier einmal zwei Spalten, damit ein hoher schmaler Turm auf
+    // einem breiten Monitor nicht links und rechts die Flaeche leer
+    // laesst. Das hat den freien Platz gefuellt und dafuer das Bild
+    // zerstoert: vier Etagen wurden zu vier Platten in einem Raster, und
+    // ein Raster ist kein Haus. Ein Sandwich hat eine Achse, sonst ist es
+    // keins -- man liest oben-nach-unten als Stockwerke, nebeneinander
+    // liest man als zwei Gebaeude. Leerer Rand ist der guenstigere Preis;
+    // dagegen hilft der Zoom, nicht das Umbrechen.
     return {
-      x: STACK.pad + column * (this._stackColumnSpan + STACK.gutter) +
-        STACK.stagger * row +
+      x: STACK.pad + STACK.stagger * floorIndex +
         nx * STACK.width + (1 - ny) * STACK.skew,
-      y: STACK.top + sky + row * STACK.gap + ny * STACK.depth -
+      y: STACK.top + sky + floorIndex * STACK.gap + ny * STACK.depth -
         this._planeLift(floorIndex),
     };
   }
 
-  /** Wie viele Etagen-Spalten nebeneinander stehen.
-   *
-   *  Eine Frage an das Fenster, nicht an das Haus: dasselbe Modell wird
-   *  auf einem Tablet hochkant als ein Stapel gezeichnet und auf einem
-   *  breiten Monitor in zwei. Ohne echtes DOM (erster Aufbau, Test)
-   *  bleibt es bei einer Spalte -- die Ansicht, die immer geht.
-   */
-  get _stackColumns() {
-    if (this._stackFloors.length < STACK.columnFloors) return 1;
-    const viewport = this._root && this._root.querySelector
-      ? this._root.querySelector(".viewport")
-      : null;
-    const wide = (viewport && viewport.clientWidth) ||
-      (typeof window !== "undefined" && window.innerWidth) || 0;
-    return wide >= STACK.columnWidth ? 2 : 1;
-  }
-
-  /** Etagen je Spalte. Die erste Spalte wird voll, dann die zweite. */
-  get _stackRows() {
-    return Math.ceil(this._stackFloors.length / this._stackColumns);
-  }
-
-  /** Wie breit eine einzelne Spalte wird -- eine Etage plus die Schraege
-   *  plus den Versatz, den die unterste Etage dieser Spalte hat. */
-  get _stackColumnSpan() {
-    return (
-      STACK.width + STACK.skew +
-      Math.max(0, this._stackRows - 1) * STACK.stagger
-    );
-  }
 
   /** How tall the drawing has to be to hold the house.
    *
@@ -919,19 +880,17 @@ class SpatialHubPanel extends HTMLElement {
     const sky = Math.max(0, ...this._stackFloors.map((_f, at) => this._planeLift(at)));
     return (
       STACK.top + sky +
-      Math.max(0, this._stackRows - 1) * STACK.gap +
+      Math.max(0, this._stackFloors.length - 1) * STACK.gap +
       STACK.depth + STACK.slab + STACK.pad
     );
   }
 
   /** How wide the drawing has to be. Every storey is offset a little
-   *  further right than the one above it, so the bottom one of a column
-   *  decides -- times the number of columns, plus the air between them. */
+   *  further right than the one above it, so the bottom one decides. */
   get _stackWidth() {
-    const columns = this._stackColumns;
     return (
-      STACK.pad * 2 + columns * this._stackColumnSpan +
-      Math.max(0, columns - 1) * STACK.gutter
+      STACK.pad * 2 + STACK.width + STACK.skew +
+      Math.max(0, this._stackFloors.length - 1) * STACK.stagger
     );
   }
 

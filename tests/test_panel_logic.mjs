@@ -2799,33 +2799,30 @@ test("a grip is drawn small and hit large", () => {
   assert.match(source, /\.handle::before \{[^}]*inset:-16px/s);
 });
 
-test("a tall house uses the width of a wide window instead of one long tower", () => {
+test("the house is one stack, however wide the window gets", () => {
+  // Es gab hier einmal zwei Spalten, damit ein breiter Monitor nicht
+  // links und rechts leer bleibt. Das hat aus vier Etagen vier Platten in
+  // einem Raster gemacht, und ein Raster ist kein Haus: nebeneinander
+  // liest man als zwei Gebaeude, untereinander als Stockwerke. Gegen
+  // leeren Rand hilft der Zoom.
   const data = model();
   data.floors = ["a", "b", "c", "d", "e", "f"].map((id, level) => ({
     id, name: id.toUpperCase(), level, icon: "",
   }));
   const view = panel(data, { floor: null });
-  view._root = { querySelector: () => ({ clientWidth: 1400 }) };
-
-  assert.equal(view._stackColumns, 2);
-  assert.equal(view._stackRows, 3);
-  // Second column, first row: to the right of the first column and back
-  // up at the top -- not further down the same tower.
-  assert.ok(view._project(3, 0, 0).x > view._project(2, 0, 0).x);
-  assert.ok(view._project(3, 0, 0).y < view._project(2, 0, 0).y);
-  // The drawing is now wider than tall-ish rather than a ribbon.
-  assert.ok(view._stackWidth > 1200, "the second column got no room");
-
-  // Narrow window, same house: one stack, the way it always was.
-  view._root = { querySelector: () => ({ clientWidth: 600 }) };
-  assert.equal(view._stackColumns, 1);
-  assert.equal(view._project(3, 0, 0).x, view._project(3, 0, 0).x);
-});
-
-test("two storeys are never split into columns", () => {
-  const view = panel(model(), { floor: null });
   view._root = { querySelector: () => ({ clientWidth: 2400 }) };
-  assert.equal(view._stackColumns, 1, "a bungalow next to a bungalow");
+
+  // Jede Etage liegt unter der vorigen und nur um den Versatz weiter
+  // rechts -- keine springt zurueck nach oben.
+  for (let at = 1; at < data.floors.length; at += 1) {
+    const above = view._project(at - 1, 0, 0);
+    const here = view._project(at, 0, 0);
+    assert.ok(here.y > above.y, `Etage ${at} steht nicht unter der vorigen`);
+    assert.ok(here.x - above.x < 40, `Etage ${at} ist in eine Spalte gerutscht`);
+  }
+
+  // Und die Zeichnung ist so breit wie ein Stapel, nicht wie zwei.
+  assert.ok(view._stackWidth < 1200, "so breit wird ein einzelner Stapel nie");
 });
 
 test("fit-to-screen fills the window instead of parking the plan in a corner", () => {
