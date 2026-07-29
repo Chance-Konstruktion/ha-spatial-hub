@@ -2219,3 +2219,35 @@ test("the tab strip is the first thing in the header, wrapped or not", () => {
   assert.match(style, /\.tabs\s*{[^}]*order:-1/,
                "so a wrapped header still starts with the storeys");
 });
+
+// ── Ein Bildschirm, der doppelt so hoch wie breit ist ──────
+
+test("the legend follows the plan instead of sinking to the bottom", () => {
+  // Measured on a 373×910 window: the plan ended at 485px and the legend
+  // started at 866px -- 381 empty pixels in between, because `main` was
+  // told to take all the leftover height and the plan sat at its top.
+  const style = styleSheet();
+
+  assert.match(style, /\nmain \{[^}]*flex:0 0 auto/,
+               "the plan takes the height it needs and no more");
+});
+
+test("a tall screen opens the legend rather than leaving half of it empty", () => {
+  // A square plan on a 22:9 phone can only be as wide as the phone, so
+  // the lower half is going spare. Filling it with the layers and the
+  // providers beats filling it with nothing.
+  const tall = { addEventListener() {}, removeEventListener() {},
+                 confirm: () => true, innerWidth: 373, innerHeight: 910 };
+  const wide = { ...tall, innerWidth: 1400, innerHeight: 900 };
+
+  const previous = globalThis.window;
+  try {
+    globalThis.window = tall;
+    assert.equal(new SpatialHubPanel()._legendOpen, true);
+    globalThis.window = wide;
+    assert.equal(new SpatialHubPanel()._legendOpen, false,
+                 "on a normal screen the house still comes first");
+  } finally {
+    globalThis.window = previous;
+  }
+});

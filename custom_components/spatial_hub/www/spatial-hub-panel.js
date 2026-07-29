@@ -224,7 +224,16 @@ class SpatialHubPanel extends HTMLElement {
     // The legend starts folded away. It is a reference, not a destination:
     // the first thing somebody wants to see is their house, not a list of
     // the layers it is made of. One click opens it and it stays open.
-    this._legendOpen = false;
+    // Zugeklappt, weil zuerst das Haus kommt -- aber nicht auf einem
+    // Bildschirm, der doppelt so hoch wie breit ist. Dort ist der Plan
+    // von der Breite begrenzt, die untere Haelfte bleibt sonst leer, und
+    // eine leere Haelfte ist keine Zurueckhaltung, sondern verschenkter
+    // Platz. Einmal beim Start entschieden: danach gehoert der Schalter
+    // dem Nutzer.
+    this._legendOpen =
+      typeof window !== "undefined" && window.innerHeight
+        ? window.innerHeight / window.innerWidth > 1.9
+        : false;
     // The other storeys' walls, shown while editing. On by default: the
     // whole point is to notice the drift without having gone looking for
     // a setting first.
@@ -4111,7 +4120,13 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
 /* Ebenen und Provider stehen unter dem Grundriss, nicht daneben: der Plan
    ist das Einzige, was Breite wirklich braucht. */
 .body { flex:1; display:flex; flex-direction:column; gap:16px; padding:16px; overflow:auto; }
-main { flex:1; min-width:0; }
+/* "flex:1" hat den Plan oben festgenagelt und die Legende ans untere
+   Ende geschoben -- auf einem 22:9-Telefon lagen 381 leere Pixel
+   dazwischen. Der Plan ist quadratisch und damit von der Breite
+   begrenzt; die uebrige Hoehe gehoert deshalb nicht in die Mitte,
+   sondern hinter alles. Jetzt steht die Legende direkt unter dem
+   Grundriss, egal wie hoch der Bildschirm ist. */
+main { flex:0 0 auto; min-width:0; }
 /* Eingeklappt: erst das Haus, dann die Erklärung dazu. */
 .legend-toggle { display:flex; align-items:center; gap:6px; border:0;
                  background:transparent; color:var(--secondary-text-color,#727272);
