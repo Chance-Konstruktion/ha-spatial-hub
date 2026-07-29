@@ -2866,6 +2866,31 @@ test("every storey says its name, in the margin and out of the plan", () => {
   assert.ok(Number(name[1]) > 0, "der Name faellt aus dem Bild");
 });
 
+test("the plan is centred once, not twice into the right-hand half", () => {
+  // Gemeldet als "es kann nur die rechte Seite des Bildschirms benutzt
+  // werden, das Modell schiebt sich immer wieder dorthin". Die Zeichnung
+  // wurde zweimal zentriert: die Box per "margin-inline:auto" um den
+  // halben Rest der *ungezoomten* Breite, und der Inhalt per translate um
+  // den halben Rest der *gezoomten*. Beides addiert sich, und weil jeder
+  // Klick neu klemmt, kam es nach jedem Schieben zurueck.
+  const style = styleSheet();
+  assert.doesNotMatch(style, /\.canvas \{[^}]*margin-inline:auto/,
+                      "die Box zentriert sich wieder selbst");
+
+  // Und die Kamera zentriert weiterhin: kleiner als das Fenster heisst
+  // Mitte, egal wo die Ansicht vorher stand.
+  const view = panel();
+  view._root = {
+    querySelector: (selector) =>
+      selector === ".canvas"
+        ? { offsetWidth: 1280, offsetHeight: 800 }
+        : { clientWidth: 1990, clientHeight: 900 },
+  };
+  view._view = { zoom: 0.78, x: 700, y: 0 };
+  view._clampView({ offsetWidth: 1280, offsetHeight: 800 });
+  assert.equal(Math.round(view._view.x), Math.round((1990 - 1280 * 0.78) / 2));
+});
+
 test("fit-to-screen fills the window instead of parking the plan in a corner", () => {
   const view = panel();
   view._root = {

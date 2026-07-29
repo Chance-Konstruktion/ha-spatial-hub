@@ -4984,8 +4984,15 @@ main { flex:0 0 auto; min-width:0; }
    noch schmalerer Turm: der Grundriss schrumpfte weiter, obwohl die
    Kamera ohnehin schieben und zoomen kann. Unter 560px wird jetzt nicht
    mehr gequetscht, sondern geschoben. */
-.canvas { transform-origin:0 0; width:clamp(560px, 100%, 1280px);
-          margin-inline:auto; }
+/* Kein "margin-inline:auto". Zentriert wird die Zeichnung von der
+   Kamera: ist sie kleiner als das Fenster, setzt "_clampView" sie in die
+   Mitte. Beides zusammen zentriert zweimal -- einmal die Box im Fenster
+   (halber Rest der *ungezoomten* Breite) und einmal den Inhalt per
+   translate (halber Rest der *gezoomten*) -- und die Summe schob den
+   Grundriss auf einem breiten Bildschirm in die rechte Haelfte, immer
+   wieder, weil jeder Klick neu klemmt. Eine Zentrierung genuegt, und die
+   der Kamera ist die, die auch beim Zoomen noch stimmt. */
+.canvas { transform-origin:0 0; width:clamp(560px, 100%, 1280px); }
 
 .stack { background:var(--fp-surface, var(--card-background-color,#fff));
          border-radius:12px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12));
