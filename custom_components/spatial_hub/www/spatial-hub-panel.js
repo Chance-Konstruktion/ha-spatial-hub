@@ -1981,7 +1981,8 @@ class SpatialHubPanel extends HTMLElement {
     // room, the outside faces of the walls standing on it, and the top of
     // the masonry as a band with two edges. The band is what makes this
     // read as a plan rather than as a grey rectangle with a line round it.
-    let shape = `<polygon class="room" points="${points}"/>`;
+    const outdoor = kindOf(area) === AREA_KIND.OUTDOOR;
+    let shape = `<polygon class="room ${outdoor ? "deck" : ""}" points="${points}"/>`;
     if (kindOf(area) === AREA_KIND.INDOOR) {
       shape += wallsOf(corners, STACK.rise, "room-wall", keep) +
         capsOf(
@@ -1990,6 +1991,12 @@ class SpatialHubPanel extends HTMLElement {
           "room-cap",
           keep,
         );
+    }
+    // A balcony stands on the house, it does not stand inside it: a
+    // railing you can see over instead of a wall you can't is the one
+    // thing that says "outside" in a drawing made of nothing but lines.
+    if (outdoor) {
+      shape += wallsOf(corners, STACK.rise * 0.35, "deck-rail", keep);
     }
     if (kindOf(area) === AREA_KIND.VIRTUAL) {
       // The plan is skewed, so the cloud is skewed with it: two edges of
@@ -5176,6 +5183,15 @@ main { flex:0 0 auto; min-width:0; }
 .stack .room-label { font-size:16px; fill:var(--fp-ink, currentColor);
                      opacity:.92; letter-spacing:.06em;
                      text-anchor:middle; dominant-baseline:middle; }
+/* Ein Balkon ist kein Zimmer: die Deckflaeche bekommt einen eigenen Ton
+   statt der Zimmerfarbe, das Gelaender bleibt niedrig. */
+.stack .room.deck { fill:var(--fp-deck, var(--fp-house-line, currentColor));
+                     fill-opacity:.08; stroke:var(--fp-house-line, currentColor);
+                     stroke-opacity:.55; stroke-dasharray:2 3;
+                     vector-effect:non-scaling-stroke; }
+.deck-rail { fill:var(--fp-surface, var(--card-background-color,#fff));
+             stroke:var(--fp-house-line, currentColor); stroke-opacity:.7;
+             stroke-width:1px; vector-effect:non-scaling-stroke; }
 .stack-edge { stroke-linecap:round; opacity:var(--layer-opacity,1); }
 /* A connection between two storeys is the whole reason this view exists. */
 .stack-edge.across { opacity:calc(var(--layer-opacity,1) * .95); }

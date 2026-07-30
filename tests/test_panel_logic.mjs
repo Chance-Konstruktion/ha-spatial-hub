@@ -1842,6 +1842,21 @@ test("only the ground floor gets grass, a balcony upstairs just gets a room", ()
   assert.match(og, /Balkon/, "the balcony is still drawn as a room");
 });
 
+test("a balcony gets a railing to see over, not a wall to hide behind", () => {
+  const data = model({
+    areas: [
+      { id: "balkon", name: "Balkon", floor_id: "eg", kind: "outdoor",
+        position: at(0.85, 0.5), size: { width: 0.2, height: 0.6 } },
+    ],
+  });
+  const html = panel(data, { floor: null })._stackHtml();
+
+  assert.match(html, /class="room deck"/, "the deck floor is marked as one");
+  assert.match(html, /class="deck-rail"/, "a low rail stands on it");
+  assert.doesNotMatch(html, /class="room-wall"/,
+    "a balcony is not a room with walls");
+});
+
 test("the cloud gets no walls", () => {
   // The internet has no masonry, and a homeless storey is not a storey.
   const data = model({
