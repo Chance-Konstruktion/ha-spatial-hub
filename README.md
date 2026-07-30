@@ -12,9 +12,39 @@ Provider, Layer, Nodes, Edges, Actions und Capabilities. Genau deshalb
 kann eine neue Integration Teil des Grundrisses werden, ohne dass hier eine
 einzige Zeile geändert wird.
 
-## Status
+<p align="center">
+  <img src="docs/images/haus.png" alt="Die Hausansicht: Ober-, Erd- und
+  Untergeschoss übereinander, mit einer Verbindung, die durch alle drei läuft"
+  width="640">
+</p>
 
-  >>> coming soon <<<<
+Das ist ein Haus aus drei Etagen, vierzehn Bereichen und dreizehn Geräten —
+und daran wurde **nichts eingerichtet**. Etagen und Bereiche kommen aus
+Home Assistant, die Geräte von einem Provider, die Anordnung von der
+Automatik. Wer sie anders haben will, zieht sie hin; wer nicht, muss nichts
+tun.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/etage.png" alt="Eine einzelne Etage
+mit Räumen, Geräten und der Terrasse als Ring darum"></td>
+<td width="50%"><img src="docs/images/editor.png" alt="Der Editor mit dem
+Rechtsklickmenü und der blassen Kontur der Etage darunter"></td>
+</tr>
+<tr>
+<td>Eine Etage, wie man sie täglich ansieht.</td>
+<td>Der Editor: die Kontur der Etage darunter, und das Menü der rechten
+Maustaste.</td>
+</tr>
+</table>
+
+Die Bilder sind erzeugt, nicht abfotografiert:
+[`tools/demo_house.py`](tools/demo_house.py) dreht ein Demohaus durch den
+echten Hub, [`tools/shots.mjs`](tools/shots.mjs) lässt den echten Renderer
+es zeichnen. Sie zeigen also, was der Code tut, und veralten mit ihm statt
+neben ihm.
+
+## Status
 
 **Die Roadmap ist durch — Phase 1–12:** Datenmodell, Provider-Registry,
 Event-System, Storage, Config-Flow, die komplette Websocket-API, ein

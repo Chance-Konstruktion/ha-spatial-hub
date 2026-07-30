@@ -481,6 +481,35 @@ async def test_a_balcony_stays_on_the_storey_it_is_on(hass, hub):
 
 
 @pytest.mark.asyncio
+async def test_a_balcony_hangs_on_a_wall_instead_of_wrapping_the_flat(hass, hub):
+    """Upstairs is not the garden, and the layout has to say so.
+
+    Both got the same ring around the storey, which is right for a garden
+    and absurd one floor up: the balcony came out wider than the house and
+    stuck out past both flanks. It was drawn correctly -- as an apron --
+    and an apron was the wrong thing to be.
+    """
+    from homeassistant.helpers import area_registry as ar
+
+    ar.async_get(hass).areas.append(FakeArea("balkon", "Balkon", floor_id="og"))
+    ar.async_get(hass).areas.append(FakeArea("garten", "Garten", floor_id="eg"))
+    model = await hub.async_model()
+
+    balcony = next(area for area in model["areas"] if area["id"] == "balkon")
+    garden = next(area for area in model["areas"] if area["id"] == "garten")
+
+    assert balcony["size"]["width"] <= 1, "wider than the house it hangs on"
+    left = balcony["position"]["x"] - balcony["size"]["width"] / 2
+    right = balcony["position"]["x"] + balcony["size"]["width"] / 2
+    assert 0 <= left and right <= 1, "a balcony does not reach past the flanks"
+    # But it still hangs outside: attached to the wall, not a room.
+    assert not 0 <= balcony["position"]["y"] <= 1
+
+    # Der Garten bleibt ein Ring -- er ist ja um das Haus herum.
+    assert garden["size"]["width"] > 1, "the garden stopped wrapping the house"
+
+
+@pytest.mark.asyncio
 async def test_an_outdoor_area_is_arranged_outside_the_house(hass, hub):
     from homeassistant.helpers import area_registry as ar
 

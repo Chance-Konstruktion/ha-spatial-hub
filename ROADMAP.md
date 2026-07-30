@@ -80,7 +80,7 @@ Hub-Code ist nicht der Engpass. Es geht um das **Ökosystem** — SDK,
 Beispiele, Dokumentation, Conformance, Developer Experience. Das ist
 etwas anderes als der Hub selbst.
 
-## A — Den Renderer fertig machen, nicht erweitern
+## ✅ A — Den Renderer fertig machen, nicht erweitern
 
 Niemand schreibt einen Provider für etwas, das er nicht gesehen und
 gemocht hat. Der Renderer ist das Marketing, und wer heute auf dem
@@ -109,11 +109,31 @@ Diese hier ist geschlossen:
 - [x] Langer Druck auf dem Touchscreen mit demselben Verhalten wie mit der
       Maus — ein halbe Sekunde, zehn Pixel Spielraum, und ein Zug, der
       noch nicht losgelaufen ist, wird dabei zurückgenommen
-- [ ] Ein Satz Screenshots, der die Hausansicht zeigt, wie sie gemeint ist
+- [x] Ein Satz Screenshots, der die Hausansicht zeigt, wie sie gemeint ist —
+      erzeugt statt abfotografiert, aus dem echten Hub und dem echten
+      Renderer (`tools/demo_house.py`, `tools/shots.mjs`), und beim ersten
+      Hinsehen sofort drei Fehler gefunden, die alle Tests grün gelassen
+      hatten
 
 Was **nicht** auf dieser Liste steht, gehört in eine spätere Phase:
 Licht, Klima, Wetter, Mehrfachauswahl, Favoriten, eigene Icons hochladen,
 freie Label-Positionen.
+
+**Was der letzte Punkt gekostet und eingebracht hat.** Die Screenshots
+waren als Werbung geplant und wurden zum Prüfmittel: Das erste Bild zeigte
+auf einen Schlag drei Fehler, die alle 500 Tests grün gelassen hatten.
+„Untergeschoss" war links abgeschnitten, weil der Platz für den Etagennamen
+eine feste Zahl war und für „EG" gereicht hatte. Ein Balkon im
+Obergeschoss lag als Ring um die ganze Wohnung, weil er dieselbe Anordnung
+bekam wie ein Garten — richtig gezeichnet, falsch angeordnet. Und der
+Raumname stand genau dort, wo die Automatik das erste Gerät hinsetzt, also
+lag „Adapter Arbeitszimmer" quer über „Arbeitszimmer".
+
+Keiner davon ist eine falsche Einzelentscheidung, und keiner war ohne
+Hinsehen zu finden — dieselbe Lehre wie in
+[`tools/README.md`](tools/README.md), nur diesmal ohne laufendes Home
+Assistant. Deshalb sind die Bilder erzeugt und nicht abfotografiert: Sie
+lassen sich nach jeder Änderung am Renderer neu machen und wieder ansehen.
 
 ## B — Das SDK von jemand anderem testen lassen
 

@@ -37,8 +37,9 @@ const ALL_FLOORS = "__all__";
 // a true isometric projection: rooms stay rectangles-in-parallel, which
 // keeps them recognisable as the same rooms from the detail view.
 const STACK = {
-  // "pad" ist links breiter als noetig, und zwar mit Absicht: dort steht
-  // der Etagenname. Vorher lag er bei 40 halb ausserhalb des Bildes.
+  // "margin" ist der Platz links neben dem Haus, in dem der Etagenname
+  // steht -- aber nur die Untergrenze davon. Wie breit er wirklich sein
+  // muss, haengt am laengsten Namen und steht in `_nameGutter`.
   pad: 40, margin: 150, width: 620, depth: 220, skew: 50, top: 50, gap: 340,
   // Rooms have standing walls and a storey has thickness. Flat outlines
   // drawn on top of each other are what turned this view into porridge:
@@ -1038,7 +1039,7 @@ class SpatialHubPanel extends HTMLElement {
     // liest man als zwei Gebaeude. Leerer Rand ist der guenstigere Preis;
     // dagegen hilft der Zoom, nicht das Umbrechen.
     return {
-      x: STACK.margin + STACK.stagger * floorIndex +
+      x: this._nameGutter + STACK.stagger * floorIndex +
         nx * STACK.width + (1 - ny) * STACK.skew,
       y: STACK.top + sky + floorIndex * STACK.gap + ny * STACK.depth -
         this._planeLift(floorIndex),
@@ -1070,9 +1071,33 @@ class SpatialHubPanel extends HTMLElement {
    *  further right than the one above it, so the bottom one decides. */
   get _stackWidth() {
     return (
-      STACK.margin + STACK.pad + STACK.width + STACK.skew +
+      this._nameGutter + STACK.pad + STACK.width + STACK.skew +
       Math.max(0, this._stackFloors.length - 1) * STACK.stagger
     );
+  }
+
+  /** Wieviel Platz links neben dem Haus der laengste Etagenname braucht.
+   *
+   *  Der Rand war lange eine feste Zahl, und die reichte fuer „EG" und
+   *  „OG". Wer seine Etagen „Untergeschoss" nennt -- also so, wie Home
+   *  Assistant sie selbst vorschlaegt --, bekam den Namen links
+   *  abgeschnitten: das U fehlte, und aus „Obergeschoss" wurde
+   *  „ergeschoss". Kein Test konnte das sehen, weil kein Test misst, wie
+   *  breit Text wird; gefunden hat es das erste Bild fuer die README.
+   *
+   *  Geschaetzt statt gemessen: Der Name steht in einem SVG, das gezeichnet
+   *  wird, bevor es im Dokument haengt -- es gibt zu diesem Zeitpunkt
+   *  nichts auszumessen. Grosszuegig geschaetzt ist hier richtig, denn zu
+   *  viel Rand sieht man kaum, zu wenig schneidet einen Buchstaben ab.
+   */
+  get _nameGutter() {
+    const longest = Math.max(
+      0,
+      ...this._stackFloors.map((floor) => String(floor.name || "").length),
+    );
+    // 30px Schriftgroesse, Grossbuchstaben, plus Sperrung -- und die 34,
+    // um die der Name von der Plattenkante wegrueckt.
+    return Math.max(STACK.margin, longest * 23 + 34 + STACK.pad);
   }
 
   /** Providers whose every layer is switched off.
@@ -2139,10 +2164,24 @@ class SpatialHubPanel extends HTMLElement {
       .map((point) => [x0 + point.x * width, y0 + point.y * height])
       .map(([x, y]) => this._project(plane, x, y));
     const points = corners.map((point) => `${point.x},${point.y}`).join(" ");
-    // The room's name in the middle of the room, the way a floor plan has
-    // always labelled a room. Hung off the corner it landed on the wall it
-    // shared with the next room, and two names on one line is neither.
-    const label = centreOf(corners);
+    // Der Raumname im Raum, wie in jedem Grundriss -- aber nicht in
+    // seiner Mitte, sondern im hinteren Drittel.
+    //
+    // In der Mitte stand er genau dort, wo auch die Geraete stehen: die
+    // Automatik setzt ein Geraet ohne eigene Angabe in die Raummitte, und
+    // dessen Beschriftung haengt darunter. Auf dem ersten Bild fuer die
+    // README las man deshalb "Adapter Arbeitszimmer" quer durch das Wort
+    // "Arbeitszimmer". Nach hinten geschoben teilen sich beide den Raum:
+    // der Name des Raumes hinten, was darin steht davor.
+    //
+    // Die Verschiebung geht nach oben statt auf einen festen Punkt im
+    // Raumkasten, damit sie fuer jede Kontur gilt und nicht nur fuer das
+    // Rechteck. Die hintere Kante ist im Bild waagerecht -- die Schraege
+    // des Sandwiches verschiebt nur x --, also liegt alles zwischen Mitte
+    // und dieser Kante sicher noch im Raum.
+    const middle = centreOf(corners);
+    const back = Math.min(...corners.map((corner) => corner.y));
+    const label = { x: middle.x, y: middle.y - (middle.y - back) * 0.55 };
 
     // A virtual area is a cloud here too. It was a cloud on its own tab
     // and a rectangle in the house view, so the two views disagreed about

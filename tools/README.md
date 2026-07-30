@@ -1,6 +1,6 @@
 # Im Browser nachsehen
 
-164 Python- und 64 JS-Tests prüfen die Logik. Sie können nicht sehen, dass
+293 Python- und 266 JS-Tests prüfen die Logik. Sie können nicht sehen, dass
 ein Kasten über einem anderen liegt — und genau das war der erste echte
 Fehler des Projekts: Bereiche ohne Etage wurden auf *jeder* Etage gezeichnet,
 über Räume, deren Raster ohne sie ausgemessen worden war. Alle Tests waren
@@ -122,3 +122,28 @@ Haken. Vor einer Änderung am Renderer einmal laufen lassen ist die Regel.
 Eine Warnung noch: `live_check.py` meldet auch Fehler, die aus dem Frontend
 von Home Assistant selbst kommen und mit dem Panel nichts zu tun haben.
 Vergleiche im Zweifel mit einem Reiter, auf dem das Panel gar nicht offen ist.
+
+## Die Bilder für die README
+
+```bash
+python3 tools/demo_house.py > /tmp/demo.json
+node tools/shots.mjs /tmp/demo.json docs/images
+```
+
+`demo_house.py` baut ein kleines, aufgeräumtes Haus — drei Etagen, vierzehn
+Bereiche, dreizehn Geräte — und dreht es durch den **echten** Hub, mit den
+Registry-Stubs aus `tests/`. `shots.mjs` lädt das Ergebnis in den **echten**
+Renderer und macht drei Bilder daraus: das Haus, eine Etage, der Editor.
+
+Kein handgeschriebenes JSON und keine Bildbearbeitung. Ein Bild aus einem
+gemalten Modell zeigt, was jemand haben wollte; diese zeigen, was der Code
+tut — und veralten mit ihm, statt neben ihm.
+
+Sie sind dabei auch ein Prüfmittel. Das erste Bild dieser Art hat auf einen
+Schlag drei Fehler sichtbar gemacht, die alle 500 Tests grün gelassen
+haben: „Untergeschoss" war links abgeschnitten, weil der Rand für den Namen
+eine feste Zahl war; ein Balkon im Obergeschoss lag als Ring um die ganze
+Wohnung, weil er dieselbe Anordnung bekam wie ein Garten; und der Raumname
+stand genau dort, wo die Automatik das erste Gerät hinsetzt, sodass
+„Adapter Arbeitszimmer" quer über „Arbeitszimmer" lag. Nichts davon ist
+eine falsche Einzelentscheidung — genau wie bei `live_check.py` oben.

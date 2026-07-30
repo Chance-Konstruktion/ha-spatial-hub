@@ -3516,3 +3516,71 @@ test("dragged roughly at the house line, the room lands exactly on it", () => {
   assert.notEqual(Number(drag(true).toFixed(4)), 0.1,
                   "Shift still turns every magnet off");
 });
+
+test("a storey called Untergeschoss keeps its U", () => {
+  // Der Rand links war eine feste Zahl und reichte fuer "EG". Home
+  // Assistant schlaegt aber "Erdgeschoss" vor, und das wurde vorne
+  // abgeschnitten -- sichtbar nur auf einem Bild, nie in einem Test.
+  const stack = (names) =>
+    panel(
+      model({
+        floors: names.map((name, i) => ({ id: `f${i}`, name, level: i })),
+        areas: names.map((_name, i) => ({
+          id: `a${i}`, name: "Raum", floor_id: `f${i}`,
+          position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 },
+        })),
+      }),
+      { floor: null },
+    );
+
+  const short = stack(["EG", "OG"]);
+  const long = stack(["Untergeschoss", "Erdgeschoss"]);
+  // Der Name steht rechtsbuendig vor der Platte; was links davon liegt,
+  // muss ins Bild passen.
+  const room = (view) => view._project(0, 0, 1).x - 34;
+  assert.ok(room(long) > room(short),
+            "a longer name gets more room, not the same");
+  assert.ok(room(long) >= "Untergeschoss".length * 23,
+            "and enough of it for the whole word");
+  assert.equal(room(short), 150 - 34, "short names keep the old look");
+});
+
+test("the drawing grows with the gutter instead of cutting it off", () => {
+  const wide = panel(
+    model({
+      floors: [{ id: "f0", name: "Dachgeschoss links", level: 1 },
+               { id: "f1", name: "EG", level: 0 }],
+      areas: [{ id: "a0", name: "Raum", floor_id: "f0",
+                position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 } },
+              { id: "a1", name: "Raum", floor_id: "f1",
+                position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 } }],
+    }),
+    { floor: null },
+  );
+  // Die rechte Kante des Hauses muss innerhalb des Bildes bleiben.
+  assert.ok(wide._project(0, 1, 0).x < wide._stackWidth,
+            "the house ran off the right edge while the name got its room");
+});
+
+test("the room's name gets out of the way of what is in the room", () => {
+  // Beides stand in der Mitte: die Automatik setzt ein Geraet ohne eigene
+  // Angabe in die Raummitte, und der Raumname stand dort auch. Auf dem
+  // ersten Bild fuer die README lag "Adapter Arbeitszimmer" quer ueber
+  // "Arbeitszimmer".
+  const view = panel(
+    model({
+      areas: [{ id: "r", name: "Wohnzimmer", floor_id: "eg",
+                position: at(0.5, 0.5), size: { width: 0.6, height: 0.6 } }],
+      nodes: [node("a:lamp", { area_id: "r", position: at(0.5, 0.5) })],
+    }),
+    { floor: null },
+  );
+  const svg = view._stackHtml();
+  const nameY = Number(/translate\([\d.-]+,([\d.-]+)\)[^>]*>\s*<text class="room-label"/
+    .exec(svg)[1]);
+  const plane = view._stackFloors.findIndex((floor) => floor.id === "eg");
+  const middle = view._project(plane, 0.5, 0.5).y;
+  const back = view._project(plane, 0.5, 0.2).y;
+  assert.ok(nameY < middle, "the name is still sitting on the devices");
+  assert.ok(nameY >= back, "and it has not climbed out through the back wall");
+});
