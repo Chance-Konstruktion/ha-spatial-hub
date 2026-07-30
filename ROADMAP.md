@@ -90,12 +90,23 @@ ausprobieren wollen.
 „Fertig" ist aber keine Empfindung, sondern eine Liste, sonst wächst sie.
 Diese hier ist geschlossen:
 
-- [ ] Rechtsklickmenü im Editor: ausblenden, Anordnung zurücksetzen, Ecken
-      bearbeiten, Grundstück entfernen — plus Raumart ändern, Raum
-      duplizieren, Raum löschen. Später die Aufhängung für Möbel.
+- [x] Rechtsklickmenü im Editor: Einstellungen, Raumart ändern, Ecken
+      bearbeiten, Anordnung zurücksetzen, ausblenden — auf dem leeren Plan
+      Grundstück und Etage. Später die Aufhängung für Möbel.
+
+      **Ohne „duplizieren" und „löschen".** Bereiche gehören dem
+      Bereichsregister von Home Assistant, nicht uns. Ein „Löschen" hier
+      wäre ein Löschen *überall* — in jedem Dashboard, jeder
+      Automatisierung, jeder Sprachsteuerung —, und ein „Duplizieren"
+      würde „Wohnzimmer Kopie" ins Register schreiben, wo es nie
+      hingehörte. Der Hub sammelt und platziert; er verwaltet nicht. Was
+      stattdessen im Menü steht, ist „Ausblenden": derselbe Wunsch, ohne
+      fremde Daten anzufassen. Wer einen Raum wirklich anlegen oder
+      wegnehmen will, tut das dort, wo Räume herkommen.
 - [ ] Einrasten an der Kontur der anderen Etagen (der Rest von Phase 15)
-- [ ] Langer Druck auf dem Touchscreen mit demselben Verhalten wie mit der
-      Maus
+- [x] Langer Druck auf dem Touchscreen mit demselben Verhalten wie mit der
+      Maus — ein halbe Sekunde, zehn Pixel Spielraum, und ein Zug, der
+      noch nicht losgelaufen ist, wird dabei zurückgenommen
 - [ ] Ein Satz Screenshots, der die Hausansicht zeigt, wie sie gemeint ist
 
 Was **nicht** auf dieser Liste steht, gehört in eine spätere Phase:

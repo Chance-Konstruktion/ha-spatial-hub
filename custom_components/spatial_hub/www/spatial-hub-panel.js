@@ -645,6 +645,8 @@ class SpatialHubPanel extends HTMLElement {
     this._themeDialog = false;
     this._layerDialog = null; // the custom layer being written
     this._areaDialog = null; // the area whose kind is being set
+    this._menu = null; // {x, y, kind, id}: the right-click menu, if open
+    this._press = null; // a finger being held still, on its way to the menu
     this._showEntities = false; // the device's entity list, in the popup
     // The legend starts folded away. It is a reference, not a destination:
     // the first thing somebody wants to see is their house, not a list of
@@ -1281,6 +1283,7 @@ class SpatialHubPanel extends HTMLElement {
     this._root = root;
     root.addEventListener("click", (event) => this._onClick(event));
     root.addEventListener("pointerdown", (event) => this._onPointerDown(event));
+    root.addEventListener("contextmenu", (event) => this._onContextMenu(event));
     root.addEventListener("input", (event) => this._onInput(event, false));
     root.addEventListener("change", (event) => this._onInput(event, true));
     root.addEventListener("wheel", (event) => {
@@ -1339,6 +1342,7 @@ class SpatialHubPanel extends HTMLElement {
       ${this._layerDialog ? this._layerDialogHtml() : ""}
       ${this._areaDialog ? this._areaDialogHtml() : ""}
       ${this._popupHtml()}
+      ${this._menuHtml()}
     `;
     // The very first plan a user ever sees must be the whole plan. The
     // stacked view is square and taller than any 16:9 window, so without
@@ -1666,15 +1670,67 @@ class SpatialHubPanel extends HTMLElement {
   }
 
   /** Two fingers: the same zoom, driven by the distance between them. */
+  /** Wie lange ein Finger liegen muss, und wie ruhig, fuer das Menue. */
+  static get PRESS() {
+    return { time: 500, slack: 10 };
+  }
+
   _onTouchStart(event) {
-    if (!event.touches || event.touches.length !== 2) return;
+    if (!event.touches) return;
+    // Ein Finger, der liegen bleibt, ist die rechte Maustaste des Telefons.
+    // Ohne das waere das Menue auf dem Geraet, auf dem der Plan am
+    // haeufigsten angesehen wird, gar nicht erreichbar.
+    if (event.touches.length === 1) {
+      this._armLongPress(event.touches[0], event.composedPath
+                                             ? event.composedPath() : []);
+      return;
+    }
+    this._cancelLongPress();
+    if (event.touches.length !== 2) return;
     this._pinch = {
       distance: this._touchSpan(event.touches),
       zoom: this._view.zoom,
     };
   }
 
+  _armLongPress(touch, path) {
+    this._cancelLongPress();
+    const target = this._menuFor(path);
+    if (!target) return;
+    const from = { x: touch.clientX, y: touch.clientY };
+    this._press = {
+      from,
+      timer: setTimeout(() => {
+        this._press = null;
+        // Ein Zug, der noch nicht losgelaufen ist, wird zurueckgenommen:
+        // sonst haengt beim Loslassen ein Raum an einem Menue.
+        if (this._drag) {
+          this._drag = null;
+          this._dragged = true;
+        }
+        this._menu = { ...target, x: from.x, y: from.y };
+        this._render();
+      }, SpatialHubPanel.PRESS.time),
+    };
+  }
+
+  _cancelLongPress() {
+    if (this._press) clearTimeout(this._press.timer);
+    this._press = null;
+  }
+
   _onTouchMove(event) {
+    // Wer schiebt, will nicht auswaehlen. Ein bisschen Wackeln ist kein
+    // Schieben -- eine Hand haelt nicht auf das Pixel genau still.
+    if (this._press && event.touches && event.touches.length) {
+      const { clientX, clientY } = event.touches[0];
+      if (
+        Math.hypot(clientX - this._press.from.x, clientY - this._press.from.y) >
+        SpatialHubPanel.PRESS.slack
+      ) {
+        this._cancelLongPress();
+      }
+    }
     if (!this._pinch || !event.touches || event.touches.length !== 2) return;
     event.preventDefault();
     const span = this._touchSpan(event.touches);
@@ -1692,6 +1748,7 @@ class SpatialHubPanel extends HTMLElement {
 
   _onTouchEnd() {
     this._pinch = null;
+    this._cancelLongPress();
   }
 
   _touchSpan(touches) {
@@ -3270,6 +3327,255 @@ class SpatialHubPanel extends HTMLElement {
     this._setLayout("areas", area.id, { doors: next }, { doors: next });
   }
 
+  // ── Das Menue unter der rechten Maustaste ───────────────
+
+  /** Worauf rechts geklickt wurde: ein Raum, ein Geraet, oder der Plan.
+   *
+   *  Die Reihenfolge ist die des Auges: was obenauf liegt, gewinnt. Ein
+   *  Geraet steht im Raum, also kommt es zuerst -- sonst waere jeder
+   *  Rechtsklick auf eine Lampe einer auf das Wohnzimmer.
+   */
+  _menuFor(path) {
+    const find = (attribute) =>
+      path.find(
+        (element) =>
+          element.getAttribute && element.getAttribute(attribute) !== null,
+      );
+    const node = find("data-node");
+    if (node) return { kind: "node", id: node.getAttribute("data-node") };
+    const area = find("data-area");
+    if (area) return { kind: "area", id: area.getAttribute("data-area") };
+    const stage = path.find(
+      (element) =>
+        element.classList &&
+        (element.classList.contains("stage") ||
+          element.classList.contains("stack")),
+    );
+    return stage ? { kind: "plan", id: null } : null;
+  }
+
+  _onContextMenu(event) {
+    const target = this._menuFor(event.composedPath());
+    // Ausserhalb des Plans bleibt das Menue des Browsers. Wer auf einer
+    // Leiste rechtsklickt, will kopieren oder untersuchen, nicht bauen.
+    if (!target) return;
+    event.preventDefault();
+    this._menu = { ...target, x: event.clientX, y: event.clientY };
+    this._render();
+  }
+
+  /** Was in dem Menue steht -- als Liste, nicht als HTML.
+   *
+   *  Getrennt, weil hier die Entscheidungen liegen: welcher Eintrag zu
+   *  wem gehoert und wann er fehlt. Das ist pruefbar, das Aussehen nicht.
+   *
+   *  Was nicht darin steht: Raum anlegen, duplizieren, loeschen. Bereiche
+   *  gehoeren dem Bereichsregister von Home Assistant, nicht uns. Ein
+   *  „Loeschen" hier wuerde den Raum ueberall entfernen -- in jedem
+   *  Dashboard, jeder Automatisierung, jeder Sprachsteuerung -- und ein
+   *  „Duplizieren" wuerde „Wohnzimmer Kopie" ins Register schreiben, wo
+   *  es nie hingehoerte. Der Hub sammelt und platziert; er verwaltet
+   *  nicht. Wer einen Raum wirklich anlegen will, tut das dort, wo Raeume
+   *  herkommen. Was hier stattdessen steht, ist „Ausblenden": derselbe
+   *  Wunsch, ohne fremde Daten anzufassen.
+   */
+  _menuItems() {
+    const menu = this._menu;
+    if (!menu) return [];
+    const items = [];
+
+    if (!this._edit) {
+      // Rechtsklick ist der Weg *ins* Bearbeiten. Ein Menue, das ausserhalb
+      // gar nicht aufgeht, liest sich wie ein Fehler.
+      if (this._canEdit) {
+        items.push({ id: "edit-on", label: "Bearbeiten einschalten",
+                     icon: "mdi:pencil" });
+      }
+      if (menu.kind === "node") {
+        items.push({ id: "node-details", label: "Details",
+                     icon: "mdi:information-outline" });
+      }
+      return items;
+    }
+
+    if (menu.kind === "node") {
+      if (!this._editIcons) {
+        return [{ id: "edit-icons", label: "Zu den Geräten wechseln",
+                  icon: "mdi:lightbulb-outline" }];
+      }
+      return [
+        { id: "node-details", label: "Details",
+          icon: "mdi:information-outline" },
+        { id: "node-reset", label: "Zurücksetzen",
+          icon: "mdi:backup-restore" },
+        { id: "node-hide", label: "Ausblenden",
+          icon: "mdi:eye-off-outline" },
+      ];
+    }
+
+    if (menu.kind === "area") {
+      if (!this._editRooms) {
+        return [{ id: "edit-rooms", label: "Zu den Räumen wechseln",
+                  icon: "mdi:floor-plan" }];
+      }
+      const area = (this._model.areas || []).find(
+        (candidate) => candidate.id === menu.id,
+      );
+      if (!area) return [];
+      const kind = kindOf(area);
+      items.push({ id: "area-settings", label: "Einstellungen …",
+                   icon: "mdi:tune-variant" });
+      items.push({ separator: true });
+      items.push({ id: "kind-indoor", label: "Raum",
+                   icon: "mdi:home-outline",
+                   on: kind === AREA_KIND.INDOOR });
+      items.push({ id: "kind-outdoor", label: "Außenbereich",
+                   icon: "mdi:tree-outline",
+                   on: kind === AREA_KIND.OUTDOOR });
+      items.push({ id: "kind-virtual", label: "Virtuell",
+                   icon: "mdi:cloud-outline",
+                   on: kind === AREA_KIND.VIRTUAL });
+      items.push({ separator: true });
+      items.push({ id: "area-corners",
+                   label: this._corners ? "Ecken fertig" : "Ecken bearbeiten",
+                   icon: "mdi:vector-square", on: this._corners });
+      items.push({ id: "area-reset", label: "Anordnung zurücksetzen",
+                   icon: "mdi:backup-restore" });
+      items.push({ id: "area-hide", label: "Ausblenden",
+                   icon: "mdi:eye-off-outline" });
+      return items;
+    }
+
+    // Der leere Plan: was die ganze Etage angeht.
+    if (this._editRooms) {
+      items.push({ id: "plot-toggle",
+                   label: this._plot ? "Grundstück entfernen"
+                                     : "Grundstück zeichnen",
+                   icon: "mdi:vector-polygon", on: !!this._plot });
+    }
+    if (this._floor) {
+      items.push({ id: "floor-reset", label: "Etage zurücksetzen",
+                   icon: "mdi:backup-restore" });
+    }
+    return items;
+  }
+
+  _menuHtml() {
+    const menu = this._menu;
+    if (!menu) return "";
+    const items = this._menuItems();
+    // Ein Menue ohne Eintraege ist eine leere Sprechblase. Dann lieber
+    // keines: der Rechtsklick hat schon nichts getan, er soll nicht auch
+    // noch etwas hinstellen, das man wegklicken muss.
+    if (!items.length) return "";
+    const rows = items
+      .map((item) =>
+        item.separator
+          ? `<div class="menu-rule"></div>`
+          : `<button class="menu-item ${item.on ? "on" : ""}"
+                     data-menu="${escapeHtml(item.id)}">
+               <ha-icon icon="${escapeHtml(item.icon)}"></ha-icon>
+               <span class="menu-label">${escapeHtml(item.label)}</span>
+               ${item.on
+                   ? '<ha-icon class="menu-tick" icon="mdi:check"></ha-icon>'
+                   : ""}
+             </button>`,
+      )
+      .join("");
+    // Am rechten oder unteren Rand klappt das Menue zur anderen Seite auf,
+    // statt aus dem Fenster zu laufen. Grob geschaetzte Masse: genau
+    // ausmessen hiesse, erst zu zeichnen und dann zu springen.
+    const width = 230;
+    const height = 34 * items.length + 16;
+    const room = typeof window !== "undefined" ? window : { innerWidth: 1e4,
+                                                            innerHeight: 1e4 };
+    const left = Math.max(4, Math.min(menu.x, (room.innerWidth || 1e4) - width - 4));
+    const top = Math.max(4, Math.min(menu.y, (room.innerHeight || 1e4) - height - 4));
+    return `
+      <div class="menu-scrim" data-menu-close="1"></div>
+      <div class="menu" style="left:${left}px; top:${top}px;">${rows}</div>`;
+  }
+
+  /** Einen Eintrag ausfuehren. Das Menue geht dabei immer zu. */
+  _runMenu(id) {
+    const menu = this._menu;
+    this._menu = null;
+    if (!menu) return;
+    const area = () =>
+      (this._model.areas || []).find(
+        (candidate) => candidate.id === menu.id,
+      );
+
+    switch (id) {
+      case "edit-on":
+        this._edit = true;
+        break;
+      case "edit-rooms":
+        this._editWhat = "rooms";
+        break;
+      case "edit-icons":
+        this._editWhat = "icons";
+        this._corners = false;
+        break;
+      case "node-details":
+        this._selected = { kind: "node", id: menu.id };
+        break;
+      case "node-hide":
+        this._selected = null;
+        this._setLayout("nodes", menu.id, { hidden: true });
+        return;
+      case "node-reset":
+        this._selected = null;
+        this._resetItem("nodes", menu.id);
+        return;
+      case "area-settings":
+        this._areaDialog = menu.id;
+        break;
+      case "kind-indoor":
+      case "kind-outdoor":
+      case "kind-virtual":
+        this._setAreaKind(area(), id.slice("kind-".length));
+        return;
+      case "area-corners":
+        this._corners = !this._corners;
+        break;
+      case "area-hide":
+        this._setLayout("areas", menu.id, { hidden: true });
+        return;
+      case "area-reset":
+        this._resetItem("areas", menu.id);
+        return;
+      case "plot-toggle":
+        this._togglePlot();
+        return;
+      case "floor-reset":
+        this._resetFloor();
+        return;
+      default:
+        break;
+    }
+    this._render();
+  }
+
+  /** Die Art eines Bereichs setzen: Raum, Aussenbereich oder virtuell.
+   *
+   *  Mit dem alten Wert als Ruecknahme, damit ein fehlgeschlagener
+   *  Schreibvorgang den Plan nicht in einem Zustand stehen laesst, den
+   *  niemand gewaehlt hat.
+   */
+  _setAreaKind(area, kind) {
+    if (!area) return;
+    this._setLayout("areas", area.id, { kind }, { kind: kindOf(area) });
+  }
+
+  /** Eine einzelne Anordnung vergessen und neu holen. */
+  _resetItem(section, key) {
+    this._hass
+      .callWS({ type: `${DOMAIN}/layout/reset`, section, key })
+      .then(() => this._refresh())
+      .catch(() => this._refresh());
+  }
+
   get _customLayers() {
     return (this._model && this._model.custom_layers) || [];
   }
@@ -4607,6 +4913,21 @@ class SpatialHubPanel extends HTMLElement {
           element.getAttribute && element.getAttribute(attribute) !== null,
       );
 
+    // Das Menue liegt ueber allem, also wird es vor allem gefragt -- und
+    // jeder Klick daneben macht es zu, ohne sonst etwas auszuloesen. Wer
+    // ein offenes Menue wegklickt, meint das Wegklicken und nicht den
+    // Raum darunter.
+    if (this._menu) {
+      const item = hit("data-menu");
+      if (item) {
+        this._runMenu(item.getAttribute("data-menu"));
+      } else {
+        this._menu = null;
+        this._render();
+      }
+      return;
+    }
+
     const stage = path.find(
       (element) => element.classList && element.classList.contains("stage"),
     );
@@ -4739,14 +5060,11 @@ class SpatialHubPanel extends HTMLElement {
 
     const areaKind = hit("data-area-kind");
     if (areaKind && this._areaDialog) {
-      const area = (this._model.areas || []).find(
-        (candidate) => candidate.id === this._areaDialog,
-      );
-      this._setLayout(
-        "areas",
-        this._areaDialog,
-        { kind: areaKind.getAttribute("data-area-kind") },
-        { kind: area ? kindOf(area) : AREA_KIND.INDOOR },
+      this._setAreaKind(
+        (this._model.areas || []).find(
+          (candidate) => candidate.id === this._areaDialog,
+        ),
+        areaKind.getAttribute("data-area-kind"),
       );
       return;
     }
@@ -5000,12 +5318,8 @@ class SpatialHubPanel extends HTMLElement {
 
     const resetItem = hit("data-reset-item");
     if (resetItem) {
-      const id = resetItem.getAttribute("data-reset-item");
       this._selected = null;
-      this._hass
-        .callWS({ type: `${DOMAIN}/layout/reset`, section: "nodes", key: id })
-        .then(() => this._refresh())
-        .catch(() => this._refresh());
+      this._resetItem("nodes", resetItem.getAttribute("data-reset-item"));
       return;
     }
 
@@ -5794,6 +6108,28 @@ select { font:inherit; padding:6px; border-radius:8px;
 .ok { color:var(--success-color,#4caf50); font-size:13px; margin:4px 0; }
 
 .scrim { position:fixed; inset:0; background:rgba(0,0,0,.4); }
+
+/* Das Rechtsklickmenü. Der Vorhang darunter ist durchsichtig: er fängt
+   nur den Klick daneben ab, verdunkelt aber nichts -- man soll weiter
+   sehen, worauf man geklickt hat, während man auswählt. */
+.menu-scrim { position:fixed; inset:0; z-index:40; }
+.menu { position:fixed; z-index:41; min-width:210px; padding:6px;
+        background:var(--card-background-color,#fff); border-radius:12px;
+        box-shadow:0 12px 32px rgba(0,0,0,.32); }
+.menu-item { display:flex; align-items:center; gap:10px; width:100%;
+             padding:7px 10px; border:0; border-radius:8px; background:none;
+             color:var(--primary-text-color,#111); font:inherit; font-size:14px;
+             text-align:left; cursor:pointer; }
+.menu-item:hover { background:rgba(127,127,127,.14); }
+.menu-item ha-icon { --mdc-icon-size:19px; opacity:.72; flex:0 0 auto; }
+/* Der eingeschaltete Eintrag ist keine Schaltfläche, die gedrückt aussieht,
+   sondern der aktuelle Zustand: Häkchen statt Hervorhebung. */
+.menu-item.on { color:var(--primary-color,#03a9f4); }
+.menu-item.on ha-icon { opacity:1; }
+.menu-label { flex:1 1 auto; }
+.menu-tick { --mdc-icon-size:17px; flex:0 0 auto; }
+.menu-rule { height:1px; margin:5px 6px;
+             background:var(--divider-color,rgba(127,127,127,.28)); }
 /* Mittig über dem Grundriss, nicht am Rand: ein Modal, das man auch auf
    einem großen Bildschirm sofort findet. */
 .popup { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);

@@ -3178,3 +3178,239 @@ test("fit-to-screen fills the window instead of parking the plan in a corner", (
   assert.equal(view._view.zoom, 2.7);
   assert.ok(view._view.zoom > 1, "a small plan used to stay small");
 });
+
+// ── Das Menue unter der rechten Maustaste ──────────────────
+
+/** Ein Rechtsklick auf etwas, das die Menuelogik erkennen kann. */
+const rightClick = (view, target, { x = 100, y = 100 } = {}) => {
+  let prevented = false;
+  view._render = () => {};
+  view._onContextMenu({
+    clientX: x,
+    clientY: y,
+    composedPath: () => target,
+    preventDefault: () => { prevented = true; },
+  });
+  return prevented;
+};
+
+const ids = (view) =>
+  view._menuItems().filter((item) => !item.separator).map((item) => item.id);
+
+test("the right button offers what you clicked on, not one menu for everything", () => {
+  const view = panel(model(), { edit: true });
+
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  assert.deepEqual(view._menu.kind, "area");
+  assert.ok(ids(view).includes("area-hide"));
+
+  // Ein Geraet steht *im* Raum. Wer darauf klickt, meint das Geraet.
+  rightClick(view, [
+    element({ "data-node": "a:one" }),
+    element({ "data-area": "wohnzimmer" }),
+    stage(),
+  ]);
+  assert.equal(view._menu.kind, "node");
+
+  rightClick(view, [stage()]);
+  assert.equal(view._menu.kind, "plan");
+});
+
+test("outside the plan the browser keeps its own menu", () => {
+  const view = panel(model(), { edit: true });
+  // Eine Leiste ist keine Buehne: kopieren und untersuchen bleiben dort.
+  assert.equal(rightClick(view, [element({ "data-toggle": "diagnostics" })]),
+               false, "nothing was prevented");
+  assert.equal(view._menu, null);
+});
+
+test("a right click is the way into editing, not a dead end", () => {
+  const view = panel(model(), { edit: false });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  assert.deepEqual(ids(view), ["edit-on"]);
+
+  view._onClick({ composedPath: () => [element({ "data-menu": "edit-on" })] });
+  assert.equal(view._edit, true);
+  assert.equal(view._menu, null, "the menu closes behind itself");
+});
+
+test("a guest is not offered a pencil they cannot pick up", () => {
+  const view = panel(model(), { admin: false, edit: false });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  assert.deepEqual(ids(view), [], "no menu for someone who may not edit");
+  assert.equal(view._menuHtml(), "", "and no empty bubble either");
+});
+
+test("the room menu shows which kind the room already is", () => {
+  const view = panel(model(), { edit: true });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  const on = view._menuItems().filter((item) => item.on).map((item) => item.id);
+  assert.deepEqual(on, ["kind-indoor"], "a room is a room until told otherwise");
+});
+
+test("picking a kind writes it, with the old one to fall back on", () => {
+  const view = panel(model(), { edit: true });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  view._onClick({
+    composedPath: () => [element({ "data-menu": "kind-outdoor" })],
+  });
+  const [section, key, values] = view._written[0];
+  assert.equal(section, "areas");
+  assert.equal(key, "wohnzimmer");
+  assert.deepEqual(values, { kind: "outdoor" });
+});
+
+test("rooms and devices are two modes, and the menu says so", () => {
+  const rooms = panel(model(), { edit: true, what: "rooms" });
+  rightClick(rooms, [element({ "data-node": "a:one" }), stage()]);
+  assert.deepEqual(ids(rooms), ["edit-icons"],
+                   "no device actions while walls are being dragged");
+
+  const icons = panel(model(), { edit: true, what: "icons" });
+  rightClick(icons, [element({ "data-area": "wohnzimmer" }), stage()]);
+  assert.deepEqual(ids(icons), ["edit-rooms"]);
+});
+
+test("the menu never offers to delete or duplicate a room", () => {
+  // Bereiche gehoeren dem Register von Home Assistant. Ein Loeschen hier
+  // waere ein Loeschen ueberall -- der Hub platziert, er verwaltet nicht.
+  const view = panel(model(), { edit: true });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  for (const id of ids(view)) {
+    assert.doesNotMatch(id, /delete|remove|duplicate/,
+                        `the menu offered "${id}"`);
+  }
+  assert.ok(ids(view).includes("area-hide"),
+            "the honest version of the same wish is there");
+});
+
+test("a click beside the menu closes it and does nothing else", () => {
+  const view = panel(model(), { edit: true });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  let rendered = 0;
+  view._render = () => { rendered += 1; };
+  // Daneben liegt eine Schaltfläche, die sonst sofort etwas täte.
+  view._onClick({
+    composedPath: () => [element({ "data-hide-area": "wohnzimmer" }), stage()],
+  });
+  assert.equal(view._menu, null);
+  assert.equal(view._written.length, 0,
+               "the button underneath fired through the menu");
+  assert.equal(rendered, 1);
+  assert.equal(view._areaDialog, null);
+});
+
+test("the menu stays inside the window instead of hanging out of it", () => {
+  const view = panel(model(), { edit: true });
+  const room = { innerWidth: 800, innerHeight: 600 };
+  const before = globalThis.window;
+  globalThis.window = { ...before, ...room };
+  try {
+    rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()],
+               { x: 790, y: 590 });
+    const html = view._menuHtml();
+    const left = Number(/left:(-?\d+)px/.exec(html)[1]);
+    const top = Number(/top:(-?\d+)px/.exec(html)[1]);
+    assert.ok(left + 230 <= 800, `menu ran off the right edge at ${left}`);
+    assert.ok(top < 590, `menu ran off the bottom at ${top}`);
+  } finally {
+    globalThis.window = before;
+  }
+});
+
+test("the empty plan offers what belongs to the whole storey", () => {
+  const view = panel(model(), { edit: true });
+  rightClick(view, [stage()]);
+  assert.deepEqual(ids(view), ["plot-toggle", "floor-reset"]);
+  // Ohne gezeichnetes Grundstueck heisst der Eintrag anders herum.
+  const item = view._menuItems().find((entry) => entry.id === "plot-toggle");
+  assert.match(item.label, /zeichnen/);
+});
+
+/** Ein Finger, der irgendwo aufsetzt. */
+const finger = (x, y, target = []) => ({
+  touches: [{ clientX: x, clientY: y }],
+  composedPath: () => target,
+  preventDefault() {},
+});
+
+const held = async () =>
+  new Promise((resolve) =>
+    setTimeout(resolve, SpatialHubPanel.PRESS.time + 20),
+  );
+
+test("holding a finger still opens the same menu as the right button", async () => {
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._onTouchStart(finger(120, 220, [element({ "data-area": "wohnzimmer" }),
+                                       stage()]));
+  assert.equal(view._menu, null, "not before the time is up");
+  await held();
+  assert.deepEqual(
+    { kind: view._menu.kind, id: view._menu.id, x: view._menu.x },
+    { kind: "area", id: "wohnzimmer", x: 120 },
+  );
+});
+
+test("a finger that travels is panning, not asking for a menu", async () => {
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._onTouchStart(finger(100, 100, [stage()]));
+  view._onTouchMove(finger(100, 140));
+  await held();
+  assert.equal(view._menu, null);
+
+  // Ein bisschen Wackeln darf sein: eine Hand haelt nicht auf das Pixel
+  // genau still, und ein Menue, das daran scheitert, gibt es nicht.
+  const steady = panel(model(), { edit: true });
+  steady._render = () => {};
+  steady._onTouchStart(finger(100, 100, [stage()]));
+  steady._onTouchMove(finger(103, 102));
+  await held();
+  assert.ok(steady._menu, "three pixels of hand is still holding still");
+});
+
+test("lifting the finger early is a tap, and taps do not open menus", async () => {
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._onTouchStart(finger(100, 100, [stage()]));
+  view._onTouchEnd();
+  await held();
+  assert.equal(view._menu, null);
+});
+
+test("two fingers are a pinch, and a pinch cancels the wait", async () => {
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._view = { zoom: 1, x: 0, y: 0 };
+  view._onTouchStart(finger(100, 100, [stage()]));
+  view._onTouchStart({
+    touches: [{ clientX: 100, clientY: 100 }, { clientX: 200, clientY: 100 }],
+    composedPath: () => [stage()],
+  });
+  await held();
+  assert.equal(view._menu, null, "zooming must not drop a menu on the plan");
+  assert.ok(view._pinch);
+});
+
+test("the menu takes the room back off the hook it was hanging on", async () => {
+  // Ein Finger auf einem Raum startet einen Zug. Bleibt er liegen, war
+  // kein Zug gemeint -- und beim Loslassen darf der Raum nicht springen.
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._onTouchStart(finger(100, 100, [element({ "data-area": "wohnzimmer" }),
+                                       stage()]));
+  view._drag = { mode: "area", key: "wohnzimmer" };
+  await held();
+  assert.equal(view._drag, null);
+  assert.ok(view._menu);
+});
+
+test("the current kind is marked, not just tinted", () => {
+  // Farbe allein sagt einem Teil der Leute nichts. Das Häkchen schon.
+  const view = panel(model(), { edit: true });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  const html = view._menuHtml();
+  assert.equal((html.match(/menu-tick/g) || []).length, 1,
+               "exactly one entry is the current one");
+});
