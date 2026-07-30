@@ -420,11 +420,29 @@ setzt und entfernt Ecken — Nischen, Erker und Wandversätze sind damit
 zeichenbar, und dieselbe Kontur gilt in Einzel- wie Hausansicht. Auf
 derselben Mechanik sitzt das **Grundstück**: die gezeichnete Grenze um Haus
 und Garten, unter allem anderen, auf der Nebengebäude wie Garage und
-Gartenhütte als Außenbereiche stehen.
+Gartenhütte als Außenbereiche stehen. Das Grundstück hat dabei **vier
+Ränder statt einer Zahl** — wer hinter dem Haus dreihundert Meter Garten
+hat und vorne drei, bekommt genau das und nicht zweimal denselben Rand.
+
+**Türen** sind Lücken in der Wand: pro Wand anlegbar, mit Mitte und Breite
+als Anteil der Wand, damit sie beim Vergrößern des Raums bleiben, wo sie
+hingehören. Die Lücke geht durch die ganze Mauer, nicht nur durch ihre
+Außenseite.
+
+Dazu die Hausansicht selbst, die aussehen soll wie eine Bauzeichnung und
+nicht wie vier graue Platten: flacher Blickwinkel statt Raute, sichtbare
+Innenwände, **Treppen als Stufen**, und ein Balkon, der ein Geländer
+bekommt statt Zimmerwänden — während der Rasen keins bekommt, weil ein
+Garten kein Anbau ist.
+
+Auf dem Smartphone ist der Plan **Vollbild ohne Leisten**, und die Legende
+lässt sich nach unten wegziehen: Wer einen Raum einrichtet, braucht den
+Platz.
 
 Offen sind unter anderem Mehrfachauswahl, Labels an einen eigenen Platz
-ziehen und ein Weg, einen Raum zu zeichnen, ohne ihn erst in Home Assistant
-anzulegen.
+ziehen, ein **Rechtsklickmenü** im Editor (Raumart ändern, duplizieren,
+löschen, ausblenden — und später die Aufhängung für Möbel) und ein Weg,
+einen Raum zu zeichnen, ohne ihn erst in Home Assistant anzulegen.
 
 Interaktion ist hier mitgemeint und größtenteils schon da: **kurzer Klick
 schaltet**, **langer Druck öffnet** das mittige Modal mit Werten, Entities,
