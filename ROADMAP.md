@@ -153,14 +153,25 @@ Die beiden möglichen Antworten sind beide wertvoll:
 
 Vorher zu klären, weil es die Einstiegshürde senkt:
 
-- [ ] Ist `examples/example_provider/` wirklich das Erste, was ein
-      Maintainer findet? Es ist bereits eine vollständige Integration in
-      114 Zeilen und genau als Einstieg geschrieben — aber nur nützlich,
-      wenn man darüber stolpert.
-- [ ] Die kürzeste Form — `data=lambda: ["light.kitchen"]`, eine Liste von
-      Entity-IDs — steht in dieser Roadmap, aber es gibt kein lauffähiges
-      Beispiel dafür. Drei Lampen, ein Schalter, ein Sensor, fertig. Das
-      ist die Fassung, die ein Maintainer in fünf Minuten überfliegt.
+- [x] Die kürzeste Form — `data=lambda: ["light.kitchen"]`, eine Liste von
+      Entity-IDs — stand an drei Stellen beschrieben und war nirgends
+      vorgeführt. Jetzt liegt sie als `examples/minimal_provider/`: drei
+      Lampen, ein Schalter, ein Sensor, **achtzehn Zeilen**, ohne
+      `node()` und ohne Coordinator. Sie läuft in der Testsuite gegen den
+      echten Hub und erfüllt denselben Conformance-Vertrag wie die große.
+
+      Ein Test hält sie kurz. Ein Beispiel, dessen Zweck „so wenig ist
+      es" lautet, wächst sonst zu: einer macht es live, der Nächste zeigt
+      eine Action, und am Ende sagt es das Gegenteil. Was dazugehört,
+      gehört nach nebenan.
+- [x] Ist das Beispiel das Erste, was ein Maintainer findet? Es war in der
+      README, in `sdk/README.md` und in `ASK_FOR_SUPPORT` genannt — und
+      nichts davon hilft dem, der auf GitHub auf `examples/` klickt und
+      zwei Ordner ohne Hinweis vorfindet. Jetzt steht dort ein
+      `examples/README.md`, das mit dem kürzeren anfängt und in einer
+      Tabelle sagt, was das längere mehr kann. Ein Test prüft, dass jeder
+      Ordner darin vorkommt — sonst veraltet der Wegweiser beim dritten
+      Beispiel.
 
 ## C — Rückmeldung sofort einarbeiten
 

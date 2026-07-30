@@ -87,9 +87,10 @@ python3 sdk/install.py --into custom_components/[domain] --tests tests
 ```
 
 Everything about it: [sdk/README.md](https://github.com/Chance-Konstruktion/ha-spatial-hub/blob/main/sdk/README.md).
-A complete example integration lives in
-[examples/](https://github.com/Chance-Konstruktion/ha-spatial-hub/tree/main/examples/example_provider) —
-not snippets, but a whole file that runs inside their own test suite.
+Two runnable examples live in
+[examples/](https://github.com/Chance-Konstruktion/ha-spatial-hub/tree/main/examples) —
+not snippets, but whole files that run inside their own test suite. The
+shorter one is five lines and is nothing but a list of entity ids.
 
 If you like, I will open the PR. Just say the word.
 
