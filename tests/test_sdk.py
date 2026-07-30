@@ -22,6 +22,7 @@ from custom_components.spatial_hub.storage import LayoutStore
 ROOT = Path(__file__).resolve().parents[1]
 SDK = ROOT / "sdk"
 EXAMPLE = ROOT / "examples" / "example_provider"
+MINIMAL = ROOT / "examples" / "minimal_provider"
 SHIM = "spatial_hub_provider.py"
 KIT = "spatial_hub_conformance.py"
 
@@ -117,6 +118,147 @@ def test_the_examples_vendored_copy_is_the_current_one():
         "the example ships a stale copy of the shim -- rerun "
         "`python3 sdk/install.py --into examples/example_provider`"
     )
+
+
+# ── The shortest form is real too ─────────────────────────
+
+
+class MinimalEntry(FakeEntry):
+    domain = "minimal_provider"
+    entry_id = "minimal"
+
+
+@pytest.fixture
+def minimal():
+    """The five-line example, imported as the package it really is."""
+    sys.path.insert(0, str(MINIMAL.parent))
+    for name in list(sys.modules):
+        if name.startswith("minimal_provider"):
+            del sys.modules[name]
+    module = importlib.import_module("minimal_provider")
+    yield module
+    sys.path.remove(str(MINIMAL.parent))
+
+
+def _a_house_with_those_entities(hass):
+    """Areas and entities, the way Home Assistant would already have them."""
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import entity_registry as er
+
+    from conftest import FakeArea, FakeEntity
+
+    ar.async_get(hass).areas = [
+        FakeArea("kueche", "Küche", floor_id="eg"),
+        FakeArea("wohnzimmer", "Wohnzimmer", floor_id="eg"),
+        FakeArea("flur", "Flur", floor_id="eg"),
+    ]
+    entities = {
+        "light.kitchen": ("Küchenlicht", "kueche"),
+        "light.living_room": ("Deckenlampe", "wohnzimmer"),
+        "light.hallway": ("Flurlicht", "flur"),
+        "switch.coffee_machine": ("Kaffeemaschine", "kueche"),
+        "sensor.hallway_temperature": ("Temperatur Flur", "flur"),
+    }
+    registry = er.async_get(hass)
+    for entity_id, (name, area) in entities.items():
+        registry.entities[entity_id] = FakeEntity(
+            entity_id, original_name=name, area_id=area
+        )
+        hass.states.set(entity_id, "on")
+
+
+@pytest.mark.asyncio
+async def test_a_list_of_entity_ids_is_a_whole_integration(hass, minimal):
+    """The shortest form in the shim's own docstring, actually run.
+
+    ``data=lambda: ["light.kitchen", ...]`` was written down in three
+    places and demonstrated in none, so nobody could tell whether it was a
+    real shorthand or an aspiration. It is real: no node(), no coordinator,
+    no positions -- and every lamp lands in its own room with its own name.
+    """
+    _a_house_with_those_entities(hass)
+
+    assert await minimal.async_setup_entry(hass, MinimalEntry()) is True
+
+    model = await SpatialHub(hass, LayoutStore(hass)).async_model()
+    nodes = {node["id"]: node for node in model["nodes"]}
+
+    assert set(nodes) == {
+        "minimal_provider:light.kitchen",
+        "minimal_provider:light.living_room",
+        "minimal_provider:light.hallway",
+        "minimal_provider:switch.coffee_machine",
+        "minimal_provider:sensor.hallway_temperature",
+    }
+    kitchen = nodes["minimal_provider:light.kitchen"]
+    assert kitchen["label"] == "Küchenlicht", "the name came from the registry"
+    assert kitchen["area_id"] == "kueche", "and so did the room"
+    assert kitchen["position"], "the example states no positions; the hub places them"
+    assert model["edges"] == [], "a list of ids says nothing about connections"
+
+
+@pytest.mark.asyncio
+async def test_the_shortest_form_satisfies_the_public_contract(hass, minimal):
+    """Short must not mean second-class: same contract, same kit."""
+    spec = importlib.util.spec_from_file_location("_kit", SDK / KIT)
+    kit = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(kit)
+
+    _a_house_with_those_entities(hass)
+    await minimal.async_setup_entry(hass, MinimalEntry())
+    registration = hass.data["spatial_hub_providers"]["minimal_provider"]
+
+    assert Provider.from_registration(registration).warnings == []
+    assert kit.check(registration) == []
+
+
+def test_the_minimal_examples_vendored_copy_is_the_current_one():
+    assert (MINIMAL / SHIM).read_text() == (SDK / SHIM).read_text(), (
+        "the minimal example ships a stale copy of the shim -- rerun "
+        "`python3 sdk/install.py --into examples/minimal_provider`"
+    )
+
+
+def test_the_minimal_example_stays_minimal():
+    """Its whole point is being short. A test is what keeps it short.
+
+    Left alone, a worked example grows: somebody adds a coordinator to make
+    it live, somebody else an action to show actions, and the file that was
+    supposed to say "this is all it takes" ends up saying the opposite.
+    The one next door is where that belongs.
+    """
+    body = [
+        line
+        for line in (MINIMAL / "__init__.py").read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    docstring_end = body.index('"""', 1) if body[0].startswith('"""') else 0
+    code = body[docstring_end + 1:]
+    assert len(code) <= 25, f"the short example is now {len(code)} lines of code"
+    assert "node(" not in "\n".join(code), "a bare entity id was the whole point"
+
+
+def test_the_examples_folder_says_which_one_to_read_first():
+    """A worked example is only worth having if somebody finds it.
+
+    Both providers were named in the README, in the SDK README and in the
+    text we ask maintainers to file -- and none of that helps the person
+    who clicks `examples/` on GitHub and sees two folders with no hint
+    which is the way in. This is the signpost at the place they land, and
+    the test is what keeps it from going out of date when a third example
+    turns up.
+    """
+    signpost = ROOT / "examples" / "README.md"
+    assert signpost.is_file(), "examples/ has no README to greet anybody"
+    text = signpost.read_text()
+
+    folders = {
+        path.name
+        for path in (ROOT / "examples").iterdir()
+        if path.is_dir() and not path.name.startswith("__")
+    }
+    missing = {name for name in folders if name not in text}
+    assert not missing, f"examples/README.md never mentions {sorted(missing)}"
 
 
 # ── The installer ─────────────────────────────────────────

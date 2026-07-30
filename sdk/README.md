@@ -97,12 +97,20 @@ things that actually break floor plans in the field. The big one: node ids
 that change between two polls, which silently throws away every position
 the user arranged.
 
-## A complete worked example
+## Two worked examples
 
-[`examples/example_provider/`](../examples/example_provider/) is a whole
-integration, not a snippet — around forty meaningful lines. Our own test
-suite sets it up, drives it through the real hub, and holds it to the same
-conformance contract as a stranger's code, so it cannot quietly rot.
+[`examples/minimal_provider/`](../examples/minimal_provider/__init__.py) is
+the shortest honest version — **five lines**, a list of entity ids. Home
+Assistant already knows what `light.kitchen` is called, which area it is in
+and whether it is on, so you say nothing but the id.
+
+[`examples/example_provider/`](../examples/example_provider/__init__.py) is
+a whole integration for when that is no longer enough: edges, a popup, an
+action, and a coordinator that keeps the plan live.
+
+Neither is a snippet. Our own test suite sets both up, drives them through
+the real hub, and holds them to the same conformance contract as a
+stranger's code — so they cannot quietly rot.
 
 ## The rest
 

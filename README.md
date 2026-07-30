@@ -265,11 +265,26 @@ damit die gesamte Anordnung des Nutzers stillschweigend wegwerfen, und
 Metadaten, die sich nicht als JSON verschicken lassen und das Modell für
 *alle* Provider mitreißen.
 
-Ein **vollständiges Beispiel** liegt in
-[examples/example_provider/](examples/example_provider/) — keine Schnipsel,
-sondern eine ganze Integration, die in unserer eigenen Testsuite gegen den
-echten Hub läuft und denselben Conformance-Vertrag erfüllen muss wie fremder
-Code. Sie kann also nicht stillschweigend verrotten.
+**Zwei lauffähige Beispiele** liegen in
+[examples/](examples/) — keine Schnipsel, sondern Integrationen, die in
+unserer eigenen Testsuite gegen den echten Hub laufen und denselben
+Conformance-Vertrag erfüllen müssen wie fremder Code. Sie können also nicht
+stillschweigend verrotten.
+
+[`minimal_provider/`](examples/minimal_provider/__init__.py) ist die
+kürzeste ehrliche Fassung — **fünf Zeilen**, eine Liste von Entity-IDs:
+
+```python
+spatial_provider(
+    hass, entry,
+    name="Minimal Provider",
+    data=lambda: ["light.kitchen", "switch.coffee_machine"],
+)
+```
+
+[`example_provider/`](examples/example_provider/__init__.py) ist die ganze
+Integration, wenn das nicht mehr reicht: Kanten, Popup, Action, und über
+einen Coordinator läuft der Plan live mit.
 
 Und wenn du Nutzer einer Integration bist, die noch fehlt:
 **[docs/ASK_FOR_SUPPORT.de.md](docs/ASK_FOR_SUPPORT.de.md)** ist der Text, den du
