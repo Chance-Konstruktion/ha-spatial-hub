@@ -51,6 +51,10 @@ const STACK = {
   // thing a paper floor plan does, and the reason one can be read from
   // across a room.
   wall: 8, outerWall: 13,
+  // Wie viele Stufen eine Treppe bekommt. Nicht die echte Zahl -- die
+  // weiss niemand -- sondern so viele, dass das Rechteck als Treppe zu
+  // lesen ist und nicht als schraffierte Flaeche.
+  treads: 9,
   // Storeys sit slightly behind each other instead of exactly above.
   // Dead-aligned, the upper floor's outline lands on the lower one's and
   // the eye has nothing to separate them by except the gap; offset, each
@@ -468,6 +472,34 @@ const kindOf = (area) =>
   Object.values(AREA_KIND).includes(area && area.kind)
     ? area.kind
     : AREA_KIND.INDOOR;
+
+/** Kleingeschrieben, ohne Umlaute, ohne Zeichensetzung -- nur zum
+ *  Vergleichen. Dasselbe Falten wie `_fold` im Backend. */
+const fold = (value) =>
+  String(value ?? "")
+    .toLowerCase()
+    .replace(/ä/g, "a")
+    .replace(/ö/g, "o")
+    .replace(/ü/g, "u")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]+/g, " ");
+
+const STAIR_WORDS = ["treppe", "stiege", "stairs", "stairway", "staircase"];
+
+/** Ist dieser Raum eine Treppe?
+ *
+ *  Bewusst *keine* vierte Raumart: der Katalog der Raumarten steht in der
+ *  Spezifikation und gilt fuer jeden Provider, eine Stufe ist aber nichts,
+ *  was ein Provider je liefern wird -- sie ist ein Zeichendetail. Erkannt
+ *  wird sie deshalb so, wie das Backend auch schon Aussenbereiche erkennt:
+ *  an dem, was der Benutzer hingeschrieben hat, Name oder Symbol.
+ */
+const isStairs = (area) =>
+  kindOf(area) === AREA_KIND.INDOOR &&
+  STAIR_WORDS.some((word) =>
+    fold(`${(area && area.name) || ""} ${(area && area.icon) || ""}`)
+      .includes(word),
+  );
 
 const escapeHtml = (value) =>
   String(value ?? "").replace(
@@ -1999,6 +2031,28 @@ class SpatialHubPanel extends HTMLElement {
           "room-cap",
           keep,
         );
+    }
+    // Stufen. In der Referenzzeichnung ist die Treppe das, was einen
+    // Grundriss auf den ersten Blick als Grundriss lesbar macht.
+    //
+    // Auf Hoehe der Mauerkrone und nach den Waenden gezeichnet, nicht auf
+    // dem Rohboden davor: der Raum ist oben offen, aber seine vordere
+    // Wandflaeche ist undurchsichtig und deckt alles zu, was auf der
+    // Bodenplatte liegt -- die Stufen waren gezeichnet und trotzdem nicht
+    // zu sehen. Quer zur langen Seite, denn dorthin laeuft eine Treppe.
+    if (isStairs(area)) {
+      const alongX = width >= height;
+      const tread = (x, y) => {
+        const point = this._project(plane, x, y);
+        return `${point.x},${point.y - STACK.rise}`;
+      };
+      for (let step = 1; step < STACK.treads; step += 1) {
+        const at = step / STACK.treads;
+        const [from, to] = alongX
+          ? [tread(x0 + at * width, y0), tread(x0 + at * width, y0 + height)]
+          : [tread(x0, y0 + at * height), tread(x0 + width, y0 + at * height)];
+        shape += `<polyline class="tread" points="${from} ${to}"/>`;
+      }
     }
     // A balcony stands on the house, it does not stand inside it: a
     // railing you can see over instead of a wall you can't is the one
@@ -5197,6 +5251,10 @@ main { flex:0 0 auto; min-width:0; }
                      fill-opacity:.08; stroke:var(--fp-house-line, currentColor);
                      stroke-opacity:.55; stroke-dasharray:2 3;
                      vector-effect:non-scaling-stroke; }
+/* Stufen: leichter als eine Wand, sonst liest sich die Treppe als Raster. */
+.tread { fill:none; stroke:var(--fp-house-line, currentColor);
+         stroke-opacity:.75; stroke-width:1px;
+         vector-effect:non-scaling-stroke; }
 .deck-rail { fill:var(--fp-surface, var(--card-background-color,#fff));
              stroke:var(--fp-house-line, currentColor); stroke-opacity:.7;
              stroke-width:1px; vector-effect:non-scaling-stroke; }

@@ -1864,6 +1864,35 @@ test("a balcony gets a railing to see over, not a wall to hide behind", () => {
                "the balcony contributed no masonry of its own");
 });
 
+test("a staircase is drawn as steps, by whatever the user called it", () => {
+  const stair = (id, name, icon = "") => ({
+    id, name, icon, floor_id: "eg",
+    position: at(0.5, 0.5), size: { width: 0.1, height: 0.4 },
+  });
+  const treads = (area) =>
+    ((panel(model({ areas: [area] }), { floor: null })._stackHtml()
+      .match(/class="tread"/g)) || []).length;
+
+  // Acht Striche fuer neun Stufen: die Kanten sind die Wandenden.
+  assert.equal(treads(stair("t", "Treppe")), 8, "German, plainly");
+  assert.equal(treads(stair("t", "Treppenhaus")), 8, "and as a compound");
+  assert.equal(treads(stair("t", "Stairs")), 8, "English too");
+  assert.equal(treads(stair("t", "Diele", "mdi:stairs")), 8,
+               "or said with the icon rather than the name");
+  assert.equal(treads(stair("t", "Wohnzimmer")), 0, "a living room is not one");
+});
+
+test("a garden called Treppe still gets no steps", () => {
+  // Aussen und Virtuell haben keine Stufen -- eine Gartentreppe ist
+  // Gelaende, kein Bauteil, und die Wolke schon gar nicht.
+  const outside = {
+    id: "gt", name: "Treppe", floor_id: "eg", kind: "outdoor",
+    position: at(1.15, 0.5), size: { width: 0.1, height: 0.4 },
+  };
+  const html = panel(model({ areas: [outside] }), { floor: null })._stackHtml();
+  assert.doesNotMatch(html, /class="tread"/, "no steps outdoors");
+});
+
 test("the lawn is not a balcony: no railing around the garden", () => {
   // Erdgeschoss-Aussenflaeche ist Grundstueck, kein Anbau. Ein Gelaender
   // um den Rasen sagt das Gegenteil von dem, was ein Garten ist.
