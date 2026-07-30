@@ -3414,3 +3414,105 @@ test("the current kind is marked, not just tinted", () => {
   assert.equal((html.match(/menu-tick/g) || []).length, 1,
                "exactly one entry is the current one");
 });
+
+// ── Einrasten an der Flucht des Hauses ─────────────────────
+
+/** Zwei Etagen, die untere mit einer bekannten Aussenkante. */
+const withGhost = ({ ghosts = true } = {}) => {
+  const view = panel(
+    model({
+      floors: [
+        { id: "eg", name: "Erdgeschoss", level: 0, icon: "",
+          outline: { x: 0.1, y: 0.2, width: 0.6, height: 0.5 } },
+        { id: "og", name: "Obergeschoss", level: 1, icon: "" },
+      ],
+      areas: [
+        { id: "schlafen", name: "Schlafen", floor_id: "og",
+          position: at(0.5, 0.5), size: { width: 0.3, height: 0.3 } },
+      ],
+    }),
+    { edit: true, floor: "og" },
+  );
+  view._ghosts = ghosts;
+  return view;
+};
+
+test("a wall can land on the outline of the floor below, not just on a neighbour", () => {
+  const view = withGhost();
+  const lines = view._wallLines("schlafen");
+  assert.ok(lines.x.includes(0.1) && lines.x.includes(0.7),
+            "the left and right of the floor below are places to land");
+  assert.ok(lines.y.includes(0.2) && lines.y.includes(0.7));
+});
+
+test("a line nobody can see does not pull", () => {
+  // Derselbe Knopf, der die Konturen einblendet, macht sie anziehend.
+  // Sonst ruckelt der Raum an etwas, das gar nicht da ist.
+  const view = withGhost({ ghosts: false });
+  assert.deepEqual(view._wallLines("schlafen"), { x: [], y: [] });
+});
+
+test("the storey being edited does not pull on itself", () => {
+  const view = withGhost();
+  // Das Obergeschoss hat keine eigene Kontur in diesem Modell -- aber
+  // haette es eine, waere sie aus den Raeumen abgeleitet, die man gerade
+  // zieht. Ein Raum, der sich an seiner eigenen Aussenkante festhaelt,
+  // kommt nicht mehr los.
+  view._model.floors[1].outline = { x: 0.35, y: 0.35, width: 0.3, height: 0.3 };
+  const lines = view._wallLines("schlafen");
+  assert.ok(!lines.x.includes(0.35), "the current floor is not its own magnet");
+});
+
+test("a room pulled against the house line says which storey it met", () => {
+  const view = withGhost();
+  // Genau auf der linken Aussenkante des Erdgeschosses.
+  assert.deepEqual(
+    view._flushFloors({ left: 0.1, right: 0.4, top: 0.4, bottom: 0.44 }),
+    ["eg"],
+  );
+  // Daneben ist daneben: fast eingerastet ist nicht eingerastet.
+  assert.deepEqual(
+    view._flushFloors({ left: 0.13, right: 0.4, top: 0.4, bottom: 0.44 }),
+    [],
+  );
+});
+
+test("nothing lights up while the contours are switched off", () => {
+  const view = withGhost({ ghosts: false });
+  assert.deepEqual(
+    view._flushFloors({ left: 0.1, right: 0.4, top: 0.4, bottom: 0.44 }),
+    [],
+  );
+});
+
+test("letting go puts the highlight away", () => {
+  const view = withGhost();
+  const marks = [];
+  view._root = {
+    querySelectorAll: () => [
+      { getAttribute: () => "eg",
+        classList: { toggle: (_name, on) => marks.push(on) } },
+    ],
+  };
+  view._showFlush({ left: 0.1, right: 0.4, top: 0.4, bottom: 0.44 });
+  view._onPointerUp();
+  assert.deepEqual(marks, [true, false]);
+});
+
+test("dragged roughly at the house line, the room lands exactly on it", () => {
+  const drag = (shift) => {
+    const view = withGhost();
+    const target = element({ "data-area": "schlafen" });
+    view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
+    // Der Raum ist 0.3 breit; seine linke Wand landet knapp neben der
+    // Aussenkante des Erdgeschosses bei 0.1.
+    view._onPointerMove(pointer(268, 500, { shift }));
+    view._onPointerUp();
+    const written = view._written[view._written.length - 1][2];
+    return written.position.x - 0.3 / 2;
+  };
+  assert.equal(Number(drag(false).toFixed(4)), 0.1,
+               "the left wall sits on the outline below");
+  assert.notEqual(Number(drag(true).toFixed(4)), 0.1,
+                  "Shift still turns every magnet off");
+});

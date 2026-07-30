@@ -33,7 +33,7 @@ hierher — egal wie gut es sich baut.
 | 12 | Zero-Config als Endzustand | ✅ |
 | 13 | Feedback aus der ersten Version | ✅ |
 | 14 | Spezifikation 1.0 | ✅ |
-| 15 | Gebäudeflucht: Außenwände über alle Etagen | 🟡 |
+| 15 | Gebäudeflucht: Außenwände über alle Etagen | ✅ |
 | 16 | Licht, das den Raum beleuchtet | ⬜ |
 | 17 | Ein Editor, den ein Kind bedient | ⬜ |
 | 18 | Klima im Raum | ⬜ |
@@ -103,7 +103,9 @@ Diese hier ist geschlossen:
       stattdessen im Menü steht, ist „Ausblenden": derselbe Wunsch, ohne
       fremde Daten anzufassen. Wer einen Raum wirklich anlegen oder
       wegnehmen will, tut das dort, wo Räume herkommen.
-- [ ] Einrasten an der Kontur der anderen Etagen (der Rest von Phase 15)
+- [x] Einrasten an der Kontur der anderen Etagen (der Rest von Phase 15) —
+      nur an Konturen, die auch eingeblendet sind, und die getroffene
+      Etage sagt es selbst
 - [x] Langer Druck auf dem Touchscreen mit demselben Verhalten wie mit der
       Maus — ein halbe Sekunde, zehn Pixel Spielraum, und ein Zug, der
       noch nicht losgelaufen ist, wird dabei zurückgenommen
@@ -491,7 +493,7 @@ Ab hier ist nichts gebaut. Die vier Phasen stehen so in
 [`docs/Vision.md`](docs/Vision.md) und sind die Antwort darauf, warum der
 Hub heute einen Grundriss zeigt und noch keine Wohnung.
 
-## 🟡 Phase 15 — Gebäudeflucht
+## ✅ Phase 15 — Gebäudeflucht
 
 Jede Etage soll ihre **Außenwände** kennen, und der Editor soll sie über
 alle Etagen hinweg einblenden — als blasse Kontur der jeweils anderen
@@ -512,9 +514,11 @@ Garten zählt nicht mit, sonst bestimmte die Terrasse die Flucht. Eine
 gespeicherte Angabe schlägt die Ableitung. Im Bearbeiten-Modus liegen die
 Konturen der anderen Etagen als blasse Linien hinter der aktuellen,
 abschaltbar, und der Knopf erscheint nur, wenn es überhaupt etwas zu
-vergleichen gibt.
-
-**Fehlt noch:** das Einrasten an der fremden Kontur.
+vergleichen gibt. Und eine gezogene Wand rastet an dieser Kontur ein,
+nicht nur am Raster — aber nur, solange die Kontur auch eingeblendet ist:
+Ein Magnet an einer Linie, die niemand sieht, ist kein Einrasten, sondern
+ein Ruckeln ohne Grund. Die getroffene Etage hebt sich hervor, weil
+eingerastet und knapp daneben sonst gleich aussehen.
 
 ## ⬜ Phase 16 — Licht
 

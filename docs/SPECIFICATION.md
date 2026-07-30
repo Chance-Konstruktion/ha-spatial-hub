@@ -176,6 +176,13 @@ Ein Renderer DARF Etagen **nicht** zur Deckungsgleichheit zwingen. Eine
 Terrasse, ein Erker, ein zurückgesetztes Dachgeschoss sind der Normalfall,
 kein Fehler; die Kontur ist eine Auskunft, keine Vorschrift.
 
+Ein Editor DARF an dieser Kontur einrasten lassen. Wenn er das tut, SOLLTE
+er es nur an Konturen tun, die gerade **zu sehen** sind: Ein Magnet an
+einer Linie, die niemand sieht, ist kein Einrasten, sondern ein Ruckeln
+ohne erkennbaren Grund. Und er SOLLTE zeigen, *dass* eingerastet wurde —
+eingerastet und knapp daneben sehen sonst gleich aus, bei einer blassen
+Linie erst recht.
+
 ### Bearbeiten ist zweierlei
 
 Ein Renderer, der beides anbietet — Wände ziehen und Geräte einsortieren —

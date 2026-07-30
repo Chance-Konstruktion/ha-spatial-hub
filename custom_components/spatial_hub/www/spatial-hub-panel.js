@@ -2794,7 +2794,7 @@ class SpatialHubPanel extends HTMLElement {
       .map((floor) => {
         const box = floor.outline;
         return `
-        <div class="ghost" style="
+        <div class="ghost" data-ghost="${escapeHtml(floor.id)}" style="
               left:${((box.x - frame.min) / frame.span) * 100}%;
               top:${((box.y - minY(frame)) / spanY(frame)) * 100}%;
               width:${(box.width / frame.span) * 100}%;
@@ -4187,7 +4187,59 @@ class SpatialHubPanel extends HTMLElement {
       lines.x.push(box.left, box.right);
       lines.y.push(box.top, box.bottom);
     }
+    // Und die Aussenkanten der anderen Etagen, damit eine Wand nicht nur
+    // an ihre Nachbarn andocken kann, sondern auch an die Flucht des
+    // Hauses. Das ist der Sinn der Konturen: sehen, wo die Wand darunter
+    // verlaeuft -- und dann nicht danebentreffen.
+    //
+    // Nur wenn sie auch zu sehen sind. Ein Magnet an einer Linie, die
+    // niemand sieht, ist kein Einrasten, sondern ein Ruckeln ohne Grund;
+    // derselbe Knopf, der die Konturen einblendet, macht sie anziehend.
+    if (this._ghosts) {
+      for (const floor of this._ghostFloors()) {
+        const box = floor.outline;
+        lines.x.push(box.x, box.x + box.width);
+        lines.y.push(box.y, box.y + box.height);
+      }
+    }
     return lines;
+  }
+
+  /** Welche fremden Konturen dieser Kasten gerade genau trifft.
+   *
+   *  Fuer die Rueckmeldung beim Ziehen: eingerastet und *fast* eingerastet
+   *  sehen auf dem Schirm gleich aus, und bei einer blassen gestrichelten
+   *  Linie sieht man den Unterschied erst recht nicht. Eine Etage, deren
+   *  Flucht getroffen ist, sagt es also selbst.
+   */
+  _flushFloors(rect) {
+    if (!this._ghosts) return [];
+    const same = (a, b) => Math.abs(a - b) <= JOIN_GAP;
+    return this._ghostFloors()
+      .filter((floor) => {
+        const box = floor.outline;
+        return (
+          same(rect.left, box.x) || same(rect.right, box.x + box.width) ||
+          same(rect.top, box.y) || same(rect.bottom, box.y + box.height)
+        );
+      })
+      .map((floor) => floor.id);
+  }
+
+  /** Die getroffenen Konturen hervorheben, ohne neu zu zeichnen.
+   *
+   *  Direkt am Element, wie der gezogene Raum selbst: ein Neuzeichnen
+   *  mitten im Ziehen nimmt der Hand weg, was sie gerade haelt.
+   */
+  _showFlush(rect) {
+    if (!this._root || !this._root.querySelectorAll) return;
+    const flush = new Set(this._flushFloors(rect));
+    for (const element of this._root.querySelectorAll("[data-ghost]")) {
+      element.classList.toggle(
+        "flush",
+        flush.has(element.getAttribute("data-ghost")),
+      );
+    }
   }
 
   /** Pull a wall onto a neighbour's wall when one is within reach.
@@ -4533,6 +4585,7 @@ class SpatialHubPanel extends HTMLElement {
       drag.element.style.top = `${inFrameY(drag.value.position.y, frame)}%`;
       drag.element.style.width = `${(drag.value.size.width / frame.span) * 100}%`;
       drag.element.style.height = `${(drag.value.size.height / spanY(frame)) * 100}%`;
+      this._showFlush(rect);
       return;
     }
 
@@ -4557,6 +4610,12 @@ class SpatialHubPanel extends HTMLElement {
         [drag.value.y - size.height / 2, drag.value.y + size.height / 2],
         "y", event, drag.lines,
       );
+      this._showFlush({
+        left: drag.value.x - size.width / 2,
+        right: drag.value.x + size.width / 2,
+        top: drag.value.y - size.height / 2,
+        bottom: drag.value.y + size.height / 2,
+      });
     }
     drag.element.style.left = `${inFrame(drag.value.x, frame)}%`;
     drag.element.style.top = `${inFrameY(drag.value.y, frame)}%`;
@@ -4592,6 +4651,9 @@ class SpatialHubPanel extends HTMLElement {
   _onPointerUp() {
     const drag = this._drag;
     this._drag = null;
+    // Die Hervorhebung gehoert zum Ziehen, nicht zum Ergebnis: was
+    // stehenbleibt, waere eine Etage, die dauerhaft leuchtet.
+    this._showFlush({ left: NaN, right: NaN, top: NaN, bottom: NaN });
     // A room that was pressed and not moved was asked a question: what is
     // this attached to. Pressing it again puts the marks away, so the
     // same gesture is both halves of it.
@@ -5832,6 +5894,13 @@ main { flex:0 0 auto; min-width:0; }
 .ghost { position:absolute; pointer-events:none; border-radius:4px;
          border:2px dashed var(--fp-ghost, rgba(128,128,128,.55));
          background:transparent; }
+/* Getroffen: aus der Linie, an der man sich orientiert, wird kurz die
+   Linie, auf der man steht. Durchgezogen statt gestrichelt, weil ein
+   eingerasteter Zustand kein Vorschlag mehr ist. */
+.ghost.flush { border-style:solid;
+               border-color:var(--primary-color,#03a9f4);
+               box-shadow:0 0 0 3px rgba(3,169,244,.14); }
+.ghost.flush .ghost-name { color:var(--primary-color,#03a9f4); }
 .ghost-name { position:absolute; top:-9px; left:8px; padding:0 4px;
               font-size:10px; letter-spacing:.04em; text-transform:uppercase;
               color:var(--secondary-text-color,#727272);
