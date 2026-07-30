@@ -1864,6 +1864,87 @@ test("a balcony gets a railing to see over, not a wall to hide behind", () => {
                "the balcony contributed no masonry of its own");
 });
 
+const walled = (area) =>
+  ((panel(model({ areas: [area] }), { floor: null })._stackHtml()
+    .match(/class="room-wall"/g)) || []).length;
+
+const roomWith = (doors) => ({
+  id: "r", name: "Raum", floor_id: "eg",
+  position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 }, doors,
+});
+
+test("a door is a gap in a wall, not a wall with a door drawn on it", () => {
+  // Vier Wandflaechen ohne Tuer. Eine Tuer mitten in einer Wand laesst
+  // links und rechts je ein Stueck stehen -- also fuenf.
+  assert.equal(walled(roomWith(undefined)), 4, "no doors, four walls");
+  assert.equal(walled(roomWith([{ side: 0, at: 0.5, width: 0.2 }])), 5,
+               "a door in the middle leaves a wall either side");
+});
+
+test("a door at the very end of a wall leaves only one stretch", () => {
+  // Am Anfang der Kante gibt es kein Stueck davor, das stehen bleiben
+  // koennte -- sonst stuende dort eine Wand der Laenge null.
+  assert.equal(walled(roomWith([{ side: 0, at: 0, width: 0.2 }])), 4,
+               "flush with the corner, so nothing before it");
+  assert.equal(walled(roomWith([{ side: 0, at: 1, width: 0.2 }])), 4,
+               "and the same at the other corner");
+});
+
+test("two doors that touch are one opening, not two", () => {
+  // Ueberlappende Oeffnungen duerfen kein Wandstueck negativer Laenge
+  // zwischen sich erzeugen.
+  assert.equal(
+    walled(roomWith([
+      { side: 0, at: 0.4, width: 0.2 },
+      { side: 0, at: 0.5, width: 0.2 },
+    ])),
+    5,
+    "one merged gap, so one wall either side",
+  );
+  // Und in verkehrter Reihenfolge dasselbe: gespeichert wird in der
+  // Reihenfolge, in der jemand sie angelegt hat, und das ist keine.
+  assert.equal(
+    walled(roomWith([
+      { id: "b", side: 0, at: 0.5, width: 0.2 },
+      { id: "a", side: 0, at: 0.4, width: 0.2 },
+    ])),
+    5,
+    "the order they were stored in must not matter",
+  );
+});
+
+test("a door on a wall that does not exist is left out, not guessed", () => {
+  for (const door of [
+    { side: 9, at: 0.5, width: 0.2 },
+    { side: -1, at: 0.5, width: 0.2 },
+    { side: 1.5, at: 0.5, width: 0.2 },
+    { side: 0, at: 0.5, width: 0 },
+    { side: 0, at: "irgendwo", width: 0.2 },
+  ]) {
+    assert.equal(walled(roomWith([door])), 4,
+                 `nonsense is dropped: ${JSON.stringify(door)}`);
+  }
+});
+
+test("a doorway goes through the masonry, not just its outside face", () => {
+  // Wand und Mauerkrone muessen dieselbe Luecke haben. Nur die Aussenseite
+  // zu unterbrechen liesse eine Tuer entstehen, ueber der die Krone
+  // durchlaeuft -- das waere ein Fenster, und zwar ein zugemauertes.
+  const html = panel(model({ areas: [roomWith([{ side: 0, at: 0.5, width: 0.2 }])] }),
+                     { floor: null })._stackHtml();
+  assert.equal((html.match(/class="room-wall"/g) || []).length, 5, "wall split");
+  assert.equal((html.match(/class="room-cap"/g) || []).length, 5, "crown split too");
+});
+
+test("the outer shell of the house is unaffected by a room's doors", () => {
+  // wallsOf zeichnet auch die Aussenwaende. Die kennen keine Tueren und
+  // duerfen von dieser Aenderung nichts merken.
+  const html = panel(model({ areas: [roomWith([{ side: 0, at: 0.5, width: 0.2 }])] }),
+                     { floor: null })._stackHtml();
+  assert.equal((html.match(/class="shell-face"/g) || []).length, 8,
+               "four faces on each of the two storeys, as before");
+});
+
 test("a staircase is drawn as steps, by whatever the user called it", () => {
   const stair = (id, name, icon = "") => ({
     id, name, icon, floor_id: "eg",

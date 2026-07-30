@@ -53,8 +53,11 @@ _FLOOR_KEYS = {"background", "aspect", "name", "order", "in_sandwich",
 # flags are where it may be drawn. Both are the user's to decide.
 # `shape` is the room's own outline inside its box, in box-local
 # coordinates, so a niche or a wall offset survives moving and resizing.
+# `doors` are the openings in this room's walls, box-local like `shape`:
+# which edge, where along it, and how wide as a fraction of that edge. A
+# door drawn in metres would move the moment the room is resized.
 _AREA_KEYS = {"position", "size", "color", "hidden", "kind", "in_sandwich",
-              "single_only", "shape", "unjoined"}
+              "single_only", "shape", "unjoined", "doors"}
 # View-wide settings rather than one item's arrangement. One key, "view".
 _SETTINGS_KEYS = {"theme", "custom_layers"}
 

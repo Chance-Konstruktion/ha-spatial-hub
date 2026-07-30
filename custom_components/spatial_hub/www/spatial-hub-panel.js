@@ -100,15 +100,64 @@ const insetOf = (corners, amount) => {
  *  shorter, but a ring cannot leave a wall out -- and leaving a wall out
  *  is the whole of sharing one with the room next door.
  */
-const capsOf = (corners, thickness, className, keep = () => true) => {
+const along = (from, to, at) => ({
+  x: from.x + (to.x - from.x) * at,
+  y: from.y + (to.y - from.y) * at,
+});
+
+/** What is left of one wall once the doorways are taken out of it.
+ *
+ *  A list of `[from, to]` stretches along the edge, 0 at one corner and 1
+ *  at the other. No doors means one stretch covering the whole wall, which
+ *  is why everything that does not know about doors keeps working.
+ *
+ *  Overlapping doors are merged rather than drawn twice: two openings that
+ *  touch are one opening, and a wall segment of negative length is not a
+ *  thing a renderer should have to think about. Doors are sorted here and
+ *  not trusted to arrive in order -- they are stored in the order the user
+ *  added them, which is no order at all.
+ */
+const wallRuns = (doors, side) => {
+  const holes = (Array.isArray(doors) ? doors : [])
+    .filter((door) => door && Number(door.side) === side)
+    .map((door) => {
+      const width = Math.min(Math.max(Number(door.width) || 0, 0), 1);
+      const at = Math.min(Math.max(Number(door.at), 0), 1);
+      return [at - width / 2, at + width / 2];
+    })
+    .filter(([from, to]) => to > from)
+    .sort((a, b) => a[0] - b[0]);
+
+  const runs = [];
+  let cursor = 0;
+  for (const [from, to] of holes) {
+    if (from > cursor) runs.push([cursor, Math.min(from, 1)]);
+    cursor = Math.max(cursor, to);
+  }
+  if (cursor < 1) runs.push([cursor, 1]);
+  // Ein Rest von einem Tausendstel Wand ist keine Wand, sondern ein
+  // Strich, der auf dem Bildschirm als Schmutz ankommt.
+  return runs.filter(([from, to]) => to - from > 0.001);
+};
+
+const capsOf = (corners, thickness, className, keep = () => true,
+                doors = null) => {
   const inner = insetOf(corners, thickness);
   return corners
     .map((corner, index) => {
       if (!keep(index)) return "";
       const next = (index + 1) % corners.length;
-      return `<polygon class="${className}" points="${corner.x},${corner.y} ` +
-        `${corners[next].x},${corners[next].y} ` +
-        `${inner[next].x},${inner[next].y} ${inner[index].x},${inner[index].y}"/>`;
+      return wallRuns(doors, index)
+        .map(([from, to]) => {
+          const outerA = along(corner, corners[next], from);
+          const outerB = along(corner, corners[next], to);
+          const innerA = along(inner[index], inner[next], from);
+          const innerB = along(inner[index], inner[next], to);
+          return `<polygon class="${className}" points="${outerA.x},${outerA.y} ` +
+            `${outerB.x},${outerB.y} ` +
+            `${innerB.x},${innerB.y} ${innerA.x},${innerA.y}"/>`;
+        })
+        .join("");
     })
     .join("");
 };
@@ -120,14 +169,20 @@ const capsOf = (corners, thickness, className, keep = () => true) => {
  *  projection shears x and y together, so a wall is a parallelogram and
  *  needs no trigonometry beyond "the same points, higher up".
  */
-const wallsOf = (corners, rise, className, keep = () => true) =>
+const wallsOf = (corners, rise, className, keep = () => true, doors = null) =>
   corners
     .map((corner, index) => {
       if (!keep(index)) return "";
       const next = corners[(index + 1) % corners.length];
-      return `<polygon class="${className}" points="${corner.x},${corner.y} ` +
-        `${next.x},${next.y} ${next.x},${next.y - rise} ` +
-        `${corner.x},${corner.y - rise}"/>`;
+      return wallRuns(doors, index)
+        .map(([from, to]) => {
+          const start = along(corner, next, from);
+          const end = along(corner, next, to);
+          return `<polygon class="${className}" points="${start.x},${start.y} ` +
+            `${end.x},${end.y} ${end.x},${end.y - rise} ` +
+            `${start.x},${start.y - rise}"/>`;
+        })
+        .join("");
     })
     .join("");
 
@@ -483,6 +538,26 @@ const fold = (value) =>
     .replace(/ü/g, "u")
     .replace(/ß/g, "ss")
     .replace(/[^a-z0-9]+/g, " ");
+
+/** Die Tueren eines Raumes, so wie sie gezeichnet werden duerfen.
+ *
+ *  Kastenlokal wie `shape`: `side` ist die Kante, `at` die Mitte der
+ *  Oeffnung darauf (0..1) und `width` ihre Breite als Anteil der Kante.
+ *  Damit ueberlebt eine Tuer Verschieben und Groessenaendern, ohne dass
+ *  irgendwo eine Laenge in Metern steht.
+ *
+ *  Was hier nicht durchkommt, wird weggelassen statt geraten: eine Tuer
+ *  auf einer Kante, die es nicht gibt, ist ein Fehler des Schreibers, und
+ *  eine halb erfundene Oeffnung waere schlimmer als gar keine.
+ */
+const doorsOf = (area, sides = 4) =>
+  (Array.isArray(area && area.doors) ? area.doors : []).filter((door) => {
+    const side = Number(door && door.side);
+    return (
+      Number.isInteger(side) && side >= 0 && side < sides &&
+      Number.isFinite(Number(door.at)) && Number(door.width) > 0
+    );
+  });
 
 const STAIR_WORDS = ["treppe", "stiege", "stairs", "stairway", "staircase"];
 
@@ -2024,12 +2099,17 @@ class SpatialHubPanel extends HTMLElement {
     const deck = outdoor && !(floor && floor.ground);
     let shape = `<polygon class="room ${deck ? "deck" : ""}" points="${points}"/>`;
     if (kindOf(area) === AREA_KIND.INDOOR) {
-      shape += wallsOf(corners, STACK.rise, "room-wall", keep) +
+      // Tueren sind Luecken, keine eigenen Formen: die Wand hoert davor
+      // auf und faengt dahinter wieder an. Deshalb wissen Wand und
+      // Mauerkrone davon, und sonst nichts im Bild.
+      const doors = doorsOf(area, corners.length);
+      shape += wallsOf(corners, STACK.rise, "room-wall", keep, doors) +
         capsOf(
           corners.map((corner) => ({ x: corner.x, y: corner.y - STACK.rise })),
           STACK.wall,
           "room-cap",
           keep,
+          doors,
         );
     }
     // Stufen. In der Referenzzeichnung ist die Treppe das, was einen
