@@ -1945,6 +1945,78 @@ test("the outer shell of the house is unaffected by a room's doors", () => {
                "four faces on each of the two storeys, as before");
 });
 
+/** Der Raumdialog, offen, mit einem Raum darin. */
+const withDialog = (doors) => {
+  const area = { id: "r", name: "Raum", floor_id: "eg",
+                 position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 },
+                 doors };
+  const view = panel(model({ areas: [area] }));
+  view._areaDialog = "r";
+  return view;
+};
+
+/** Was `_setDoors` zuletzt schreiben wollte. */
+const written = (view) => {
+  const last = view._written[view._written.length - 1];
+  return last && last[2].doors;
+};
+
+test("the dialog offers a door per wall, and only for rooms", () => {
+  assert.match(withDialog()._areaDialogHtml(), /data-door-add="0"/);
+  assert.match(withDialog()._areaDialogHtml(), /data-door-add="3"/);
+  assert.doesNotMatch(withDialog()._areaDialogHtml(), /data-door-add="4"/,
+                      "a rectangle has four walls, not five");
+
+  // Ein Garten hat keine Waende, in die eine Luecke passen koennte.
+  const garden = { id: "g", name: "Garten", floor_id: "eg", kind: "outdoor",
+                   position: at(1.2, 0.5), size: { width: 0.2, height: 0.4 } };
+  const view = panel(model({ areas: [garden] }));
+  view._areaDialog = "g";
+  assert.doesNotMatch(view._areaDialogHtml(), /data-door-add/,
+                      "no doors in a garden");
+});
+
+test("adding a door puts it in the middle of the wall you picked", () => {
+  const view = withDialog();
+  view._onClick({ composedPath: () => [element({ "data-door-add": "2" })] });
+  assert.deepEqual(written(view), [{ side: 2, at: 0.5, width: 0.2 }]);
+});
+
+test("a second door is added, not swapped for the first", () => {
+  const view = withDialog([{ side: 0, at: 0.3, width: 0.2 }]);
+  view._onClick({ composedPath: () => [element({ "data-door-add": "1" })] });
+  assert.deepEqual(written(view), [
+    { side: 0, at: 0.3, width: 0.2 },
+    { side: 1, at: 0.5, width: 0.2 },
+  ]);
+});
+
+test("removing a door takes out the one that was clicked", () => {
+  const view = withDialog([
+    { side: 0, at: 0.3, width: 0.2 },
+    { side: 1, at: 0.4, width: 0.2 },
+    { side: 2, at: 0.5, width: 0.2 },
+  ]);
+  view._onClick({ composedPath: () => [element({ "data-door-remove": "1" })] });
+  assert.deepEqual(written(view), [
+    { side: 0, at: 0.3, width: 0.2 },
+    { side: 2, at: 0.5, width: 0.2 },
+  ]);
+});
+
+test("a slider writes when it is let go, not on every pixel", () => {
+  const drag = (committed) => {
+    const view = withDialog([{ side: 0, at: 0.3, width: 0.2 }]);
+    const input = element({ "data-door-field": "at", "data-door": "0" });
+    input.value = "0.75";
+    view._onInput({ composedPath: () => [input], target: input }, committed);
+    return view;
+  };
+  assert.equal(drag(false)._written.length, 0, "still dragging, nothing saved");
+  assert.deepEqual(written(drag(true)), [{ side: 0, at: 0.75, width: 0.2 }],
+                   "let go, and the new position is stored");
+});
+
 test("a staircase is drawn as steps, by whatever the user called it", () => {
   const stair = (id, name, icon = "") => ({
     id, name, icon, floor_id: "eg",

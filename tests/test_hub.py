@@ -965,3 +965,24 @@ async def test_the_plot_is_the_users_and_nothing_derives_one(hass, hub):
 
     ground = next(floor for floor in model["floors"] if floor["id"] == "eg")
     assert ground["plot"] == boundary
+
+
+@pytest.mark.asyncio
+async def test_doors_are_carried_but_never_read(hass, hub):
+    """The hub stores and serves doors. What they mean is the renderer's --
+    the same role it already has for a room's own outline."""
+    doors = [{"side": 1, "at": 0.4, "width": 0.25}]
+    hub.store.update("areas", "wohnzimmer", {"doors": doors})
+    model = await hub.async_model()
+
+    room = next(area for area in model["areas"] if area["id"] == "wohnzimmer")
+    assert room["doors"] == doors
+
+
+@pytest.mark.asyncio
+async def test_a_room_says_nothing_about_doors_by_default(hass, hub):
+    """No doors is not "a room with no way in"; it is nothing said yet."""
+    model = await hub.async_model()
+    room = next(area for area in model["areas"] if area["id"] == "wohnzimmer")
+
+    assert "doors" not in room

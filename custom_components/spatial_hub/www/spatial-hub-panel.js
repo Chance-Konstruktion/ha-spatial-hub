@@ -559,6 +559,16 @@ const doorsOf = (area, sides = 4) =>
     );
   });
 
+/** Wie die vier Kanten eines Raumes heissen, aus Sicht des Betrachters.
+ *
+ *  Die Reihenfolge ist die von RECTANGLE, und "vorne" ist die Kante, die
+ *  in der Hausansicht zum Betrachter zeigt -- dieselbe, die FRONT_WALL
+ *  meint. Ein Raum mit eigener Form hat mehr Kanten als Namen; die
+ *  bekommen eine Nummer, denn "hinten links aussen" waere geraten.
+ */
+const SIDE_NAMES = ["hinten", "rechts", "vorne", "links"];
+const sideName = (side) => SIDE_NAMES[side] || `Kante ${side + 1}`;
+
 const STAIR_WORDS = ["treppe", "stiege", "stairs", "stairway", "staircase"];
 
 /** Ist dieser Raum eine Treppe?
@@ -3188,7 +3198,76 @@ class SpatialHubPanel extends HTMLElement {
                  ${area.single_only ? "checked" : ""}>
           Nur in der Einzelansicht
         </label>
+        ${this._doorsHtml(area)}
       </div>`;
+  }
+
+  /** Die Tueren eines Raumes, zum Anlegen und Wegnehmen.
+   *
+   *  Nur fuer Raeume: ein Garten hat keine Waende, in die eine Luecke
+   *  passen koennte, und die Wolke erst recht nicht.
+   */
+  _doorsHtml(area) {
+    if (kindOf(area) !== AREA_KIND.INDOOR) return "";
+    const sides = shapeOf(area).length;
+    const doors = doorsOf(area, sides);
+    const rows = doors
+      .map(
+        (door, index) => `
+        <div class="door">
+          <span class="door-side">${escapeHtml(sideName(Number(door.side)))}</span>
+          <label class="door-slide">
+            <span class="muted">Mitte</span>
+            <input type="range" min="0" max="1" step="0.01"
+                   value="${Number(door.at)}"
+                   data-door="${index}" data-door-field="at">
+          </label>
+          <label class="door-slide">
+            <span class="muted">Breite</span>
+            <input type="range" min="0.05" max="0.9" step="0.01"
+                   value="${Number(door.width)}"
+                   data-door="${index}" data-door-field="width">
+          </label>
+          <button class="icon-btn" data-door-remove="${index}"
+                  title="Tür entfernen">
+            <ha-icon icon="mdi:close"></ha-icon>
+          </button>
+        </div>`,
+      )
+      .join("");
+    const add = Array.from({ length: sides }, (_unused, side) => side)
+      .map(
+        (side) => `<button class="chip" data-door-add="${side}">
+          + ${escapeHtml(sideName(side))}
+        </button>`,
+      )
+      .join("");
+    return `
+      <h3>Türen</h3>
+      <p class="note">Eine Tür ist eine Lücke in der Wand — sie hört davor
+      auf und fängt dahinter wieder an. Angaben als Anteil der Wand, damit
+      die Tür bleibt, wo sie ist, wenn der Raum größer wird.</p>
+      ${rows ? `<div class="doors">${rows}</div>`
+             : '<p class="note">Noch keine Tür.</p>'}
+      <div class="chips">${add}</div>`;
+  }
+
+  /** Die Tuerliste dieses Raumes, geaendert und zurueckgeschrieben.
+   *
+   *  Immer die ganze Liste: eine Tuer hat keine eigene Kennung, ihre
+   *  Stelle in der Liste *ist* ihre Kennung. Einzelne Felder zu schicken
+   *  hiesse, dem Server zu erklaeren, wie man eine Liste sortiert.
+   */
+  _setDoors(area, change) {
+    const doors = doorsOf(area, shapeOf(area).length)
+      .map((door) => ({
+        side: Number(door.side),
+        at: Number(door.at),
+        width: Number(door.width),
+      }));
+    const next = change(doors);
+    if (!next) return;
+    this._setLayout("areas", area.id, { doors: next }, { doors: next });
   }
 
   get _customLayers() {
@@ -4319,6 +4398,23 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
+    const doorField = attribute("data-door-field");
+    if (doorField !== null && this._areaDialog) {
+      const area = (this._model.areas || []).find(
+        (candidate) => candidate.id === this._areaDialog,
+      );
+      const index = Number(input.getAttribute("data-door"));
+      const value = Number(input.value);
+      // Erst beim Loslassen speichern: ein Schieberegler feuert bei jedem
+      // Pixel, und jeder davon waere sonst ein Schreibvorgang.
+      if (area && committed) {
+        this._setDoors(area, (doors) =>
+          doors.map((door, at) =>
+            at === index ? { ...door, [doorField]: value } : door));
+      }
+      return;
+    }
+
     const nodeScale = attribute("data-node-scale");
     if (nodeScale !== null) {
       if (committed) this._setLayout("nodes", nodeScale, { scale: Number(input.value) });
@@ -4652,6 +4748,33 @@ class SpatialHubPanel extends HTMLElement {
         { kind: areaKind.getAttribute("data-area-kind") },
         { kind: area ? kindOf(area) : AREA_KIND.INDOOR },
       );
+      return;
+    }
+
+    const doorAdd = hit("data-door-add");
+    if (doorAdd && this._areaDialog) {
+      const area = (this._model.areas || []).find(
+        (candidate) => candidate.id === this._areaDialog,
+      );
+      const side = Number(doorAdd.getAttribute("data-door-add"));
+      // In der Mitte und knapp ein Fuenftel breit: eine Tuer, die man
+      // sieht, und die man von dort aus dahin schiebt, wo sie hingehoert.
+      if (area) {
+        this._setDoors(area, (doors) => [...doors, { side, at: 0.5, width: 0.2 }]);
+      }
+      return;
+    }
+
+    const doorRemove = hit("data-door-remove");
+    if (doorRemove && this._areaDialog) {
+      const area = (this._model.areas || []).find(
+        (candidate) => candidate.id === this._areaDialog,
+      );
+      const index = Number(doorRemove.getAttribute("data-door-remove"));
+      if (area) {
+        this._setDoors(area, (doors) =>
+          doors.filter((_door, at) => at !== index));
+      }
       return;
     }
 
@@ -5331,6 +5454,11 @@ main { flex:0 0 auto; min-width:0; }
                      fill-opacity:.08; stroke:var(--fp-house-line, currentColor);
                      stroke-opacity:.55; stroke-dasharray:2 3;
                      vector-effect:non-scaling-stroke; }
+.doors { display:flex; flex-direction:column; gap:6px; margin:6px 0; }
+.door { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.door-side { min-width:5.5em; font-weight:600; }
+.door-slide { display:flex; align-items:center; gap:6px; flex:1 1 8em; }
+.door-slide input[type=range] { flex:1 1 auto; min-width:0; }
 /* Stufen: leichter als eine Wand, sonst liest sich die Treppe als Raster. */
 .tread { fill:none; stroke:var(--fp-house-line, currentColor);
          stroke-opacity:.75; stroke-width:1px;
