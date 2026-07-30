@@ -1981,8 +1981,16 @@ class SpatialHubPanel extends HTMLElement {
     // room, the outside faces of the walls standing on it, and the top of
     // the masonry as a band with two edges. The band is what makes this
     // read as a plan rather than as a grey rectangle with a line round it.
+    // Ein Balkon und ein Garten sind beide "outdoor", aber nicht dasselbe
+    // Ding: der eine haengt am Haus, der andere liegt darum herum. Das
+    // Modell kennt keinen eigenen Typ dafuer, also gilt hier dieselbe
+    // Regel wie beim Rasen weiter oben -- Erdgeschoss ist Grundstueck,
+    // alles darueber haengt am Bau. Ein Gelaender um den Rasen waere
+    // genau das, wovor der Kommentar direkt darueber warnt.
+    const floor = this._stackFloors[plane];
     const outdoor = kindOf(area) === AREA_KIND.OUTDOOR;
-    let shape = `<polygon class="room ${outdoor ? "deck" : ""}" points="${points}"/>`;
+    const deck = outdoor && !(floor && floor.ground);
+    let shape = `<polygon class="room ${deck ? "deck" : ""}" points="${points}"/>`;
     if (kindOf(area) === AREA_KIND.INDOOR) {
       shape += wallsOf(corners, STACK.rise, "room-wall", keep) +
         capsOf(
@@ -1995,7 +2003,7 @@ class SpatialHubPanel extends HTMLElement {
     // A balcony stands on the house, it does not stand inside it: a
     // railing you can see over instead of a wall you can't is the one
     // thing that says "outside" in a drawing made of nothing but lines.
-    if (outdoor) {
+    if (deck) {
       shape += wallsOf(corners, STACK.rise * 0.35, "deck-rail", keep);
     }
     if (kindOf(area) === AREA_KIND.VIRTUAL) {

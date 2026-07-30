@@ -1843,9 +1843,13 @@ test("only the ground floor gets grass, a balcony upstairs just gets a room", ()
 });
 
 test("a balcony gets a railing to see over, not a wall to hide behind", () => {
+  // Ein Zimmer muss mit im Modell stehen: ohne eines gaebe es ohnehin
+  // keine einzige room-wall und die letzte Zusicherung waere geschenkt.
   const data = model({
     areas: [
-      { id: "balkon", name: "Balkon", floor_id: "eg", kind: "outdoor",
+      { id: "wohnzimmer", name: "Wohnzimmer", floor_id: "og",
+        position: at(0.3, 0.5), size: { width: 0.4, height: 0.6 } },
+      { id: "balkon", name: "Balkon", floor_id: "og", kind: "outdoor",
         position: at(0.85, 0.5), size: { width: 0.2, height: 0.6 } },
     ],
   });
@@ -1853,8 +1857,31 @@ test("a balcony gets a railing to see over, not a wall to hide behind", () => {
 
   assert.match(html, /class="room deck"/, "the deck floor is marked as one");
   assert.match(html, /class="deck-rail"/, "a low rail stands on it");
-  assert.doesNotMatch(html, /class="room-wall"/,
-    "a balcony is not a room with walls");
+  assert.match(html, /class="room-wall"/, "the room next to it still has walls");
+  // Vier Wandflaechen, und zwar die des Wohnzimmers: haette der Balkon
+  // welche beigesteuert, stuenden hier acht.
+  assert.equal((html.match(/class="room-wall"/g) || []).length, 4,
+               "the balcony contributed no masonry of its own");
+});
+
+test("the lawn is not a balcony: no railing around the garden", () => {
+  // Erdgeschoss-Aussenflaeche ist Grundstueck, kein Anbau. Ein Gelaender
+  // um den Rasen sagt das Gegenteil von dem, was ein Garten ist.
+  const data = model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "", ground: true,
+        has_outdoor: true, outdoor_margin: 0.28 },
+    ],
+    areas: [
+      { id: "garten", name: "Garten", floor_id: "eg", kind: "outdoor",
+        position: at(1.15, 0.5), size: { width: 0.2, height: 0.6 } },
+    ],
+  });
+  const html = panel(data, { floor: null })._stackHtml();
+
+  assert.doesNotMatch(html, /class="deck-rail"/, "no railing round the lawn");
+  assert.doesNotMatch(html, /class="room deck"/, "and it is not a deck either");
+  assert.match(html, /Garten/, "the garden is still drawn");
 });
 
 test("the cloud gets no walls", () => {
