@@ -272,27 +272,41 @@ def async_areas(hass: HomeAssistant) -> list[dict[str, Any]]:
     ]
 
 
-def async_arrange_areas(areas: list[dict[str, Any]]) -> None:
+def async_arrange_areas(
+    areas: list[dict[str, Any]],
+    ground_floor_id: str | None = None,
+) -> None:
     """Give every area without a position an automatic one, in place.
 
-    Rooms get the squarest grid that fits the storey. Outdoor areas get the
-    apron *around* that grid, because that is where a garden is: a ring
-    around the ground floor, not a floor of its own. Virtual areas get the
+    Rooms get the squarest grid that fits the storey. Virtual areas get the
     sky: spread across the whole window, well past the walls, because a
     cloud sits *over and around* the house rather than in a tidy block
     above one corner of it.
+
+    Outdoor areas depend on which storey they are on, and that is the whole
+    reason `ground_floor_id` is here. On the ground floor, outdoor space is
+    the garden: an apron *around* the house, because that is where a garden
+    is. One storey up it is a balcony, and a balcony hangs on one wall --
+    it does not wrap around the flat. Laid out as an apron it came out as a
+    band of terrace running past both flanks of the house and out the far
+    side, which is not a balcony but a moat.
+
+    Without a ground floor named, everything outdoor is treated as garden,
+    which is what this function did before it could tell the difference.
     """
     by_plane: dict[tuple[str | None, str], list[dict[str, Any]]] = {}
     for area in areas:
         kind = AreaKind.parse(area.get("kind"), AreaKind.INDOOR)
         by_plane.setdefault((area.get("floor_id"), kind.value), []).append(area)
 
-    placers = {
-        AreaKind.OUTDOOR.value: _apron_cell,
-        AreaKind.VIRTUAL.value: _sky_cell,
-    }
-    for (_floor_id, kind), plane_areas in by_plane.items():
-        placer = placers.get(kind, _grid_cell)
+    for (floor_id, kind), plane_areas in by_plane.items():
+        if kind == AreaKind.VIRTUAL.value:
+            placer = _sky_cell
+        elif kind == AreaKind.OUTDOOR.value:
+            upstairs = ground_floor_id is not None and floor_id != ground_floor_id
+            placer = _balcony_cell if upstairs else _apron_cell
+        else:
+            placer = _grid_cell
         for index, area in enumerate(plane_areas):
             position, size = placer(index, len(plane_areas))
             area.setdefault("position", position.as_dict())
@@ -486,6 +500,30 @@ def _apron_cell(index: int, total: int) -> tuple[Position, dict[str, float]]:
         seen += count
 
     return Position(x=0.5, y=1 + margin / 2), {"width": 0.3, "height": margin * 0.8}
+
+
+def _balcony_cell(index: int, total: int) -> tuple[Position, dict[str, float]]:
+    """Hang an outdoor area on one wall of an upper storey.
+
+    Not the ring that a garden gets: a balcony is attached to the flat, so
+    it stays inside the house's own width and sticks out on one side only.
+    The near wall first, because a balcony that ends up behind the storey
+    is drawn but not seen; a second one goes on the far wall rather than
+    beside the first.
+    """
+    margin = OUTDOOR_MARGIN
+    near = math.ceil(total / 2) or 1
+    on_the_near_wall = index < near
+    slot = index if on_the_near_wall else index - near
+    count = near if on_the_near_wall else max(1, total - near)
+    width = 1.0 / count
+    return (
+        Position(
+            x=(slot + 0.5) * width,
+            y=1 + margin / 2 if on_the_near_wall else -margin / 2,
+        ),
+        {"width": width * 0.8, "height": margin * 0.8},
+    )
 
 
 def async_place_nodes(

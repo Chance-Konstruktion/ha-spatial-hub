@@ -3178,3 +3178,409 @@ test("fit-to-screen fills the window instead of parking the plan in a corner", (
   assert.equal(view._view.zoom, 2.7);
   assert.ok(view._view.zoom > 1, "a small plan used to stay small");
 });
+
+// ── Das Menue unter der rechten Maustaste ──────────────────
+
+/** Ein Rechtsklick auf etwas, das die Menuelogik erkennen kann. */
+const rightClick = (view, target, { x = 100, y = 100 } = {}) => {
+  let prevented = false;
+  view._render = () => {};
+  view._onContextMenu({
+    clientX: x,
+    clientY: y,
+    composedPath: () => target,
+    preventDefault: () => { prevented = true; },
+  });
+  return prevented;
+};
+
+const ids = (view) =>
+  view._menuItems().filter((item) => !item.separator).map((item) => item.id);
+
+test("the right button offers what you clicked on, not one menu for everything", () => {
+  const view = panel(model(), { edit: true });
+
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  assert.deepEqual(view._menu.kind, "area");
+  assert.ok(ids(view).includes("area-hide"));
+
+  // Ein Geraet steht *im* Raum. Wer darauf klickt, meint das Geraet.
+  rightClick(view, [
+    element({ "data-node": "a:one" }),
+    element({ "data-area": "wohnzimmer" }),
+    stage(),
+  ]);
+  assert.equal(view._menu.kind, "node");
+
+  rightClick(view, [stage()]);
+  assert.equal(view._menu.kind, "plan");
+});
+
+test("outside the plan the browser keeps its own menu", () => {
+  const view = panel(model(), { edit: true });
+  // Eine Leiste ist keine Buehne: kopieren und untersuchen bleiben dort.
+  assert.equal(rightClick(view, [element({ "data-toggle": "diagnostics" })]),
+               false, "nothing was prevented");
+  assert.equal(view._menu, null);
+});
+
+test("a right click is the way into editing, not a dead end", () => {
+  const view = panel(model(), { edit: false });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  assert.deepEqual(ids(view), ["edit-on"]);
+
+  view._onClick({ composedPath: () => [element({ "data-menu": "edit-on" })] });
+  assert.equal(view._edit, true);
+  assert.equal(view._menu, null, "the menu closes behind itself");
+});
+
+test("a guest is not offered a pencil they cannot pick up", () => {
+  const view = panel(model(), { admin: false, edit: false });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  assert.deepEqual(ids(view), [], "no menu for someone who may not edit");
+  assert.equal(view._menuHtml(), "", "and no empty bubble either");
+});
+
+test("the room menu shows which kind the room already is", () => {
+  const view = panel(model(), { edit: true });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  const on = view._menuItems().filter((item) => item.on).map((item) => item.id);
+  assert.deepEqual(on, ["kind-indoor"], "a room is a room until told otherwise");
+});
+
+test("picking a kind writes it, with the old one to fall back on", () => {
+  const view = panel(model(), { edit: true });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  view._onClick({
+    composedPath: () => [element({ "data-menu": "kind-outdoor" })],
+  });
+  const [section, key, values] = view._written[0];
+  assert.equal(section, "areas");
+  assert.equal(key, "wohnzimmer");
+  assert.deepEqual(values, { kind: "outdoor" });
+});
+
+test("rooms and devices are two modes, and the menu says so", () => {
+  const rooms = panel(model(), { edit: true, what: "rooms" });
+  rightClick(rooms, [element({ "data-node": "a:one" }), stage()]);
+  assert.deepEqual(ids(rooms), ["edit-icons"],
+                   "no device actions while walls are being dragged");
+
+  const icons = panel(model(), { edit: true, what: "icons" });
+  rightClick(icons, [element({ "data-area": "wohnzimmer" }), stage()]);
+  assert.deepEqual(ids(icons), ["edit-rooms"]);
+});
+
+test("the menu never offers to delete or duplicate a room", () => {
+  // Bereiche gehoeren dem Register von Home Assistant. Ein Loeschen hier
+  // waere ein Loeschen ueberall -- der Hub platziert, er verwaltet nicht.
+  const view = panel(model(), { edit: true });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  for (const id of ids(view)) {
+    assert.doesNotMatch(id, /delete|remove|duplicate/,
+                        `the menu offered "${id}"`);
+  }
+  assert.ok(ids(view).includes("area-hide"),
+            "the honest version of the same wish is there");
+});
+
+test("a click beside the menu closes it and does nothing else", () => {
+  const view = panel(model(), { edit: true });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  let rendered = 0;
+  view._render = () => { rendered += 1; };
+  // Daneben liegt eine Schaltfläche, die sonst sofort etwas täte.
+  view._onClick({
+    composedPath: () => [element({ "data-hide-area": "wohnzimmer" }), stage()],
+  });
+  assert.equal(view._menu, null);
+  assert.equal(view._written.length, 0,
+               "the button underneath fired through the menu");
+  assert.equal(rendered, 1);
+  assert.equal(view._areaDialog, null);
+});
+
+test("the menu stays inside the window instead of hanging out of it", () => {
+  const view = panel(model(), { edit: true });
+  const room = { innerWidth: 800, innerHeight: 600 };
+  const before = globalThis.window;
+  globalThis.window = { ...before, ...room };
+  try {
+    rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()],
+               { x: 790, y: 590 });
+    const html = view._menuHtml();
+    const left = Number(/left:(-?\d+)px/.exec(html)[1]);
+    const top = Number(/top:(-?\d+)px/.exec(html)[1]);
+    assert.ok(left + 230 <= 800, `menu ran off the right edge at ${left}`);
+    assert.ok(top < 590, `menu ran off the bottom at ${top}`);
+  } finally {
+    globalThis.window = before;
+  }
+});
+
+test("the empty plan offers what belongs to the whole storey", () => {
+  const view = panel(model(), { edit: true });
+  rightClick(view, [stage()]);
+  assert.deepEqual(ids(view), ["plot-toggle", "floor-reset"]);
+  // Ohne gezeichnetes Grundstueck heisst der Eintrag anders herum.
+  const item = view._menuItems().find((entry) => entry.id === "plot-toggle");
+  assert.match(item.label, /zeichnen/);
+});
+
+/** Ein Finger, der irgendwo aufsetzt. */
+const finger = (x, y, target = []) => ({
+  touches: [{ clientX: x, clientY: y }],
+  composedPath: () => target,
+  preventDefault() {},
+});
+
+const held = async () =>
+  new Promise((resolve) =>
+    setTimeout(resolve, SpatialHubPanel.PRESS.time + 20),
+  );
+
+test("holding a finger still opens the same menu as the right button", async () => {
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._onTouchStart(finger(120, 220, [element({ "data-area": "wohnzimmer" }),
+                                       stage()]));
+  assert.equal(view._menu, null, "not before the time is up");
+  await held();
+  assert.deepEqual(
+    { kind: view._menu.kind, id: view._menu.id, x: view._menu.x },
+    { kind: "area", id: "wohnzimmer", x: 120 },
+  );
+});
+
+test("a finger that travels is panning, not asking for a menu", async () => {
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._onTouchStart(finger(100, 100, [stage()]));
+  view._onTouchMove(finger(100, 140));
+  await held();
+  assert.equal(view._menu, null);
+
+  // Ein bisschen Wackeln darf sein: eine Hand haelt nicht auf das Pixel
+  // genau still, und ein Menue, das daran scheitert, gibt es nicht.
+  const steady = panel(model(), { edit: true });
+  steady._render = () => {};
+  steady._onTouchStart(finger(100, 100, [stage()]));
+  steady._onTouchMove(finger(103, 102));
+  await held();
+  assert.ok(steady._menu, "three pixels of hand is still holding still");
+});
+
+test("lifting the finger early is a tap, and taps do not open menus", async () => {
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._onTouchStart(finger(100, 100, [stage()]));
+  view._onTouchEnd();
+  await held();
+  assert.equal(view._menu, null);
+});
+
+test("two fingers are a pinch, and a pinch cancels the wait", async () => {
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._view = { zoom: 1, x: 0, y: 0 };
+  view._onTouchStart(finger(100, 100, [stage()]));
+  view._onTouchStart({
+    touches: [{ clientX: 100, clientY: 100 }, { clientX: 200, clientY: 100 }],
+    composedPath: () => [stage()],
+  });
+  await held();
+  assert.equal(view._menu, null, "zooming must not drop a menu on the plan");
+  assert.ok(view._pinch);
+});
+
+test("the menu takes the room back off the hook it was hanging on", async () => {
+  // Ein Finger auf einem Raum startet einen Zug. Bleibt er liegen, war
+  // kein Zug gemeint -- und beim Loslassen darf der Raum nicht springen.
+  const view = panel(model(), { edit: true });
+  view._render = () => {};
+  view._onTouchStart(finger(100, 100, [element({ "data-area": "wohnzimmer" }),
+                                       stage()]));
+  view._drag = { mode: "area", key: "wohnzimmer" };
+  await held();
+  assert.equal(view._drag, null);
+  assert.ok(view._menu);
+});
+
+test("the current kind is marked, not just tinted", () => {
+  // Farbe allein sagt einem Teil der Leute nichts. Das Häkchen schon.
+  const view = panel(model(), { edit: true });
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  const html = view._menuHtml();
+  assert.equal((html.match(/menu-tick/g) || []).length, 1,
+               "exactly one entry is the current one");
+});
+
+// ── Einrasten an der Flucht des Hauses ─────────────────────
+
+/** Zwei Etagen, die untere mit einer bekannten Aussenkante. */
+const withGhost = ({ ghosts = true } = {}) => {
+  const view = panel(
+    model({
+      floors: [
+        { id: "eg", name: "Erdgeschoss", level: 0, icon: "",
+          outline: { x: 0.1, y: 0.2, width: 0.6, height: 0.5 } },
+        { id: "og", name: "Obergeschoss", level: 1, icon: "" },
+      ],
+      areas: [
+        { id: "schlafen", name: "Schlafen", floor_id: "og",
+          position: at(0.5, 0.5), size: { width: 0.3, height: 0.3 } },
+      ],
+    }),
+    { edit: true, floor: "og" },
+  );
+  view._ghosts = ghosts;
+  return view;
+};
+
+test("a wall can land on the outline of the floor below, not just on a neighbour", () => {
+  const view = withGhost();
+  const lines = view._wallLines("schlafen");
+  assert.ok(lines.x.includes(0.1) && lines.x.includes(0.7),
+            "the left and right of the floor below are places to land");
+  assert.ok(lines.y.includes(0.2) && lines.y.includes(0.7));
+});
+
+test("a line nobody can see does not pull", () => {
+  // Derselbe Knopf, der die Konturen einblendet, macht sie anziehend.
+  // Sonst ruckelt der Raum an etwas, das gar nicht da ist.
+  const view = withGhost({ ghosts: false });
+  assert.deepEqual(view._wallLines("schlafen"), { x: [], y: [] });
+});
+
+test("the storey being edited does not pull on itself", () => {
+  const view = withGhost();
+  // Das Obergeschoss hat keine eigene Kontur in diesem Modell -- aber
+  // haette es eine, waere sie aus den Raeumen abgeleitet, die man gerade
+  // zieht. Ein Raum, der sich an seiner eigenen Aussenkante festhaelt,
+  // kommt nicht mehr los.
+  view._model.floors[1].outline = { x: 0.35, y: 0.35, width: 0.3, height: 0.3 };
+  const lines = view._wallLines("schlafen");
+  assert.ok(!lines.x.includes(0.35), "the current floor is not its own magnet");
+});
+
+test("a room pulled against the house line says which storey it met", () => {
+  const view = withGhost();
+  // Genau auf der linken Aussenkante des Erdgeschosses.
+  assert.deepEqual(
+    view._flushFloors({ left: 0.1, right: 0.4, top: 0.4, bottom: 0.44 }),
+    ["eg"],
+  );
+  // Daneben ist daneben: fast eingerastet ist nicht eingerastet.
+  assert.deepEqual(
+    view._flushFloors({ left: 0.13, right: 0.4, top: 0.4, bottom: 0.44 }),
+    [],
+  );
+});
+
+test("nothing lights up while the contours are switched off", () => {
+  const view = withGhost({ ghosts: false });
+  assert.deepEqual(
+    view._flushFloors({ left: 0.1, right: 0.4, top: 0.4, bottom: 0.44 }),
+    [],
+  );
+});
+
+test("letting go puts the highlight away", () => {
+  const view = withGhost();
+  const marks = [];
+  view._root = {
+    querySelectorAll: () => [
+      { getAttribute: () => "eg",
+        classList: { toggle: (_name, on) => marks.push(on) } },
+    ],
+  };
+  view._showFlush({ left: 0.1, right: 0.4, top: 0.4, bottom: 0.44 });
+  view._onPointerUp();
+  assert.deepEqual(marks, [true, false]);
+});
+
+test("dragged roughly at the house line, the room lands exactly on it", () => {
+  const drag = (shift) => {
+    const view = withGhost();
+    const target = element({ "data-area": "schlafen" });
+    view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
+    // Der Raum ist 0.3 breit; seine linke Wand landet knapp neben der
+    // Aussenkante des Erdgeschosses bei 0.1.
+    view._onPointerMove(pointer(268, 500, { shift }));
+    view._onPointerUp();
+    const written = view._written[view._written.length - 1][2];
+    return written.position.x - 0.3 / 2;
+  };
+  assert.equal(Number(drag(false).toFixed(4)), 0.1,
+               "the left wall sits on the outline below");
+  assert.notEqual(Number(drag(true).toFixed(4)), 0.1,
+                  "Shift still turns every magnet off");
+});
+
+test("a storey called Untergeschoss keeps its U", () => {
+  // Der Rand links war eine feste Zahl und reichte fuer "EG". Home
+  // Assistant schlaegt aber "Erdgeschoss" vor, und das wurde vorne
+  // abgeschnitten -- sichtbar nur auf einem Bild, nie in einem Test.
+  const stack = (names) =>
+    panel(
+      model({
+        floors: names.map((name, i) => ({ id: `f${i}`, name, level: i })),
+        areas: names.map((_name, i) => ({
+          id: `a${i}`, name: "Raum", floor_id: `f${i}`,
+          position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 },
+        })),
+      }),
+      { floor: null },
+    );
+
+  const short = stack(["EG", "OG"]);
+  const long = stack(["Untergeschoss", "Erdgeschoss"]);
+  // Der Name steht rechtsbuendig vor der Platte; was links davon liegt,
+  // muss ins Bild passen.
+  const room = (view) => view._project(0, 0, 1).x - 34;
+  assert.ok(room(long) > room(short),
+            "a longer name gets more room, not the same");
+  assert.ok(room(long) >= "Untergeschoss".length * 23,
+            "and enough of it for the whole word");
+  assert.equal(room(short), 150 - 34, "short names keep the old look");
+});
+
+test("the drawing grows with the gutter instead of cutting it off", () => {
+  const wide = panel(
+    model({
+      floors: [{ id: "f0", name: "Dachgeschoss links", level: 1 },
+               { id: "f1", name: "EG", level: 0 }],
+      areas: [{ id: "a0", name: "Raum", floor_id: "f0",
+                position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 } },
+              { id: "a1", name: "Raum", floor_id: "f1",
+                position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 } }],
+    }),
+    { floor: null },
+  );
+  // Die rechte Kante des Hauses muss innerhalb des Bildes bleiben.
+  assert.ok(wide._project(0, 1, 0).x < wide._stackWidth,
+            "the house ran off the right edge while the name got its room");
+});
+
+test("the room's name gets out of the way of what is in the room", () => {
+  // Beides stand in der Mitte: die Automatik setzt ein Geraet ohne eigene
+  // Angabe in die Raummitte, und der Raumname stand dort auch. Auf dem
+  // ersten Bild fuer die README lag "Adapter Arbeitszimmer" quer ueber
+  // "Arbeitszimmer".
+  const view = panel(
+    model({
+      areas: [{ id: "r", name: "Wohnzimmer", floor_id: "eg",
+                position: at(0.5, 0.5), size: { width: 0.6, height: 0.6 } }],
+      nodes: [node("a:lamp", { area_id: "r", position: at(0.5, 0.5) })],
+    }),
+    { floor: null },
+  );
+  const svg = view._stackHtml();
+  const nameY = Number(/translate\([\d.-]+,([\d.-]+)\)[^>]*>\s*<text class="room-label"/
+    .exec(svg)[1]);
+  const plane = view._stackFloors.findIndex((floor) => floor.id === "eg");
+  const middle = view._project(plane, 0.5, 0.5).y;
+  const back = view._project(plane, 0.5, 0.2).y;
+  assert.ok(nameY < middle, "the name is still sitting on the devices");
+  assert.ok(nameY >= back, "and it has not climbed out through the back wall");
+});

@@ -186,7 +186,14 @@ class SpatialHub:
         self._merge_area_overrides(areas, floors)
         floors = self._resolve_area_kinds(floors, areas)
         if self.auto_areas:
-            discovery.async_arrange_areas(areas)
+            # Welche Etage das Erdgeschoss ist, steht seit
+            # `_resolve_area_kinds` fest -- und die Anordnung braucht es,
+            # weil ein Garten ums Haus herum liegt und ein Balkon an ihm
+            # haengt.
+            ground = next(
+                (floor["id"] for floor in floors if floor.get("ground")), None
+            )
+            discovery.async_arrange_areas(areas, ground)
 
         nodes: list[Node] = []
         edges: list[Edge] = []

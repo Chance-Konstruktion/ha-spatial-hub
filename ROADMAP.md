@@ -33,11 +33,155 @@ hierher — egal wie gut es sich baut.
 | 12 | Zero-Config als Endzustand | ✅ |
 | 13 | Feedback aus der ersten Version | ✅ |
 | 14 | Spezifikation 1.0 | ✅ |
-| 15 | Gebäudeflucht: Außenwände über alle Etagen | 🟡 |
+| 15 | Gebäudeflucht: Außenwände über alle Etagen | ✅ |
 | 16 | Licht, das den Raum beleuchtet | ⬜ |
 | 17 | Ein Editor, den ein Kind bedient | ⬜ |
 | 18 | Klima im Raum | ⬜ |
 | 19 | Wetter über dem Haus | ⬜ |
+
+---
+
+# Die nächste Etappe
+
+Ab Phase 14 sind es zwei verschiedene Baustellen, und sie brauchen
+verschiedene Arbeit.
+
+**Spatial Hub als Software.** Läuft, tut was es soll, und dem fehlt vor
+allem Feinschliff. Das ist die Baustelle, an der bisher fast alle Zeit
+verbraucht wurde.
+
+**Spatial Hub als Standard.** Fertig gebaut und unbenutzt. SDK,
+Conformance-Kit, Spezifikation, `ASK_FOR_SUPPORT` in zwei Sprachen — die
+ganze Maschinerie steht seit Phase 8 bereit, und **noch nie hat sie jemand
+Fremdes angefasst.**
+
+Zwei Zahlen, an denen das hängt:
+
+- Beide angebundenen Provider sind unsere eigenen. Powerline und
+  ESPEasy P2P, beide aus demselben Haus.
+- Der Renderer ist mit ~5.800 Zeilen in *einer* Datei inzwischen größer
+  als der gesamte Hub mit ~3.700 auf fünfzehn Module verteilt.
+
+Zwei eigene Provider sind eine Integration. Fünf fremde sind eine
+Plattform. Solange nur wir selbst die API benutzen, ist sie womöglich
+unbemerkt auf unsere Denkweise zugeschnitten — **der erste fremde
+Entwickler ist der eigentliche Architekturtest**, und den hat es nie
+gegeben.
+
+Das ist strategisch die wichtigere Baustelle. Nicht weil Licht und
+Animation unwichtig wären, sondern weil sie die zentrale Behauptung des
+Projekts prüft: *Kann jeder Entwickler mit wenig Aufwand räumliche
+Informationen bereitstellen?* Steht darauf einmal nachweislich „ja", ist
+der schwierigste Teil einer Plattform geschafft, und der Renderer darf
+danach noch jahrelang besser werden.
+
+Wichtig ist dabei die Wortwahl: Es geht **nicht** um mehr Hub. Der
+Hub-Code ist nicht der Engpass. Es geht um das **Ökosystem** — SDK,
+Beispiele, Dokumentation, Conformance, Developer Experience. Das ist
+etwas anderes als der Hub selbst.
+
+## ✅ A — Den Renderer fertig machen, nicht erweitern
+
+Niemand schreibt einen Provider für etwas, das er nicht gesehen und
+gemocht hat. Der Renderer ist das Marketing, und wer heute auf dem
+Repository landet, soll nicht „interessant" denken, sondern es
+ausprobieren wollen.
+
+„Fertig" ist aber keine Empfindung, sondern eine Liste, sonst wächst sie.
+Diese hier ist geschlossen:
+
+- [x] Rechtsklickmenü im Editor: Einstellungen, Raumart ändern, Ecken
+      bearbeiten, Anordnung zurücksetzen, ausblenden — auf dem leeren Plan
+      Grundstück und Etage. Später die Aufhängung für Möbel.
+
+      **Ohne „duplizieren" und „löschen".** Bereiche gehören dem
+      Bereichsregister von Home Assistant, nicht uns. Ein „Löschen" hier
+      wäre ein Löschen *überall* — in jedem Dashboard, jeder
+      Automatisierung, jeder Sprachsteuerung —, und ein „Duplizieren"
+      würde „Wohnzimmer Kopie" ins Register schreiben, wo es nie
+      hingehörte. Der Hub sammelt und platziert; er verwaltet nicht. Was
+      stattdessen im Menü steht, ist „Ausblenden": derselbe Wunsch, ohne
+      fremde Daten anzufassen. Wer einen Raum wirklich anlegen oder
+      wegnehmen will, tut das dort, wo Räume herkommen.
+- [x] Einrasten an der Kontur der anderen Etagen (der Rest von Phase 15) —
+      nur an Konturen, die auch eingeblendet sind, und die getroffene
+      Etage sagt es selbst
+- [x] Langer Druck auf dem Touchscreen mit demselben Verhalten wie mit der
+      Maus — ein halbe Sekunde, zehn Pixel Spielraum, und ein Zug, der
+      noch nicht losgelaufen ist, wird dabei zurückgenommen
+- [x] Ein Satz Screenshots, der die Hausansicht zeigt, wie sie gemeint ist —
+      erzeugt statt abfotografiert, aus dem echten Hub und dem echten
+      Renderer (`tools/demo_house.py`, `tools/shots.mjs`), und beim ersten
+      Hinsehen sofort drei Fehler gefunden, die alle Tests grün gelassen
+      hatten
+
+Was **nicht** auf dieser Liste steht, gehört in eine spätere Phase:
+Licht, Klima, Wetter, Mehrfachauswahl, Favoriten, eigene Icons hochladen,
+freie Label-Positionen.
+
+**Was der letzte Punkt gekostet und eingebracht hat.** Die Screenshots
+waren als Werbung geplant und wurden zum Prüfmittel: Das erste Bild zeigte
+auf einen Schlag drei Fehler, die alle 500 Tests grün gelassen hatten.
+„Untergeschoss" war links abgeschnitten, weil der Platz für den Etagennamen
+eine feste Zahl war und für „EG" gereicht hatte. Ein Balkon im
+Obergeschoss lag als Ring um die ganze Wohnung, weil er dieselbe Anordnung
+bekam wie ein Garten — richtig gezeichnet, falsch angeordnet. Und der
+Raumname stand genau dort, wo die Automatik das erste Gerät hinsetzt, also
+lag „Adapter Arbeitszimmer" quer über „Arbeitszimmer".
+
+Keiner davon ist eine falsche Einzelentscheidung, und keiner war ohne
+Hinsehen zu finden — dieselbe Lehre wie in
+[`tools/README.md`](tools/README.md), nur diesmal ohne laufendes Home
+Assistant. Deshalb sind die Bilder erzeugt und nicht abfotografiert: Sie
+lassen sich nach jeder Änderung am Renderer neu machen und wieder ansehen.
+
+## B — Das SDK von jemand anderem testen lassen
+
+Hier liegt der eigentliche Erkenntnisgewinn, und er ist **nicht** von A
+abhängig: Wer einen Provider schreibt, öffnet den Renderer nie. Er
+schreibt Python, kopiert zwei Dateien und lässt das Conformance-Kit
+laufen. A und B können deshalb nebeneinanderher laufen — nur das
+*Ansprechen* eines fremden Maintainers lohnt erst, wenn A steht, weil man
+den ersten Eindruck nur einmal hat.
+
+Eine Integration, nicht zehn. Am besten jemand, der offen für Neues ist.
+Die beiden möglichen Antworten sind beide wertvoll:
+
+- *„Das waren wirklich nur dreißig Zeilen."* — die Plattform trägt.
+- *„Ich musste an fünf Stellen suchen."* — genau dort ist nachzubessern,
+  und das erfährt man auf keine andere Weise.
+
+Vorher zu klären, weil es die Einstiegshürde senkt:
+
+- [ ] Ist `examples/example_provider/` wirklich das Erste, was ein
+      Maintainer findet? Es ist bereits eine vollständige Integration in
+      114 Zeilen und genau als Einstieg geschrieben — aber nur nützlich,
+      wenn man darüber stolpert.
+- [ ] Die kürzeste Form — `data=lambda: ["light.kitchen"]`, eine Liste von
+      Entity-IDs — steht in dieser Roadmap, aber es gibt kein lauffähiges
+      Beispiel dafür. Drei Lampen, ein Schalter, ein Sensor, fertig. Das
+      ist die Fassung, die ein Maintainer in fünf Minuten überfliegt.
+
+## C — Rückmeldung sofort einarbeiten
+
+Was der erste fremde Entwickler stolpernd findet, wird sonst jeder
+folgende ebenfalls finden. Diese Phase hat bewusst keinen Inhalt: Sie
+wird von B gefüllt.
+
+## D — Erst danach weitere Provider
+
+Und erst danach die Feature-Phasen 16–19.
+
+## Nebenher: die eine große Datei
+
+`spatial-hub-panel.js` wächst schneller als alles andere und wird von
+jedem visuellen Feature angefasst. Das ist die Stelle, die in ein paar
+Monaten am meisten ausbremst.
+
+Kein Grund, es sofort zu tun, aber der Zeitpunkt kommt — und das Prinzip
+„kein Build-Schritt" schließt es **nicht** aus: ES-Module importieren
+sich nativ, `stack.js`, `editor.js` und `styles.js` gingen ohne
+Werkzeugkette. Besser geplant als erzwungen.
 
 ---
 
@@ -369,7 +513,7 @@ Ab hier ist nichts gebaut. Die vier Phasen stehen so in
 [`docs/Vision.md`](docs/Vision.md) und sind die Antwort darauf, warum der
 Hub heute einen Grundriss zeigt und noch keine Wohnung.
 
-## 🟡 Phase 15 — Gebäudeflucht
+## ✅ Phase 15 — Gebäudeflucht
 
 Jede Etage soll ihre **Außenwände** kennen, und der Editor soll sie über
 alle Etagen hinweg einblenden — als blasse Kontur der jeweils anderen
@@ -390,9 +534,11 @@ Garten zählt nicht mit, sonst bestimmte die Terrasse die Flucht. Eine
 gespeicherte Angabe schlägt die Ableitung. Im Bearbeiten-Modus liegen die
 Konturen der anderen Etagen als blasse Linien hinter der aktuellen,
 abschaltbar, und der Knopf erscheint nur, wenn es überhaupt etwas zu
-vergleichen gibt.
-
-**Fehlt noch:** das Einrasten an der fremden Kontur.
+vergleichen gibt. Und eine gezogene Wand rastet an dieser Kontur ein,
+nicht nur am Raster — aber nur, solange die Kontur auch eingeblendet ist:
+Ein Magnet an einer Linie, die niemand sieht, ist kein Einrasten, sondern
+ein Ruckeln ohne Grund. Die getroffene Etage hebt sich hervor, weil
+eingerastet und knapp daneben sonst gleich aussehen.
 
 ## ⬜ Phase 16 — Licht
 
