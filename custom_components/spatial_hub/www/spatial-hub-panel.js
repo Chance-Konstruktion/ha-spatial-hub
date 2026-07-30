@@ -39,7 +39,7 @@ const ALL_FLOORS = "__all__";
 const STACK = {
   // "pad" ist links breiter als noetig, und zwar mit Absicht: dort steht
   // der Etagenname. Vorher lag er bei 40 halb ausserhalb des Bildes.
-  pad: 40, margin: 150, width: 620, depth: 300, skew: 260, top: 50, gap: 340,
+  pad: 40, margin: 150, width: 620, depth: 220, skew: 50, top: 50, gap: 340,
   // Rooms have standing walls and a storey has thickness. Flat outlines
   // drawn on top of each other are what turned this view into porridge:
   // four sheets of the same weight, and nothing in the picture saying
