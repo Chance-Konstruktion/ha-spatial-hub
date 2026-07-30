@@ -416,3 +416,40 @@ def test_the_move_needs_an_admin():
     every voice assistant reads. Arranging a picture does not."""
     assert getattr(ws.websocket_area_assign, "_ws_require_admin", False)
     assert not getattr(ws.websocket_layout_set, "_ws_require_admin", False)
+
+
+def test_doors_survive_the_wire(hass, hub, connection):
+    """A door is stored and served like any other piece of geometry."""
+    doors = [
+        {"side": 0, "at": 0.5, "width": 0.2},
+        {"side": 2, "at": 0.25, "width": 0.3},
+    ]
+    ws.websocket_layout_set(
+        hass,
+        connection,
+        {"id": 1, "section": "areas", "key": "wohnzimmer",
+         "values": {"doors": doors}},
+    )
+
+    assert connection.results[1] == {"success": True}
+    assert hub.store.get("areas", "wohnzimmer")["doors"] == doors
+
+
+def test_a_door_wider_than_its_wall_is_refused():
+    """A wall that is entirely doorway is a missing wall, and the editor
+    already has a way to say that."""
+    with pytest.raises(vol.Invalid):
+        _layout_values({"doors": [{"side": 0, "at": 0.5, "width": 1}]})
+
+
+def test_a_door_cannot_sit_outside_the_wall_it_is_in():
+    """`at` is box-local, like `shape`: 0 is one corner, 1 the other."""
+    with pytest.raises(vol.Invalid):
+        _layout_values({"doors": [{"side": 0, "at": 1.4, "width": 0.2}]})
+
+
+def test_a_door_needs_a_wall_to_be_in():
+    """Every field is required -- a door with no side is not half a door,
+    it is a write the renderer would have to guess at."""
+    with pytest.raises(vol.Invalid):
+        _layout_values({"doors": [{"at": 0.5, "width": 0.2}]})

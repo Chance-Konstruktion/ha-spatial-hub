@@ -1842,6 +1842,230 @@ test("only the ground floor gets grass, a balcony upstairs just gets a room", ()
   assert.match(og, /Balkon/, "the balcony is still drawn as a room");
 });
 
+test("a balcony gets a railing to see over, not a wall to hide behind", () => {
+  // Ein Zimmer muss mit im Modell stehen: ohne eines gaebe es ohnehin
+  // keine einzige room-wall und die letzte Zusicherung waere geschenkt.
+  const data = model({
+    areas: [
+      { id: "wohnzimmer", name: "Wohnzimmer", floor_id: "og",
+        position: at(0.3, 0.5), size: { width: 0.4, height: 0.6 } },
+      { id: "balkon", name: "Balkon", floor_id: "og", kind: "outdoor",
+        position: at(0.85, 0.5), size: { width: 0.2, height: 0.6 } },
+    ],
+  });
+  const html = panel(data, { floor: null })._stackHtml();
+
+  assert.match(html, /class="room deck"/, "the deck floor is marked as one");
+  assert.match(html, /class="deck-rail"/, "a low rail stands on it");
+  assert.match(html, /class="room-wall"/, "the room next to it still has walls");
+  // Vier Wandflaechen, und zwar die des Wohnzimmers: haette der Balkon
+  // welche beigesteuert, stuenden hier acht.
+  assert.equal((html.match(/class="room-wall"/g) || []).length, 4,
+               "the balcony contributed no masonry of its own");
+});
+
+const walled = (area) =>
+  ((panel(model({ areas: [area] }), { floor: null })._stackHtml()
+    .match(/class="room-wall"/g)) || []).length;
+
+const roomWith = (doors) => ({
+  id: "r", name: "Raum", floor_id: "eg",
+  position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 }, doors,
+});
+
+test("a door is a gap in a wall, not a wall with a door drawn on it", () => {
+  // Vier Wandflaechen ohne Tuer. Eine Tuer mitten in einer Wand laesst
+  // links und rechts je ein Stueck stehen -- also fuenf.
+  assert.equal(walled(roomWith(undefined)), 4, "no doors, four walls");
+  assert.equal(walled(roomWith([{ side: 0, at: 0.5, width: 0.2 }])), 5,
+               "a door in the middle leaves a wall either side");
+});
+
+test("a door at the very end of a wall leaves only one stretch", () => {
+  // Am Anfang der Kante gibt es kein Stueck davor, das stehen bleiben
+  // koennte -- sonst stuende dort eine Wand der Laenge null.
+  assert.equal(walled(roomWith([{ side: 0, at: 0, width: 0.2 }])), 4,
+               "flush with the corner, so nothing before it");
+  assert.equal(walled(roomWith([{ side: 0, at: 1, width: 0.2 }])), 4,
+               "and the same at the other corner");
+});
+
+test("two doors that touch are one opening, not two", () => {
+  // Ueberlappende Oeffnungen duerfen kein Wandstueck negativer Laenge
+  // zwischen sich erzeugen.
+  assert.equal(
+    walled(roomWith([
+      { side: 0, at: 0.4, width: 0.2 },
+      { side: 0, at: 0.5, width: 0.2 },
+    ])),
+    5,
+    "one merged gap, so one wall either side",
+  );
+  // Und in verkehrter Reihenfolge dasselbe: gespeichert wird in der
+  // Reihenfolge, in der jemand sie angelegt hat, und das ist keine.
+  assert.equal(
+    walled(roomWith([
+      { id: "b", side: 0, at: 0.5, width: 0.2 },
+      { id: "a", side: 0, at: 0.4, width: 0.2 },
+    ])),
+    5,
+    "the order they were stored in must not matter",
+  );
+});
+
+test("a door on a wall that does not exist is left out, not guessed", () => {
+  for (const door of [
+    { side: 9, at: 0.5, width: 0.2 },
+    { side: -1, at: 0.5, width: 0.2 },
+    { side: 1.5, at: 0.5, width: 0.2 },
+    { side: 0, at: 0.5, width: 0 },
+    { side: 0, at: "irgendwo", width: 0.2 },
+  ]) {
+    assert.equal(walled(roomWith([door])), 4,
+                 `nonsense is dropped: ${JSON.stringify(door)}`);
+  }
+});
+
+test("a doorway goes through the masonry, not just its outside face", () => {
+  // Wand und Mauerkrone muessen dieselbe Luecke haben. Nur die Aussenseite
+  // zu unterbrechen liesse eine Tuer entstehen, ueber der die Krone
+  // durchlaeuft -- das waere ein Fenster, und zwar ein zugemauertes.
+  const html = panel(model({ areas: [roomWith([{ side: 0, at: 0.5, width: 0.2 }])] }),
+                     { floor: null })._stackHtml();
+  assert.equal((html.match(/class="room-wall"/g) || []).length, 5, "wall split");
+  assert.equal((html.match(/class="room-cap"/g) || []).length, 5, "crown split too");
+});
+
+test("the outer shell of the house is unaffected by a room's doors", () => {
+  // wallsOf zeichnet auch die Aussenwaende. Die kennen keine Tueren und
+  // duerfen von dieser Aenderung nichts merken.
+  const html = panel(model({ areas: [roomWith([{ side: 0, at: 0.5, width: 0.2 }])] }),
+                     { floor: null })._stackHtml();
+  assert.equal((html.match(/class="shell-face"/g) || []).length, 8,
+               "four faces on each of the two storeys, as before");
+});
+
+/** Der Raumdialog, offen, mit einem Raum darin. */
+const withDialog = (doors) => {
+  const area = { id: "r", name: "Raum", floor_id: "eg",
+                 position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 },
+                 doors };
+  const view = panel(model({ areas: [area] }));
+  view._areaDialog = "r";
+  return view;
+};
+
+/** Was `_setDoors` zuletzt schreiben wollte. */
+const written = (view) => {
+  const last = view._written[view._written.length - 1];
+  return last && last[2].doors;
+};
+
+test("the dialog offers a door per wall, and only for rooms", () => {
+  assert.match(withDialog()._areaDialogHtml(), /data-door-add="0"/);
+  assert.match(withDialog()._areaDialogHtml(), /data-door-add="3"/);
+  assert.doesNotMatch(withDialog()._areaDialogHtml(), /data-door-add="4"/,
+                      "a rectangle has four walls, not five");
+
+  // Ein Garten hat keine Waende, in die eine Luecke passen koennte.
+  const garden = { id: "g", name: "Garten", floor_id: "eg", kind: "outdoor",
+                   position: at(1.2, 0.5), size: { width: 0.2, height: 0.4 } };
+  const view = panel(model({ areas: [garden] }));
+  view._areaDialog = "g";
+  assert.doesNotMatch(view._areaDialogHtml(), /data-door-add/,
+                      "no doors in a garden");
+});
+
+test("adding a door puts it in the middle of the wall you picked", () => {
+  const view = withDialog();
+  view._onClick({ composedPath: () => [element({ "data-door-add": "2" })] });
+  assert.deepEqual(written(view), [{ side: 2, at: 0.5, width: 0.2 }]);
+});
+
+test("a second door is added, not swapped for the first", () => {
+  const view = withDialog([{ side: 0, at: 0.3, width: 0.2 }]);
+  view._onClick({ composedPath: () => [element({ "data-door-add": "1" })] });
+  assert.deepEqual(written(view), [
+    { side: 0, at: 0.3, width: 0.2 },
+    { side: 1, at: 0.5, width: 0.2 },
+  ]);
+});
+
+test("removing a door takes out the one that was clicked", () => {
+  const view = withDialog([
+    { side: 0, at: 0.3, width: 0.2 },
+    { side: 1, at: 0.4, width: 0.2 },
+    { side: 2, at: 0.5, width: 0.2 },
+  ]);
+  view._onClick({ composedPath: () => [element({ "data-door-remove": "1" })] });
+  assert.deepEqual(written(view), [
+    { side: 0, at: 0.3, width: 0.2 },
+    { side: 2, at: 0.5, width: 0.2 },
+  ]);
+});
+
+test("a slider writes when it is let go, not on every pixel", () => {
+  const drag = (committed) => {
+    const view = withDialog([{ side: 0, at: 0.3, width: 0.2 }]);
+    const input = element({ "data-door-field": "at", "data-door": "0" });
+    input.value = "0.75";
+    view._onInput({ composedPath: () => [input], target: input }, committed);
+    return view;
+  };
+  assert.equal(drag(false)._written.length, 0, "still dragging, nothing saved");
+  assert.deepEqual(written(drag(true)), [{ side: 0, at: 0.75, width: 0.2 }],
+                   "let go, and the new position is stored");
+});
+
+test("a staircase is drawn as steps, by whatever the user called it", () => {
+  const stair = (id, name, icon = "") => ({
+    id, name, icon, floor_id: "eg",
+    position: at(0.5, 0.5), size: { width: 0.1, height: 0.4 },
+  });
+  const treads = (area) =>
+    ((panel(model({ areas: [area] }), { floor: null })._stackHtml()
+      .match(/class="tread"/g)) || []).length;
+
+  // Acht Striche fuer neun Stufen: die Kanten sind die Wandenden.
+  assert.equal(treads(stair("t", "Treppe")), 8, "German, plainly");
+  assert.equal(treads(stair("t", "Treppenhaus")), 8, "and as a compound");
+  assert.equal(treads(stair("t", "Stairs")), 8, "English too");
+  assert.equal(treads(stair("t", "Diele", "mdi:stairs")), 8,
+               "or said with the icon rather than the name");
+  assert.equal(treads(stair("t", "Wohnzimmer")), 0, "a living room is not one");
+});
+
+test("a garden called Treppe still gets no steps", () => {
+  // Aussen und Virtuell haben keine Stufen -- eine Gartentreppe ist
+  // Gelaende, kein Bauteil, und die Wolke schon gar nicht.
+  const outside = {
+    id: "gt", name: "Treppe", floor_id: "eg", kind: "outdoor",
+    position: at(1.15, 0.5), size: { width: 0.1, height: 0.4 },
+  };
+  const html = panel(model({ areas: [outside] }), { floor: null })._stackHtml();
+  assert.doesNotMatch(html, /class="tread"/, "no steps outdoors");
+});
+
+test("the lawn is not a balcony: no railing around the garden", () => {
+  // Erdgeschoss-Aussenflaeche ist Grundstueck, kein Anbau. Ein Gelaender
+  // um den Rasen sagt das Gegenteil von dem, was ein Garten ist.
+  const data = model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "", ground: true,
+        has_outdoor: true, outdoor_margin: 0.28 },
+    ],
+    areas: [
+      { id: "garten", name: "Garten", floor_id: "eg", kind: "outdoor",
+        position: at(1.15, 0.5), size: { width: 0.2, height: 0.6 } },
+    ],
+  });
+  const html = panel(data, { floor: null })._stackHtml();
+
+  assert.doesNotMatch(html, /class="deck-rail"/, "no railing round the lawn");
+  assert.doesNotMatch(html, /class="room deck"/, "and it is not a deck either");
+  assert.match(html, /Garten/, "the garden is still drawn");
+});
+
 test("the cloud gets no walls", () => {
   // The internet has no masonry, and a homeless storey is not a storey.
   const data = model({

@@ -112,6 +112,24 @@ _PLOT_SCHEMA = vol.All([_PLOT_POINT], vol.Length(min=3, max=64))
 # park arbitrary data. Bounded: a room has walls, not a hundred of them.
 _UNJOINED_SCHEMA = vol.All([str], vol.Length(max=64))
 
+# An opening in one of a room's walls. Box-local, like `shape`: `side` is
+# which edge (the same order the outline runs in), `at` is the middle of
+# the opening along that edge and `width` how much of the edge it takes.
+# All of it in fractions, so a door survives moving and resizing the room.
+#
+# `width` stops short of 1: a wall that is entirely doorway is not a wall
+# with a door in it, it is a missing wall, and the editor already has a
+# way to say that.
+_DOOR_SCHEMA = {
+    vol.Required("side"): vol.All(vol.Coerce(int), vol.Range(min=0, max=63)),
+    vol.Required("at"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1)),
+    vol.Required("width"): vol.All(
+        vol.Coerce(float), vol.Range(min=0.01, max=0.95)
+    ),
+}
+# A room has walls, not a hundred of them -- and each wall a door or two.
+_DOORS_SCHEMA = vol.All([_DOOR_SCHEMA], vol.Length(max=64))
+
 _POSITION_SCHEMA = {
     vol.Required("x"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=2)),
     vol.Required("y"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=2)),
@@ -203,6 +221,8 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
             vol.Optional("order"): vol.Any(None, vol.Coerce(int)),
             vol.Optional("outline"): vol.Any(None, _OUTLINE_SCHEMA),
             vol.Optional("shape"): vol.Any(None, _SHAPE_SCHEMA),
+            # Openings in this room's walls.
+            vol.Optional("doors"): vol.Any(None, _DOORS_SCHEMA),
             # Rooms this one is *not* sharing a wall with, however much
             # the geometry says otherwise. A party wall between two flats
             # really is two walls.

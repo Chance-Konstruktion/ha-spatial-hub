@@ -51,6 +51,10 @@ const STACK = {
   // thing a paper floor plan does, and the reason one can be read from
   // across a room.
   wall: 8, outerWall: 13,
+  // Wie viele Stufen eine Treppe bekommt. Nicht die echte Zahl -- die
+  // weiss niemand -- sondern so viele, dass das Rechteck als Treppe zu
+  // lesen ist und nicht als schraffierte Flaeche.
+  treads: 9,
   // Storeys sit slightly behind each other instead of exactly above.
   // Dead-aligned, the upper floor's outline lands on the lower one's and
   // the eye has nothing to separate them by except the gap; offset, each
@@ -96,15 +100,64 @@ const insetOf = (corners, amount) => {
  *  shorter, but a ring cannot leave a wall out -- and leaving a wall out
  *  is the whole of sharing one with the room next door.
  */
-const capsOf = (corners, thickness, className, keep = () => true) => {
+const along = (from, to, at) => ({
+  x: from.x + (to.x - from.x) * at,
+  y: from.y + (to.y - from.y) * at,
+});
+
+/** What is left of one wall once the doorways are taken out of it.
+ *
+ *  A list of `[from, to]` stretches along the edge, 0 at one corner and 1
+ *  at the other. No doors means one stretch covering the whole wall, which
+ *  is why everything that does not know about doors keeps working.
+ *
+ *  Overlapping doors are merged rather than drawn twice: two openings that
+ *  touch are one opening, and a wall segment of negative length is not a
+ *  thing a renderer should have to think about. Doors are sorted here and
+ *  not trusted to arrive in order -- they are stored in the order the user
+ *  added them, which is no order at all.
+ */
+const wallRuns = (doors, side) => {
+  const holes = (Array.isArray(doors) ? doors : [])
+    .filter((door) => door && Number(door.side) === side)
+    .map((door) => {
+      const width = Math.min(Math.max(Number(door.width) || 0, 0), 1);
+      const at = Math.min(Math.max(Number(door.at), 0), 1);
+      return [at - width / 2, at + width / 2];
+    })
+    .filter(([from, to]) => to > from)
+    .sort((a, b) => a[0] - b[0]);
+
+  const runs = [];
+  let cursor = 0;
+  for (const [from, to] of holes) {
+    if (from > cursor) runs.push([cursor, Math.min(from, 1)]);
+    cursor = Math.max(cursor, to);
+  }
+  if (cursor < 1) runs.push([cursor, 1]);
+  // Ein Rest von einem Tausendstel Wand ist keine Wand, sondern ein
+  // Strich, der auf dem Bildschirm als Schmutz ankommt.
+  return runs.filter(([from, to]) => to - from > 0.001);
+};
+
+const capsOf = (corners, thickness, className, keep = () => true,
+                doors = null) => {
   const inner = insetOf(corners, thickness);
   return corners
     .map((corner, index) => {
       if (!keep(index)) return "";
       const next = (index + 1) % corners.length;
-      return `<polygon class="${className}" points="${corner.x},${corner.y} ` +
-        `${corners[next].x},${corners[next].y} ` +
-        `${inner[next].x},${inner[next].y} ${inner[index].x},${inner[index].y}"/>`;
+      return wallRuns(doors, index)
+        .map(([from, to]) => {
+          const outerA = along(corner, corners[next], from);
+          const outerB = along(corner, corners[next], to);
+          const innerA = along(inner[index], inner[next], from);
+          const innerB = along(inner[index], inner[next], to);
+          return `<polygon class="${className}" points="${outerA.x},${outerA.y} ` +
+            `${outerB.x},${outerB.y} ` +
+            `${innerB.x},${innerB.y} ${innerA.x},${innerA.y}"/>`;
+        })
+        .join("");
     })
     .join("");
 };
@@ -116,14 +169,20 @@ const capsOf = (corners, thickness, className, keep = () => true) => {
  *  projection shears x and y together, so a wall is a parallelogram and
  *  needs no trigonometry beyond "the same points, higher up".
  */
-const wallsOf = (corners, rise, className, keep = () => true) =>
+const wallsOf = (corners, rise, className, keep = () => true, doors = null) =>
   corners
     .map((corner, index) => {
       if (!keep(index)) return "";
       const next = corners[(index + 1) % corners.length];
-      return `<polygon class="${className}" points="${corner.x},${corner.y} ` +
-        `${next.x},${next.y} ${next.x},${next.y - rise} ` +
-        `${corner.x},${corner.y - rise}"/>`;
+      return wallRuns(doors, index)
+        .map(([from, to]) => {
+          const start = along(corner, next, from);
+          const end = along(corner, next, to);
+          return `<polygon class="${className}" points="${start.x},${start.y} ` +
+            `${end.x},${end.y} ${end.x},${end.y - rise} ` +
+            `${start.x},${start.y - rise}"/>`;
+        })
+        .join("");
     })
     .join("");
 
@@ -468,6 +527,64 @@ const kindOf = (area) =>
   Object.values(AREA_KIND).includes(area && area.kind)
     ? area.kind
     : AREA_KIND.INDOOR;
+
+/** Kleingeschrieben, ohne Umlaute, ohne Zeichensetzung -- nur zum
+ *  Vergleichen. Dasselbe Falten wie `_fold` im Backend. */
+const fold = (value) =>
+  String(value ?? "")
+    .toLowerCase()
+    .replace(/ä/g, "a")
+    .replace(/ö/g, "o")
+    .replace(/ü/g, "u")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]+/g, " ");
+
+/** Die Tueren eines Raumes, so wie sie gezeichnet werden duerfen.
+ *
+ *  Kastenlokal wie `shape`: `side` ist die Kante, `at` die Mitte der
+ *  Oeffnung darauf (0..1) und `width` ihre Breite als Anteil der Kante.
+ *  Damit ueberlebt eine Tuer Verschieben und Groessenaendern, ohne dass
+ *  irgendwo eine Laenge in Metern steht.
+ *
+ *  Was hier nicht durchkommt, wird weggelassen statt geraten: eine Tuer
+ *  auf einer Kante, die es nicht gibt, ist ein Fehler des Schreibers, und
+ *  eine halb erfundene Oeffnung waere schlimmer als gar keine.
+ */
+const doorsOf = (area, sides = 4) =>
+  (Array.isArray(area && area.doors) ? area.doors : []).filter((door) => {
+    const side = Number(door && door.side);
+    return (
+      Number.isInteger(side) && side >= 0 && side < sides &&
+      Number.isFinite(Number(door.at)) && Number(door.width) > 0
+    );
+  });
+
+/** Wie die vier Kanten eines Raumes heissen, aus Sicht des Betrachters.
+ *
+ *  Die Reihenfolge ist die von RECTANGLE, und "vorne" ist die Kante, die
+ *  in der Hausansicht zum Betrachter zeigt -- dieselbe, die FRONT_WALL
+ *  meint. Ein Raum mit eigener Form hat mehr Kanten als Namen; die
+ *  bekommen eine Nummer, denn "hinten links aussen" waere geraten.
+ */
+const SIDE_NAMES = ["hinten", "rechts", "vorne", "links"];
+const sideName = (side) => SIDE_NAMES[side] || `Kante ${side + 1}`;
+
+const STAIR_WORDS = ["treppe", "stiege", "stairs", "stairway", "staircase"];
+
+/** Ist dieser Raum eine Treppe?
+ *
+ *  Bewusst *keine* vierte Raumart: der Katalog der Raumarten steht in der
+ *  Spezifikation und gilt fuer jeden Provider, eine Stufe ist aber nichts,
+ *  was ein Provider je liefern wird -- sie ist ein Zeichendetail. Erkannt
+ *  wird sie deshalb so, wie das Backend auch schon Aussenbereiche erkennt:
+ *  an dem, was der Benutzer hingeschrieben hat, Name oder Symbol.
+ */
+const isStairs = (area) =>
+  kindOf(area) === AREA_KIND.INDOOR &&
+  STAIR_WORDS.some((word) =>
+    fold(`${(area && area.name) || ""} ${(area && area.icon) || ""}`)
+      .includes(word),
+  );
 
 const escapeHtml = (value) =>
   String(value ?? "").replace(
@@ -1981,15 +2098,57 @@ class SpatialHubPanel extends HTMLElement {
     // room, the outside faces of the walls standing on it, and the top of
     // the masonry as a band with two edges. The band is what makes this
     // read as a plan rather than as a grey rectangle with a line round it.
-    let shape = `<polygon class="room" points="${points}"/>`;
+    // Ein Balkon und ein Garten sind beide "outdoor", aber nicht dasselbe
+    // Ding: der eine haengt am Haus, der andere liegt darum herum. Das
+    // Modell kennt keinen eigenen Typ dafuer, also gilt hier dieselbe
+    // Regel wie beim Rasen weiter oben -- Erdgeschoss ist Grundstueck,
+    // alles darueber haengt am Bau. Ein Gelaender um den Rasen waere
+    // genau das, wovor der Kommentar direkt darueber warnt.
+    const floor = this._stackFloors[plane];
+    const outdoor = kindOf(area) === AREA_KIND.OUTDOOR;
+    const deck = outdoor && !(floor && floor.ground);
+    let shape = `<polygon class="room ${deck ? "deck" : ""}" points="${points}"/>`;
     if (kindOf(area) === AREA_KIND.INDOOR) {
-      shape += wallsOf(corners, STACK.rise, "room-wall", keep) +
+      // Tueren sind Luecken, keine eigenen Formen: die Wand hoert davor
+      // auf und faengt dahinter wieder an. Deshalb wissen Wand und
+      // Mauerkrone davon, und sonst nichts im Bild.
+      const doors = doorsOf(area, corners.length);
+      shape += wallsOf(corners, STACK.rise, "room-wall", keep, doors) +
         capsOf(
           corners.map((corner) => ({ x: corner.x, y: corner.y - STACK.rise })),
           STACK.wall,
           "room-cap",
           keep,
+          doors,
         );
+    }
+    // Stufen. In der Referenzzeichnung ist die Treppe das, was einen
+    // Grundriss auf den ersten Blick als Grundriss lesbar macht.
+    //
+    // Auf Hoehe der Mauerkrone und nach den Waenden gezeichnet, nicht auf
+    // dem Rohboden davor: der Raum ist oben offen, aber seine vordere
+    // Wandflaeche ist undurchsichtig und deckt alles zu, was auf der
+    // Bodenplatte liegt -- die Stufen waren gezeichnet und trotzdem nicht
+    // zu sehen. Quer zur langen Seite, denn dorthin laeuft eine Treppe.
+    if (isStairs(area)) {
+      const alongX = width >= height;
+      const tread = (x, y) => {
+        const point = this._project(plane, x, y);
+        return `${point.x},${point.y - STACK.rise}`;
+      };
+      for (let step = 1; step < STACK.treads; step += 1) {
+        const at = step / STACK.treads;
+        const [from, to] = alongX
+          ? [tread(x0 + at * width, y0), tread(x0 + at * width, y0 + height)]
+          : [tread(x0, y0 + at * height), tread(x0 + width, y0 + at * height)];
+        shape += `<polyline class="tread" points="${from} ${to}"/>`;
+      }
+    }
+    // A balcony stands on the house, it does not stand inside it: a
+    // railing you can see over instead of a wall you can't is the one
+    // thing that says "outside" in a drawing made of nothing but lines.
+    if (deck) {
+      shape += wallsOf(corners, STACK.rise * 0.35, "deck-rail", keep);
     }
     if (kindOf(area) === AREA_KIND.VIRTUAL) {
       // The plan is skewed, so the cloud is skewed with it: two edges of
@@ -3039,7 +3198,76 @@ class SpatialHubPanel extends HTMLElement {
                  ${area.single_only ? "checked" : ""}>
           Nur in der Einzelansicht
         </label>
+        ${this._doorsHtml(area)}
       </div>`;
+  }
+
+  /** Die Tueren eines Raumes, zum Anlegen und Wegnehmen.
+   *
+   *  Nur fuer Raeume: ein Garten hat keine Waende, in die eine Luecke
+   *  passen koennte, und die Wolke erst recht nicht.
+   */
+  _doorsHtml(area) {
+    if (kindOf(area) !== AREA_KIND.INDOOR) return "";
+    const sides = shapeOf(area).length;
+    const doors = doorsOf(area, sides);
+    const rows = doors
+      .map(
+        (door, index) => `
+        <div class="door">
+          <span class="door-side">${escapeHtml(sideName(Number(door.side)))}</span>
+          <label class="door-slide">
+            <span class="muted">Mitte</span>
+            <input type="range" min="0" max="1" step="0.01"
+                   value="${Number(door.at)}"
+                   data-door="${index}" data-door-field="at">
+          </label>
+          <label class="door-slide">
+            <span class="muted">Breite</span>
+            <input type="range" min="0.05" max="0.9" step="0.01"
+                   value="${Number(door.width)}"
+                   data-door="${index}" data-door-field="width">
+          </label>
+          <button class="icon-btn" data-door-remove="${index}"
+                  title="Tür entfernen">
+            <ha-icon icon="mdi:close"></ha-icon>
+          </button>
+        </div>`,
+      )
+      .join("");
+    const add = Array.from({ length: sides }, (_unused, side) => side)
+      .map(
+        (side) => `<button class="chip" data-door-add="${side}">
+          + ${escapeHtml(sideName(side))}
+        </button>`,
+      )
+      .join("");
+    return `
+      <h3>Türen</h3>
+      <p class="note">Eine Tür ist eine Lücke in der Wand — sie hört davor
+      auf und fängt dahinter wieder an. Angaben als Anteil der Wand, damit
+      die Tür bleibt, wo sie ist, wenn der Raum größer wird.</p>
+      ${rows ? `<div class="doors">${rows}</div>`
+             : '<p class="note">Noch keine Tür.</p>'}
+      <div class="chips">${add}</div>`;
+  }
+
+  /** Die Tuerliste dieses Raumes, geaendert und zurueckgeschrieben.
+   *
+   *  Immer die ganze Liste: eine Tuer hat keine eigene Kennung, ihre
+   *  Stelle in der Liste *ist* ihre Kennung. Einzelne Felder zu schicken
+   *  hiesse, dem Server zu erklaeren, wie man eine Liste sortiert.
+   */
+  _setDoors(area, change) {
+    const doors = doorsOf(area, shapeOf(area).length)
+      .map((door) => ({
+        side: Number(door.side),
+        at: Number(door.at),
+        width: Number(door.width),
+      }));
+    const next = change(doors);
+    if (!next) return;
+    this._setLayout("areas", area.id, { doors: next }, { doors: next });
   }
 
   get _customLayers() {
@@ -4170,6 +4398,23 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
+    const doorField = attribute("data-door-field");
+    if (doorField !== null && this._areaDialog) {
+      const area = (this._model.areas || []).find(
+        (candidate) => candidate.id === this._areaDialog,
+      );
+      const index = Number(input.getAttribute("data-door"));
+      const value = Number(input.value);
+      // Erst beim Loslassen speichern: ein Schieberegler feuert bei jedem
+      // Pixel, und jeder davon waere sonst ein Schreibvorgang.
+      if (area && committed) {
+        this._setDoors(area, (doors) =>
+          doors.map((door, at) =>
+            at === index ? { ...door, [doorField]: value } : door));
+      }
+      return;
+    }
+
     const nodeScale = attribute("data-node-scale");
     if (nodeScale !== null) {
       if (committed) this._setLayout("nodes", nodeScale, { scale: Number(input.value) });
@@ -4503,6 +4748,33 @@ class SpatialHubPanel extends HTMLElement {
         { kind: areaKind.getAttribute("data-area-kind") },
         { kind: area ? kindOf(area) : AREA_KIND.INDOOR },
       );
+      return;
+    }
+
+    const doorAdd = hit("data-door-add");
+    if (doorAdd && this._areaDialog) {
+      const area = (this._model.areas || []).find(
+        (candidate) => candidate.id === this._areaDialog,
+      );
+      const side = Number(doorAdd.getAttribute("data-door-add"));
+      // In der Mitte und knapp ein Fuenftel breit: eine Tuer, die man
+      // sieht, und die man von dort aus dahin schiebt, wo sie hingehoert.
+      if (area) {
+        this._setDoors(area, (doors) => [...doors, { side, at: 0.5, width: 0.2 }]);
+      }
+      return;
+    }
+
+    const doorRemove = hit("data-door-remove");
+    if (doorRemove && this._areaDialog) {
+      const area = (this._model.areas || []).find(
+        (candidate) => candidate.id === this._areaDialog,
+      );
+      const index = Number(doorRemove.getAttribute("data-door-remove"));
+      if (area) {
+        this._setDoors(area, (doors) =>
+          doors.filter((_door, at) => at !== index));
+      }
       return;
     }
 
@@ -5176,6 +5448,24 @@ main { flex:0 0 auto; min-width:0; }
 .stack .room-label { font-size:16px; fill:var(--fp-ink, currentColor);
                      opacity:.92; letter-spacing:.06em;
                      text-anchor:middle; dominant-baseline:middle; }
+/* Ein Balkon ist kein Zimmer: die Deckflaeche bekommt einen eigenen Ton
+   statt der Zimmerfarbe, das Gelaender bleibt niedrig. */
+.stack .room.deck { fill:var(--fp-deck, var(--fp-house-line, currentColor));
+                     fill-opacity:.08; stroke:var(--fp-house-line, currentColor);
+                     stroke-opacity:.55; stroke-dasharray:2 3;
+                     vector-effect:non-scaling-stroke; }
+.doors { display:flex; flex-direction:column; gap:6px; margin:6px 0; }
+.door { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.door-side { min-width:5.5em; font-weight:600; }
+.door-slide { display:flex; align-items:center; gap:6px; flex:1 1 8em; }
+.door-slide input[type=range] { flex:1 1 auto; min-width:0; }
+/* Stufen: leichter als eine Wand, sonst liest sich die Treppe als Raster. */
+.tread { fill:none; stroke:var(--fp-house-line, currentColor);
+         stroke-opacity:.75; stroke-width:1px;
+         vector-effect:non-scaling-stroke; }
+.deck-rail { fill:var(--fp-surface, var(--card-background-color,#fff));
+             stroke:var(--fp-house-line, currentColor); stroke-opacity:.7;
+             stroke-width:1px; vector-effect:non-scaling-stroke; }
 .stack-edge { stroke-linecap:round; opacity:var(--layer-opacity,1); }
 /* A connection between two storeys is the whole reason this view exists. */
 .stack-edge.across { opacity:calc(var(--layer-opacity,1) * .95); }
