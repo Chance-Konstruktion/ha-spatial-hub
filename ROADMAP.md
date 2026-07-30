@@ -41,6 +41,117 @@ hierher — egal wie gut es sich baut.
 
 ---
 
+# Die nächste Etappe
+
+Ab Phase 14 sind es zwei verschiedene Baustellen, und sie brauchen
+verschiedene Arbeit.
+
+**Spatial Hub als Software.** Läuft, tut was es soll, und dem fehlt vor
+allem Feinschliff. Das ist die Baustelle, an der bisher fast alle Zeit
+verbraucht wurde.
+
+**Spatial Hub als Standard.** Fertig gebaut und unbenutzt. SDK,
+Conformance-Kit, Spezifikation, `ASK_FOR_SUPPORT` in zwei Sprachen — die
+ganze Maschinerie steht seit Phase 8 bereit, und **noch nie hat sie jemand
+Fremdes angefasst.**
+
+Zwei Zahlen, an denen das hängt:
+
+- Beide angebundenen Provider sind unsere eigenen. Powerline und
+  ESPEasy P2P, beide aus demselben Haus.
+- Der Renderer ist mit ~5.800 Zeilen in *einer* Datei inzwischen größer
+  als der gesamte Hub mit ~3.700 auf fünfzehn Module verteilt.
+
+Zwei eigene Provider sind eine Integration. Fünf fremde sind eine
+Plattform. Solange nur wir selbst die API benutzen, ist sie womöglich
+unbemerkt auf unsere Denkweise zugeschnitten — **der erste fremde
+Entwickler ist der eigentliche Architekturtest**, und den hat es nie
+gegeben.
+
+Das ist strategisch die wichtigere Baustelle. Nicht weil Licht und
+Animation unwichtig wären, sondern weil sie die zentrale Behauptung des
+Projekts prüft: *Kann jeder Entwickler mit wenig Aufwand räumliche
+Informationen bereitstellen?* Steht darauf einmal nachweislich „ja", ist
+der schwierigste Teil einer Plattform geschafft, und der Renderer darf
+danach noch jahrelang besser werden.
+
+Wichtig ist dabei die Wortwahl: Es geht **nicht** um mehr Hub. Der
+Hub-Code ist nicht der Engpass. Es geht um das **Ökosystem** — SDK,
+Beispiele, Dokumentation, Conformance, Developer Experience. Das ist
+etwas anderes als der Hub selbst.
+
+## A — Den Renderer fertig machen, nicht erweitern
+
+Niemand schreibt einen Provider für etwas, das er nicht gesehen und
+gemocht hat. Der Renderer ist das Marketing, und wer heute auf dem
+Repository landet, soll nicht „interessant" denken, sondern es
+ausprobieren wollen.
+
+„Fertig" ist aber keine Empfindung, sondern eine Liste, sonst wächst sie.
+Diese hier ist geschlossen:
+
+- [ ] Rechtsklickmenü im Editor: ausblenden, Anordnung zurücksetzen, Ecken
+      bearbeiten, Grundstück entfernen — plus Raumart ändern, Raum
+      duplizieren, Raum löschen. Später die Aufhängung für Möbel.
+- [ ] Einrasten an der Kontur der anderen Etagen (der Rest von Phase 15)
+- [ ] Langer Druck auf dem Touchscreen mit demselben Verhalten wie mit der
+      Maus
+- [ ] Ein Satz Screenshots, der die Hausansicht zeigt, wie sie gemeint ist
+
+Was **nicht** auf dieser Liste steht, gehört in eine spätere Phase:
+Licht, Klima, Wetter, Mehrfachauswahl, Favoriten, eigene Icons hochladen,
+freie Label-Positionen.
+
+## B — Das SDK von jemand anderem testen lassen
+
+Hier liegt der eigentliche Erkenntnisgewinn, und er ist **nicht** von A
+abhängig: Wer einen Provider schreibt, öffnet den Renderer nie. Er
+schreibt Python, kopiert zwei Dateien und lässt das Conformance-Kit
+laufen. A und B können deshalb nebeneinanderher laufen — nur das
+*Ansprechen* eines fremden Maintainers lohnt erst, wenn A steht, weil man
+den ersten Eindruck nur einmal hat.
+
+Eine Integration, nicht zehn. Am besten jemand, der offen für Neues ist.
+Die beiden möglichen Antworten sind beide wertvoll:
+
+- *„Das waren wirklich nur dreißig Zeilen."* — die Plattform trägt.
+- *„Ich musste an fünf Stellen suchen."* — genau dort ist nachzubessern,
+  und das erfährt man auf keine andere Weise.
+
+Vorher zu klären, weil es die Einstiegshürde senkt:
+
+- [ ] Ist `examples/example_provider/` wirklich das Erste, was ein
+      Maintainer findet? Es ist bereits eine vollständige Integration in
+      114 Zeilen und genau als Einstieg geschrieben — aber nur nützlich,
+      wenn man darüber stolpert.
+- [ ] Die kürzeste Form — `data=lambda: ["light.kitchen"]`, eine Liste von
+      Entity-IDs — steht in dieser Roadmap, aber es gibt kein lauffähiges
+      Beispiel dafür. Drei Lampen, ein Schalter, ein Sensor, fertig. Das
+      ist die Fassung, die ein Maintainer in fünf Minuten überfliegt.
+
+## C — Rückmeldung sofort einarbeiten
+
+Was der erste fremde Entwickler stolpernd findet, wird sonst jeder
+folgende ebenfalls finden. Diese Phase hat bewusst keinen Inhalt: Sie
+wird von B gefüllt.
+
+## D — Erst danach weitere Provider
+
+Und erst danach die Feature-Phasen 16–19.
+
+## Nebenher: die eine große Datei
+
+`spatial-hub-panel.js` wächst schneller als alles andere und wird von
+jedem visuellen Feature angefasst. Das ist die Stelle, die in ein paar
+Monaten am meisten ausbremst.
+
+Kein Grund, es sofort zu tun, aber der Zeitpunkt kommt — und das Prinzip
+„kein Build-Schritt" schließt es **nicht** aus: ES-Module importieren
+sich nativ, `stack.js`, `editor.js` und `styles.js` gingen ohne
+Werkzeugkette. Besser geplant als erzwungen.
+
+---
+
 ## ✅ Phase 1 — Fundament
 
 Räumliches Datenmodell in normalisierten 0..1-Koordinaten, Provider-
