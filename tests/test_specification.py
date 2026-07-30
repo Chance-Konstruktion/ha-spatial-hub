@@ -148,3 +148,21 @@ def test_the_node_fields_the_specification_lists_all_exist():
     )
     fields = set(Node.from_dict({"id": "x"}).as_dict())
     assert documented <= fields, f"documented but absent: {documented - fields}"
+
+
+def test_every_stored_area_field_is_documented(spec):
+    """A field the editor writes and the document never mentions is a field
+    nobody else can implement.
+
+    `doors` was exactly that for a while: stored, served, validated on the
+    wire and drawn -- and absent from the one document a second renderer
+    would read. The vocabulary tests above could not catch it, because they
+    check the words a *provider* sends, and this is the user's own layout.
+    """
+    from custom_components.spatial_hub.storage import _AREA_KEYS
+
+    # `color` and `hidden` are not geometry and are covered elsewhere in the
+    # document by prose rather than a field name.
+    geometry = _AREA_KEYS - {"color", "hidden"}
+    missing = {key for key in geometry if f"`{key}`" not in spec}
+    assert not missing, f"stored but undocumented: {sorted(missing)}"

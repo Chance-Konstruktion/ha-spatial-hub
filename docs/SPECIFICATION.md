@@ -138,6 +138,24 @@ können; 2D-Renderer ignorieren sie.
   weiß. Der Hub setzt den Node in die Mitte seines Bereichs und verteilt
   mehrere auf ein Raster; die Nutzeranordnung schlägt beides.
 
+### Wie groß ein Bereich ist
+
+Ein Bereich trägt zusätzlich ein `size`:
+
+```json
+{"width": 0.34, "height": 0.62}
+```
+
+In denselben Etagen-Koordinaten wie `position`, und `position` ist die
+**Mitte** des Kastens, nicht seine Ecke — ein Raum reicht also von
+`x - width/2` bis `x + width/2`. Ein Renderer, der die Ecke annimmt,
+zeichnet jeden Raum um eine halbe Raumbreite verschoben.
+
+Alles, was ein Bereich sonst an Geometrie trägt — `shape`, `doors` — ist
+**kastenlokal** und rechnet gegen genau dieses Rechteck. Das ist der Grund
+für die Aufteilung: Der Kasten wird verschoben, an den Wänden vergrößert und
+in der Hausansicht projiziert, und der Inhalt fährt unverändert mit.
+
 ### Bauflucht
 
 Jede Etage meldet ihre Außenwände als `outline` — ein Kasten
@@ -189,6 +207,53 @@ von den Wänden zu reißen.
 - Keine Kontur ist **nicht** dasselbe wie ein Rechteck aus vier Punkten. Wer
   die letzte Ecke entfernt, löscht `shape` und gibt den Raum an die
   Wandgriffe zurück.
+
+### Türen
+
+Ein Bereich DARF eine Liste `doors` tragen. Eine Tür ist keine eigene Form,
+sondern eine **Lücke**: die Stelle, an der die Wand aufhört und dahinter
+wieder anfängt. Jeder Eintrag hat drei Felder, alle drei erforderlich:
+
+| Feld | Bedeutung |
+|---|---|
+| `side` | welche Kante — der Index in der Kontur, in derselben Reihenfolge, in der sie läuft. Ohne `shape` sind das die vier Kanten des Rechtecks: `0` hinten, `1` rechts, `2` vorne, `3` links |
+| `at` | die **Mitte** der Öffnung auf dieser Kante, `0..1` von der einen Ecke zur anderen |
+| `width` | wie viel der Kante die Öffnung einnimmt, `0..1` |
+
+Kastenlokal aus demselben Grund wie `shape`: Ein in Metern vermaßtes Türblatt
+wanderte, sobald der Raum breiter gezogen wird. Als Anteil der Wand bleibt die
+Tür, wo sie hingehört.
+
+- Ein Renderer, der Wände mit Stärke zeichnet, MUSS die Lücke durch die
+  **ganze** Mauer führen — Wandfläche und Mauerkrone gleichermaßen. Nur die
+  sichtbare Außenseite zu unterbrechen ergibt kein Durchgehen, sondern ein
+  zugemauertes Fenster.
+- Öffnungen, die sich überlappen, SOLLEN als **eine** Öffnung gelten. Zwei
+  Türen, die sich berühren, sind eine Tür, und ein Wandstück negativer Länge
+  ist nichts, worüber ein Renderer nachdenken sollte.
+- Ein Eintrag, der nicht gelesen werden kann — eine Kante, die es nicht gibt,
+  keine Breite, `at` keine Zahl — wird **weggelassen**, nicht geraten. Eine
+  halb erfundene Öffnung ist schlechter als gar keine.
+- `width` erreicht nie `1`. Eine Wand, die vollständig Türöffnung ist, ist
+  keine Wand mit einer Tür darin, sondern eine fehlende Wand — und dafür gibt
+  es die gemeinsame Wand (§ Gemeinsame Wände).
+
+Wie beim `shape` gilt: Der Hub speichert und liefert `doors` und **liest sie
+nie**. Was eine Tür bedeutet, ist die Frage dessen, der den Grundriss
+zeichnet.
+
+### Treppen
+
+Ein Renderer DARF einen Raum als **Treppe** zeichnen — als Stufen quer zur
+Laufrichtung statt als leere Fläche. Es gibt dafür bewusst **keine eigene
+Raumart**: Der Katalog in § Area Type ist das, was jeder Provider spricht,
+und eine Stufe wird nie von einem Provider kommen. Sie ist ein Zeichendetail.
+
+Woran ein Renderer sie erkennt, ist ihm überlassen; der eingebaute nimmt
+Name und Symbol, so wie der Hub auch Außenbereiche aus dem Namen rät. Ein
+Renderer, der Treppen nicht kennt, zeichnet einen gewöhnlichen Raum — und
+das ist kein Fehler, sondern die richtige Antwort auf ein Detail, das er
+nicht darstellt.
 
 ### Grundstück
 
