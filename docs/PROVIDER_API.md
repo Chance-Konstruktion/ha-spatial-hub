@@ -295,6 +295,14 @@ Hub die `via_device`-Beziehungen aus der Device-Registry als Kanten — die
 einzige echte Topologie, die Home Assistant selbst führt und die keiner
 Integration gehört.
 
+Seit Home Assistant 2026.8 kann dieselbe Hardware mehrere Geräteeinträge
+haben — ein Gerät gehört zu genau einem Config-Entry, frühere Zusammenlegungen
+über Integrationsgrenzen hinweg werden aufgetrennt. Der Hub zeichnet solche
+Einträge über ihre `connections` (die MAC, die sie vorher zusammengelegt hat)
+wieder als **einen** Knoten und nennt die beteiligten Einträge unter
+`metadata.geraete`. Die Knoten-ID bleibt eine Geräte-ID, gespeicherte
+Positionen überleben also die Auftrennung.
+
 Das Modell enthält unter `theme` die fertig aufgelösten Farben für die
 Zustands- und Qualitätswörter, unter `hidden` die vom Nutzer ausgeblendeten
 Objekte. Beides ist für Renderer gedacht; als Provider musst du dich um

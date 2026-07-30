@@ -208,24 +208,97 @@ def _device_of(hass: HomeAssistant, entity_id: str) -> Any:
         return None
 
 
-def _via_node(device: Any) -> dict[str, Any]:
+def hardware_key(device: Any) -> Any:
+    """What makes two device entries the same physical box.
+
+    From Home Assistant 2026.8 a device belongs to exactly one config
+    entry, and entries that used to be merged across integrations are
+    split -- one per integration. The wall socket that was one device is
+    now two, and drawing both would put the same physical controller on
+    the plan twice under two names.
+
+    ``connections`` is what merged them in the first place (a MAC is a MAC,
+    whoever reports it), so it is what un-merges them here. A device with
+    no connections keeps its own identity: identifiers are per-integration
+    and would only ever match itself.
+    """
+    connections = getattr(device, "connections", None) or ()
+    try:
+        pairs = sorted((str(kind), str(value)) for kind, value in connections)
+    except (TypeError, ValueError):  # pragma: no cover - unexpected shape
+        pairs = []
+    return tuple(pairs) if pairs else ("device_id", device.id)
+
+
+def physical_siblings(hass: HomeAssistant, device: Any) -> list[Any]:
+    """The other device entries that are the same physical hardware.
+
+    Empty in the ordinary case, and empty on every Home Assistant before
+    2026.8 -- nothing here assumes the split has happened.
+    """
+    if device is None:
+        return []
+    key = hardware_key(device)
+    if key[0] == "device_id":
+        return []
+    try:
+        registry = dr.async_get(hass)
+    except (AttributeError, KeyError):  # pragma: no cover - registry absent
+        return []
+    return [
+        other
+        for other in getattr(registry, "devices", {}).values()
+        if other.id != device.id and hardware_key(other) == key
+    ]
+
+
+def _first(group: list[Any], *attributes: str) -> str | None:
+    """The first thing anybody knows, asked in a fixed order.
+
+    With a split device the name may sit on one entry and the model on
+    another. Sorting by id first is what keeps the answer the same on
+    every reload, rather than depending on which integration set up first.
+    """
+    for device in group:
+        for attribute in attributes:
+            value = getattr(device, attribute, None)
+            if value:
+                return value
+    return None
+
+
+def _via_node(group: list[Any]) -> dict[str, Any]:
     """A parent device as a node, claiming only what is actually known.
+
+    ``group`` is every device entry for one physical box -- usually one,
+    from 2026.8 sometimes several. They are drawn as the single thing they
+    are, and the id stays a device id so a stored position survives.
 
     No state: the controller a device is reached through often has no
     entity at all, and inventing "online" for it would be a guess the
     plan then draws in green.
     """
-    return {
-        "id": f"{VIA_PREFIX}{device.id}",
-        "label": getattr(device, "name_by_user", None) or getattr(device, "name", "")
-        or "Gerät",
-        "area_id": getattr(device, "area_id", None),
+    node = {
+        "id": f"{VIA_PREFIX}{group[0].id}",
+        "label": _first(group, "name_by_user", "name") or "Gerät",
+        "area_id": _first(group, "area_id"),
         "icon": "mdi:hub-outline",
         "metadata": {
-            "hersteller": getattr(device, "manufacturer", "") or "",
-            "modell": getattr(device, "model", "") or "",
+            "hersteller": _first(group, "manufacturer") or "",
+            "modell": _first(group, "model") or "",
         },
     }
+    if len(group) > 1:
+        # Named, not hidden: the same hardware really does have several
+        # device entries now, and a renderer offering "open in Home
+        # Assistant" needs to know there is more than one page to open.
+        node["metadata"]["geraete"] = [device.id for device in group]
+    return node
+
+
+def _via_group(hass: HomeAssistant, device: Any) -> list[Any]:
+    """One physical box as its device entries, in a stable order."""
+    return sorted([device, *physical_siblings(hass, device)], key=lambda d: d.id)
 
 
 def topology(hass: HomeAssistant, entity_ids: list[str]) -> dict[str, list]:
@@ -260,11 +333,12 @@ def topology(hass: HomeAssistant, entity_ids: list[str]) -> dict[str, list]:
         parent = devices.async_get(via_id)
         if parent is None:
             continue
-        target = f"{VIA_PREFIX}{parent.id}"
+        group = _via_group(hass, parent)
+        target = f"{VIA_PREFIX}{group[0].id}"
         if (entity_id, target) in seen:
             continue
         seen.add((entity_id, target))
-        extra.setdefault(target, _via_node(parent))
+        extra.setdefault(target, _via_node(group))
         edges.append({
             "id": f"via-{entity_id}",
             "source": entity_id,

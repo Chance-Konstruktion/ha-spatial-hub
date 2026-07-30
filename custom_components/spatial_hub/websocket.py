@@ -25,7 +25,7 @@ from .const import (
     DOMAIN,
     MAX_BACKGROUND_BYTES,
 )
-from .generic import async_facets
+from .generic import async_facets, physical_siblings
 from .hub import SpatialHub
 
 _COLOUR = vol.All(str, vol.Length(max=64))
@@ -445,6 +445,7 @@ def websocket_area_assign(hass: HomeAssistant, connection, msg: dict) -> None:
         connection.send_error(msg["id"], "not_found", f"No such area: {area_id}")
         return
 
+    siblings: list[dict] = []
     scope = msg.get("scope")
     if scope is None:
         scope = "entity" if entry.area_id is not None else "device"
@@ -463,13 +464,31 @@ def websocket_area_assign(hass: HomeAssistant, connection, msg: dict) -> None:
         before = device.area_id
         devices.async_update_device(device.id, area_id=area_id)
         target = device.id
+        # From 2026.8 a device belongs to one config entry, so the same
+        # physical box can have a second entry from another integration --
+        # with its own area, which this move did not touch. Writing it too
+        # would move entities the user never dragged; saying nothing would
+        # make the move look half-done. So it is reported.
+        siblings = [
+            {
+                "device_id": other.id,
+                "name": getattr(other, "name_by_user", None)
+                or getattr(other, "name", "")
+                or "",
+                "area_id": other.area_id,
+            }
+            for other in physical_siblings(hass, device)
+            if other.area_id != area_id
+        ]
     else:
         before = entry.area_id
         entities.async_update_entity(entry.entity_id, area_id=area_id)
         target = entry.entity_id
 
     # Everything the caller needs to undo it, and nothing it has to guess.
-    connection.send_result(
-        msg["id"],
-        {"scope": scope, "target": target, "before": before, "after": area_id},
-    )
+    result = {"scope": scope, "target": target, "before": before, "after": area_id}
+    if siblings:
+        # Only when there is something to say -- an ordinary move keeps the
+        # short answer it always had.
+        result["siblings"] = siblings
+    connection.send_result(msg["id"], result)
