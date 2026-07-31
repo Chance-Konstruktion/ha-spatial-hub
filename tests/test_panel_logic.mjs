@@ -3636,3 +3636,29 @@ test("the lone storey's name sits above the drawing, not beside it", () => {
   assert.ok(at < top, "der Name liegt auf der Zeichnung statt darueber");
   assert.ok(at > 0, "und faellt oben aus dem Bild");
 });
+
+test("one storey stands on nothing; a stack stands on slabs", () => {
+  // Die Bodenplatte trennt Etagen voneinander -- vier Zeichnungen
+  // uebereinander werden dadurch vier Stockwerke eines Hauses. Steht dort
+  // nur eine, gibt es nichts zu trennen, und was bleibt, ist eine Wanne:
+  // ein Sockel mit dicker Vorderkante unter einem Grundriss, der auf gar
+  // nichts steht. Eine Bauzeichnung zeichnet den Boden nicht.
+  const floors = [
+    { id: "eg", name: "Erdgeschoss", level: 0, icon: "" },
+    { id: "og", name: "Obergeschoss", level: 1, icon: "" },
+  ];
+  const alone = panel(model({ floors: [floors[0]] }), { floor: null });
+  const stacked = panel(model({ floors }), { floor: null });
+  const count = (markup, what) => (markup.match(new RegExp(what, "g")) || []).length;
+
+  assert.equal(count(alone._stackHtml(), 'class="storey"'), 0, "die Wanne ist noch da");
+  assert.equal(count(alone._stackHtml(), "storey-side"), 0);
+
+  assert.equal(count(stacked._stackHtml(), 'class="storey"'), 2,
+    "im Stapel traegt jede Etage eine Platte");
+  assert.ok(count(stacked._stackHtml(), "storey-side") >= 8);
+
+  // Die Aussenwand bleibt in beiden Faellen: sie ist das, was den
+  // Grundriss zu einem Stockwerk macht, und nicht die Platte darunter.
+  assert.ok(count(alone._stackHtml(), "shell-face") >= 4);
+});

@@ -1588,16 +1588,26 @@ class SpatialHubPanel extends HTMLElement {
       // The storey is a floor slab, not a sheet of paper: a thin band of
       // edge under it is the difference between four drawings above each
       // other and four floors of one house.
+      //
+      // Genau deshalb faellt sie weg, sobald nur eine Etage dasteht. Dann
+      // gibt es nichts zu trennen, und was bleibt, ist eine Wanne: ein
+      // Sockel mit dicker Vorderkante, unter einem Grundriss, der gar
+      // nicht auf etwas steht. Eine Bauzeichnung zeichnet den Boden
+      // nicht, sie zeichnet die Waende -- der Boden ist das Blatt.
+      //
       // The outer wall is split around the rooms on purpose: the two walls
       // facing the viewer are drawn after them and hide their lower edge,
       // which is what puts the rooms *inside* the house instead of on top
       // of a slab shaped like one.
       const house = corners(at, 0, 1);
       const crown = house.map((corner) => ({ x: corner.x, y: corner.y - STACK.rise }));
+      const slab = this._oneStorey
+        ? ""
+        : `${wallsOf(house, -STACK.slab, "storey-side")}
+           <polygon class="storey" points="${outline(at, 0, 1)}"/>`;
       return `<g class="plane">
         ${apron}
-        ${wallsOf(house, -STACK.slab, "storey-side")}
-        <polygon class="storey" points="${outline(at, 0, 1)}"/>
+        ${slab}
         ${wallsOf(house, STACK.rise, "shell-face", BACK_WALL)}
         ${rooms}
         ${wallsOf(house, STACK.rise, "shell-face", FRONT_WALL)}

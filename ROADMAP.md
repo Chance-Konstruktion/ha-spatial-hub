@@ -214,11 +214,25 @@ nicht.
       linke Flanke prüfte — die einzige, bei der beide Projektionen
       dasselbe tun. Der Unterschied steht rechts.
 
-- [ ] **Die Bodenplatte.** Unter der Etage liegt ein massiver Sockel mit
-      dicker Vorderkante; in der Referenz steht die Wand allein. Dabei
-      die Gegenprobe: braucht der Stapel sie umgekehrt, um Etagen
-      voneinander zu trennen? Dann ist es kein Fehler, sondern ein
-      Unterschied zwischen den zwei Ansichten.
+- [x] **Die Bodenplatte.** Weg, sobald nur eine Etage dasteht — im Stapel
+      bleibt sie, denn dort ist sie das, was aus vier Zeichnungen
+      übereinander vier Stockwerke macht. Die Gegenprobe aus der Frage
+      hat sich also bestätigt: kein Fehler, ein Unterschied zwischen zwei
+      Ansichten.
+
+      **Und sie war nicht die Wanne.** Nach dem Entfernen stand das Band
+      unten unverändert da. Es ist die vordere Außenwand — legitim, die
+      gibt es in der Referenz auch — plus ein leerer Streifen davor, weil
+      die Räume die Außenwand nicht erreichen. Auch eine dunklere Füllung
+      der Wand ändert daran nichts; beides ausprobiert und angesehen.
+
+- [ ] **Die Räume füllen das Haus nicht.** Die Automatik legt sie auf ein
+      Raster mit Rand: vorn bleiben 2,5 % der Haustiefe über die ganze
+      Breite leer, dazu Lücken zwischen den Spalten. In einem echten
+      Grundriss ist jeder Quadratmeter jemandes Zimmer, und genau dieser
+      Streifen ist es, der zusammen mit der Außenwand als Sockel liest.
+      Das ist **keine Zeichenfrage** — es ist `async_arrange_areas`, also
+      die Anordnung, und damit ein Eingriff auf der Hub-Seite.
 
 - [ ] **Die Raumnamen.** Sie kleben an der Hinterwand und laufen
       ineinander („DIELE TREPPE ESSZIMMER"). Nach hinten geschoben wurden
