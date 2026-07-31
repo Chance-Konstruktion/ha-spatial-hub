@@ -548,9 +548,16 @@ class SpatialHubPanel extends HTMLElement {
     // keins -- man liest oben-nach-unten als Stockwerke, nebeneinander
     // liest man als zwei Gebaeude. Leerer Rand ist der guenstigere Preis;
     // dagegen hilft der Zoom, nicht das Umbrechen.
+    //
+    // Die Flucht wirkt von der Mitte der Etage aus, nicht von ihrer
+    // linken Kante: nur so weichen beide Flanken nach innen. Zieht man
+    // stattdessen alles nach rechts, lehnen sie gleichsinnig, und man
+    // sieht die eine Aussenwand von aussen und die andere von innen --
+    // was kein Standpunkt ist, den ein Betrachter einnehmen kann.
+    const shrink = STACK.back + (1 - STACK.back) * ny;
     return {
       x: this._nameGutter + STACK.stagger * floorIndex +
-        nx * STACK.width + (1 - ny) * STACK.skew,
+        STACK.width / 2 + (nx - 0.5) * STACK.width * shrink,
       y: STACK.top + sky + floorIndex * STACK.gap + ny * STACK.depth -
         this._planeLift(floorIndex),
     };
@@ -578,10 +585,16 @@ class SpatialHubPanel extends HTMLElement {
   }
 
   /** How wide the drawing has to be. Every storey is offset a little
-   *  further right than the one above it, so the bottom one decides. */
+   *  further right than the one above it, so the bottom one decides.
+   *
+   *  Kein Zuschlag mehr fuer die Flucht. Die Parallelverschiebung schob
+   *  die Hinterkante ueber die rechte Bildkante hinaus und musste dort
+   *  wieder eingeholt werden; die Flucht zieht nach innen, also ist die
+   *  Vorderkante die breiteste Stelle und `width` die ganze Wahrheit.
+   */
   get _stackWidth() {
     return (
-      this._nameGutter + STACK.pad + STACK.width + STACK.skew +
+      this._nameGutter + STACK.pad + STACK.width +
       Math.max(0, this._stackFloors.length - 1) * STACK.stagger
     );
   }
@@ -601,6 +614,15 @@ class SpatialHubPanel extends HTMLElement {
    *  viel Rand sieht man kaum, zu wenig schneidet einen Buchstaben ab.
    */
   get _nameGutter() {
+    // Eine einzelne Etage braucht die Spalte nicht. Sie ist dazu da, die
+    // Stockwerke untereinander lesbar zu machen -- bei einem gibt es
+    // nichts zu sortieren, und der Name steht dann oben links am Blatt
+    // statt in einem Rand, der ein Drittel der Flaeche kostet.
+    //
+    // Das ist kein Randfall fuer eine Demo: eine Wohnung ist ein Haus mit
+    // einer Etage. Wer in einer wohnt, hat bisher ein Drittel des Bildes
+    // an eine Spalte verloren, in der ein einziges Wort steht.
+    if (this._oneStorey) return STACK.pad;
     const longest = Math.max(
       0,
       ...this._stackFloors.map((floor) => String(floor.name || "").length),
@@ -608,6 +630,12 @@ class SpatialHubPanel extends HTMLElement {
     // 30px Schriftgroesse, Grossbuchstaben, plus Sperrung -- und die 34,
     // um die der Name von der Plattenkante wegrueckt.
     return Math.max(STACK.margin, longest * 23 + 34 + STACK.pad);
+  }
+
+  /** Steht hier nur ein Stockwerk? Dann ist die Zeichnung ein Grundriss
+   *  und kein Schnitt, und ein paar Entscheidungen kippen mit. */
+  get _oneStorey() {
+    return this._stackFloors.length <= 1;
   }
 
   /** Providers whose every layer is switched off.
@@ -1502,10 +1530,18 @@ class SpatialHubPanel extends HTMLElement {
       // Kante. Die x-Koordinate kommt vom linkesten Punkt der Platte,
       // die y-Koordinate aus der oberen Haelfte: so steht der Name auf
       // Hoehe der Etage, statt an ihrer Unterkante zu haengen.
-      const label = {
-        x: this._project(at, 0, 1).x - 34,
-        y: this._project(at, 0, 0.35).y,
-      };
+      //
+      // Bei einer einzelnen Etage stattdessen oben links ueber dem Blatt,
+      // klein und laufend statt gross und rechtsbuendig: dort gibt es
+      // keine Reihe, in die er sich einordnen muesste, und der Rand, in
+      // dem er sonst steht, waere leere Flaeche neben einem Grundriss.
+      // Ueber die Mauerkrone gesetzt, sonst laege er auf der Rueckwand.
+      const label = this._oneStorey
+        ? { x: this._project(at, 0, 0).x - 34, y: STACK.top - STACK.rise - 10 }
+        : {
+            x: this._project(at, 0, 1).x - 34,
+            y: this._project(at, 0, 0.35).y,
+          };
       // Back to front. Rooms have height now, so a room further back can
       // be hidden behind the walls of one in front -- which is what depth
       // looks like. Drawn in storage order instead, a back room paints
@@ -1544,7 +1580,7 @@ class SpatialHubPanel extends HTMLElement {
           <g data-at-x="${label.x}" data-at-y="${label.y}"
              transform="translate(${label.x},${label.y}) scale(${
                this._counterScale
-             })"><text class="storey-name">${escapeHtml(
+             })"><text class="storey-name ${this._oneStorey ? "alone" : ""}">${escapeHtml(
                String(floor.name || "").toLocaleUpperCase("de"),
              )}</text></g>
         </g>`;
@@ -1552,16 +1588,26 @@ class SpatialHubPanel extends HTMLElement {
       // The storey is a floor slab, not a sheet of paper: a thin band of
       // edge under it is the difference between four drawings above each
       // other and four floors of one house.
+      //
+      // Genau deshalb faellt sie weg, sobald nur eine Etage dasteht. Dann
+      // gibt es nichts zu trennen, und was bleibt, ist eine Wanne: ein
+      // Sockel mit dicker Vorderkante, unter einem Grundriss, der gar
+      // nicht auf etwas steht. Eine Bauzeichnung zeichnet den Boden
+      // nicht, sie zeichnet die Waende -- der Boden ist das Blatt.
+      //
       // The outer wall is split around the rooms on purpose: the two walls
       // facing the viewer are drawn after them and hide their lower edge,
       // which is what puts the rooms *inside* the house instead of on top
       // of a slab shaped like one.
       const house = corners(at, 0, 1);
       const crown = house.map((corner) => ({ x: corner.x, y: corner.y - STACK.rise }));
+      const slab = this._oneStorey
+        ? ""
+        : `${wallsOf(house, -STACK.slab, "storey-side")}
+           <polygon class="storey" points="${outline(at, 0, 1)}"/>`;
       return `<g class="plane">
         ${apron}
-        ${wallsOf(house, -STACK.slab, "storey-side")}
-        <polygon class="storey" points="${outline(at, 0, 1)}"/>
+        ${slab}
         ${wallsOf(house, STACK.rise, "shell-face", BACK_WALL)}
         ${rooms}
         ${wallsOf(house, STACK.rise, "shell-face", FRONT_WALL)}
@@ -1569,7 +1615,7 @@ class SpatialHubPanel extends HTMLElement {
         <g data-at-x="${label.x}" data-at-y="${label.y}"
            transform="translate(${label.x},${label.y}) scale(${
              this._counterScale
-           })"><text class="storey-name">${escapeHtml(
+           })"><text class="storey-name ${this._oneStorey ? "alone" : ""}">${escapeHtml(
              String(floor.name || "").toLocaleUpperCase("de"),
            )}</text></g>
       </g>`;
@@ -1757,8 +1803,10 @@ class SpatialHubPanel extends HTMLElement {
       shape += wallsOf(corners, STACK.rise * 0.35, "deck-rail", keep);
     }
     if (kindOf(area) === AREA_KIND.VIRTUAL) {
-      // The plan is skewed, so the cloud is skewed with it: two edges of
-      // the projected room are the axes it is drawn along.
+      // Der Grundriss steht in der Flucht, also steht die Wolke mit
+      // darin: zwei Kanten des projizierten Raumes sind die Achsen, an
+      // denen sie gezeichnet wird. Damit gilt das auch weiter, seit die
+      // Flanken nicht mehr parallel laufen.
       const origin = this._project(plane, x0, y0);
       const alongX = this._project(plane, x0 + width, y0);
       const alongY = this._project(plane, x0, y0 + height);

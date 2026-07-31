@@ -16,14 +16,31 @@
  * Kein Build, kein Bundle: Der Browser laedt das als ES-Modul direkt.
  */
 
-// The shear that turns a flat plan into a storey seen from the side. Not
-// a true isometric projection: rooms stay rectangles-in-parallel, which
-// keeps them recognisable as the same rooms from the detail view.
+// Wie aus einem flachen Grundriss eine Etage wird, die man ansieht.
+//
+// Frueher eine Parallelverschiebung: nach hinten rutschte jeder Punkt um
+// denselben Betrag nach rechts. Damit lehnten beide Seitenwaende in
+// dieselbe Richtung, und das Haus wirkte gekippt statt gesehen -- man sah
+// die linke Aussenwand von aussen und die rechte von innen.
+//
+// Jetzt ein Fluchtpunkt: die Hinterkante ist schmaler als die
+// Vorderkante, gerechnet von der Mitte aus. Die linke Wand weicht dadurch
+// nach rechts, die rechte nach links -- beide zur Mitte, wie in jeder
+// Architekturzeichnung. Raeume bleiben dabei *keine* Parallelogramme
+// mehr; das ist der Preis und zugleich der Punkt.
 const STACK = {
   // "margin" ist der Platz links neben dem Haus, in dem der Etagenname
   // steht -- aber nur die Untergrenze davon. Wie breit er wirklich sein
   // muss, haengt am laengsten Namen und steht in `_nameGutter`.
-  pad: 40, margin: 150, width: 620, depth: 220, skew: 50, top: 50, gap: 340,
+  pad: 40, margin: 150, width: 620, top: 50, gap: 340,
+  // Die Flucht: wie breit die Hinterkante im Verhaeltnis zur Vorderkante
+  // ist. 1 waere gar keine (Wand parallel), 0.78 schon Weitwinkel. Beide
+  // Zahlen sind an einer echten Zeichnung abgemessen und nicht geraten --
+  // dort laeuft die linke Wand ueber die volle Tiefe rund ein Achtel der
+  // Haus-Halbbreite nach innen, und die Tiefe ist gut vier Zehntel der
+  // Breite. Sie haengen zusammen: dieselbe Flucht wirkt bei tieferem
+  // Grundriss staerker, weil die Flanken laenger sind.
+  back: 0.87, depth: 250,
   // Rooms have standing walls and a storey has thickness. Flat outlines
   // drawn on top of each other are what turned this view into porridge:
   // four sheets of the same weight, and nothing in the picture saying

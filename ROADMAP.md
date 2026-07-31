@@ -59,8 +59,9 @@ Zwei Zahlen, an denen das hängt:
 
 - Beide angebundenen Provider sind unsere eigenen. Powerline und
   ESPEasy P2P, beide aus demselben Haus.
-- Der Renderer ist mit ~5.800 Zeilen in *einer* Datei inzwischen größer
-  als der gesamte Hub mit ~3.700 auf fünfzehn Module verteilt.
+- Der Renderer ist mit ~6.400 Zeilen größer als der gesamte Hub mit
+  ~3.700 auf fünfzehn Module. Immerhin liegt er nicht mehr in *einer*
+  Datei — Stylesheet und Geometrie sind heraus, die Klasse bleibt.
 
 Zwei eigene Provider sind eine Integration. Fünf fremde sind eine
 Plattform. Solange nur wir selbst die API benutzen, ist sie womöglich
@@ -183,16 +184,106 @@ wird von B gefüllt.
 
 Und erst danach die Feature-Phasen 16–19.
 
+## E — Die Etage als Zeichnung, nicht als Oberfläche
+
+Der Anlass war eine hochgeladene Referenz: ein Grundriss auf schwarzem
+Grund, weiße Haarlinien, Wände mit echter Dicke, Türen als Lücken, die
+Treppe mit einzelnen Stufen, der Balkon schraffiert. Daneben gehalten war
+klar, was hier gebaut worden war: **ein Dashboard, das Räume anzeigt** —
+graue Karten mit gestrichelten Rändern und bunten Kreisen darauf. Die
+Referenz ist das Umgekehrte: eine Zeichnung, die man bedienen kann.
+
+Das ist kein Geschmacksstreit, sondern ein anderer Startpunkt, und der
+war nie übernommen worden.
+
+**Reihenfolge: erst eine Etage, dann der Stapel.** Nicht aus Vorsicht —
+die Bodenplatte unten ist für die einzelne Etage falsch und für das
+Sandwich vermutlich richtig, und beides gleichzeitig zu entscheiden geht
+nicht.
+
+- [x] **Die Perspektive.** War eine Parallelverschiebung: nach hinten
+      rutschte jeder Punkt gleich weit nach rechts, also lehnten beide
+      Seitenwände in dieselbe Richtung. Man sah die eine Außenwand von
+      außen und die andere von innen — kein Standpunkt, den ein
+      Betrachter einnehmen kann. Jetzt ein Fluchtpunkt: die Hinterkante
+      ist schmaler als die Vorderkante, gerechnet von der Mitte aus.
+      Beide Zahlen (Flucht 87 %, Tiefe 250) sind an der Referenz
+      abgemessen, nicht geraten.
+
+      Der alte Test dazu hat den Umbau **nicht bemerkt**, weil er nur die
+      linke Flanke prüfte — die einzige, bei der beide Projektionen
+      dasselbe tun. Der Unterschied steht rechts.
+
+- [x] **Die Bodenplatte.** Weg, sobald nur eine Etage dasteht — im Stapel
+      bleibt sie, denn dort ist sie das, was aus vier Zeichnungen
+      übereinander vier Stockwerke macht. Die Gegenprobe aus der Frage
+      hat sich also bestätigt: kein Fehler, ein Unterschied zwischen zwei
+      Ansichten.
+
+      **Und sie war nicht die Wanne.** Nach dem Entfernen stand das Band
+      unten unverändert da. Es ist die vordere Außenwand — legitim, die
+      gibt es in der Referenz auch — plus ein leerer Streifen davor, weil
+      die Räume die Außenwand nicht erreichen. Auch eine dunklere Füllung
+      der Wand ändert daran nichts; beides ausprobiert und angesehen.
+
+- [ ] **Die Räume füllen das Haus nicht.** Die Automatik legt sie auf ein
+      Raster mit Rand: vorn bleiben 2,5 % der Haustiefe über die ganze
+      Breite leer, dazu Lücken zwischen den Spalten. In einem echten
+      Grundriss ist jeder Quadratmeter jemandes Zimmer, und genau dieser
+      Streifen ist es, der zusammen mit der Außenwand als Sockel liest.
+      Das ist **keine Zeichenfrage** — es ist `async_arrange_areas`, also
+      die Anordnung, und damit ein Eingriff auf der Hub-Seite.
+
+- [ ] **Die Raumnamen.** Sie kleben an der Hinterwand und laufen
+      ineinander („DIELE TREPPE ESSZIMMER"). Nach hinten geschoben wurden
+      sie, damit sie nicht auf dem ersten automatisch platzierten Gerät
+      liegen — in einer leeren Zeichnung ist das schlicht falsch. Die
+      Lösung muss beides können, nicht das eine gegen das andere
+      tauschen.
+
+- [x] **Der leere linke Rand.** Der Etagenname stand groß und gesperrt in
+      einer eigenen Spalte, die bei einer einzelnen Etage ein Drittel der
+      Fläche fraß. Jetzt ein kleines Wort oben links, sobald nur ein
+      Stockwerk dasteht; im Stapel bleibt die Spalte, denn dort sortiert
+      sie die Etagen. Zwei Ansichten, zwei Antworten.
+
+      **Das ist kein Randfall.** Eine Wohnung ist ein Haus mit einer
+      Etage — wer in einer wohnt, hat bisher ein Drittel des Bildes an
+      eine Spalte verloren, in der ein einziges Wort steht.
+
+- [ ] **Dann erst das Sandwich.** Und dort noch einmal von vorn: die
+      Flucht gilt jetzt pro Etage, `stagger` schiebt sie gegeneinander —
+      ob das zusammen noch als *ein* Gebäude liest, ist ungeprüft.
+
+Danach kommt die Frage, die bewusst offen liegt: **wo der Zustand
+hingehört.** Die Referenz kennt kein „Licht an" — sie ist eine
+Architekturzeichnung, und das ist ihre Stärke. Der Panel muss es trotzdem
+zeigen. Licht *im Raum* statt als Punkt an der Wand wäre die naheliegende
+Antwort, und es ist genau das, was Phase 16 ohnehin vorhat. Eine
+Gestaltungsentscheidung, keine technische.
+
 ## Nebenher: die eine große Datei
 
-`spatial-hub-panel.js` wächst schneller als alles andere und wird von
-jedem visuellen Feature angefasst. Das ist die Stelle, die in ein paar
-Monaten am meisten ausbremst.
+`spatial-hub-panel.js` wuchs schneller als alles andere und wurde von
+jedem visuellen Feature angefasst — 6272 Zeilen.
 
-Kein Grund, es sofort zu tun, aber der Zeitpunkt kommt — und das Prinzip
-„kein Build-Schritt" schließt es **nicht** aus: ES-Module importieren
-sich nativ, `stack.js`, `editor.js` und `styles.js` gingen ohne
-Werkzeugkette. Besser geplant als erzwungen.
+**Zwei Stücke sind raus** (5091 Zeilen übrig), und zwar nicht nach
+Zeilenzahl, sondern nach dem, was sich schon beschwert hatte:
+`panel-styles.js`, weil zwei Werkzeuge das CSS mit einem `indexOf` aus
+dem Quelltext schnitten, und `panel-geometry.js`, weil für die
+Perspektiv-Proben `_project` monkey-gepatcht und `STACK` von Hand
+nachgebaut werden musste. Das Prinzip „kein Build-Schritt" hat das
+ausgehalten: ES-Module importieren sich nativ.
+
+Dabei fielen zwei Fallen auf, die vorher unsichtbar waren — die
+Cache-Kennung hashte nur eine Datei, und drei Tests, die den *ganzen*
+Renderer bewachen sollten, lasen nur eine.
+
+Die Klasse selbst (4966 Zeilen) bleibt vorerst. Ihre Methoden reden
+durchgehend über `this`; in Mixins zerschnitten sucht man hinterher
+länger als vorher. Nähte gibt es (Editor/Ziehen, Popup, Websocket,
+Kamera) — aber das ist ein eigener Auftrag mit echtem Regressionsrisiko
+und gehört nicht in denselben Atemzug wie ein optischer Umbau.
 
 ---
 

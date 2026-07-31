@@ -229,6 +229,10 @@ main { flex:0 0 auto; min-width:0; }
    Etage -- das Erste, was man in einer Schnittzeichnung liest. Vorher
    klebte er bei .65 Deckkraft an der Plattenkante und wurde vom Rand des
    Bildes abgeschnitten, weil links kein Rand war. */
+/* Steht nur eine Etage da, ist der Name kein Ordnungsmerkmal mehr,
+   sondern eine Beschriftung: klein, oben links, nach rechts laufend --
+   und nicht 30px rechtsbuendig in einer Spalte, die es nicht gibt. */
+.storey-name.alone { font-size:16px; text-anchor:start; opacity:.65; }
 .storey-name { font-size:30px; fill:var(--fp-ink, currentColor); opacity:.8;
                letter-spacing:.1em; text-anchor:end; }
 .stack-cloud { fill:var(--fp-virtual, rgba(120,144,180,.16));

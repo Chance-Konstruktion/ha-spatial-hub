@@ -976,9 +976,47 @@ test("the same point on a higher storey is drawn higher up, and a step over", ()
   assert.ok(lower.x > upper.x, "the storeys stand exactly above each other");
 });
 
-test("the back of a storey is sheared right, which is what makes it a solid", () => {
+test("both flanks of a storey lean inwards, not both to the right", () => {
+  // Dieser Test hat einmal nur die linke Wand geprueft -- und deshalb
+  // einen kompletten Umbau der Projektion nicht bemerkt: von der
+  // Parallelverschiebung (nach hinten rutscht alles gleich weit nach
+  // rechts) zur Flucht (die Hinterkante ist schmaler). Auf der linken
+  // Flanke tun beide dasselbe, naemlich nach rechts. Der Unterschied
+  // steht rechts, und dort sah niemand hin.
   const view = panel(model(), { floor: null });
-  assert.ok(view._project(0, 0, 0).x > view._project(0, 0, 1).x);
+  const backLeft = view._project(0, 0, 0);
+  const frontLeft = view._project(0, 0, 1);
+  const backRight = view._project(0, 1, 0);
+  const frontRight = view._project(0, 1, 1);
+
+  assert.ok(backLeft.x > frontLeft.x, "die linke Wand weicht nach innen");
+  assert.ok(backRight.x < frontRight.x, "die rechte Wand weicht nach innen");
+});
+
+test("the back edge of a storey is narrower than its front edge", () => {
+  // Das ist die Perspektive in einem Satz. Bei einer Parallelverschiebung
+  // waeren beide exakt gleich breit, und das Haus wirkt gekippt statt
+  // gesehen: man blickt auf die eine Aussenwand von aussen und auf die
+  // andere von innen, was kein Standpunkt ist, den jemand einnehmen kann.
+  const view = panel(model(), { floor: null });
+  const front = view._project(0, 1, 1).x - view._project(0, 0, 1).x;
+  const back = view._project(0, 1, 0).x - view._project(0, 0, 0).x;
+
+  assert.ok(back < front, "die Hinterkante ist nicht schmaler");
+  assert.ok(back > front * 0.6, "so stark ist es kein Grundriss mehr");
+});
+
+test("the front edge keeps the full width, so nothing is drawn past it", () => {
+  // Die Flucht zieht nach innen. Damit ist die Vorderkante die breiteste
+  // Stelle der Zeichnung -- und `_stackWidth` darf keinen Zuschlag mehr
+  // dafuer machen, wie sie ihn fuer die alte Verschiebung brauchte.
+  const view = panel(model(), { floor: null });
+  const widest = Math.max(
+    ...view._stackFloors.flatMap((_floor, plane) =>
+      [0, 1].flatMap((y) => [0, 1].map((x) => view._project(plane, x, y).x)),
+    ),
+  );
+  assert.ok(widest <= view._stackWidth, "die Zeichnung laeuft aus dem Bild");
 });
 
 test("many storeys get more drawing, not less air between them", () => {
@@ -3550,4 +3588,77 @@ test("the room's name gets out of the way of what is in the room", () => {
   const back = view._project(plane, 0.5, 0.2).y;
   assert.ok(nameY < middle, "the name is still sitting on the devices");
   assert.ok(nameY >= back, "and it has not climbed out through the back wall");
+});
+
+test("a flat gets its drawing, not a column with one word in it", () => {
+  // Die Spalte links ist dazu da, Stockwerke untereinander lesbar zu
+  // machen. Bei einem gibt es nichts zu sortieren -- und eine Wohnung ist
+  // ein Haus mit einer Etage, also ist das kein Randfall, sondern jede
+  // Etagenwohnung. Der Name „Untergeschoss" hat dort ein Drittel der
+  // Bildbreite an eine Spalte verloren, in der ein Wort steht.
+  const long = { id: "ug", name: "Untergeschoss", level: 0, icon: "" };
+  const alone = panel(model({ floors: [long] }), { floor: null });
+  const stacked = panel(
+    model({ floors: [long, { id: "og", name: "Obergeschoss", level: 1, icon: "" }] }),
+    { floor: null },
+  );
+
+  assert.ok(alone._oneStorey, "eine Etage ist eine Etage");
+  assert.ok(!stacked._oneStorey);
+  assert.ok(alone._nameGutter < stacked._nameGutter / 3,
+    "die Spalte steht immer noch da");
+
+  // Und das gewonnene Feld geht an die Zeichnung, nicht an den Rand.
+  const share = (view) => {
+    const front = view._project(0, 1, 1).x - view._project(0, 0, 1).x;
+    return front / view._stackWidth;
+  };
+  assert.ok(share(alone) > share(stacked),
+    "das Haus hat nichts vom kleineren Rand");
+  assert.ok(share(alone) > 0.85, "immer noch zu viel Luft daneben");
+});
+
+test("the lone storey's name sits above the drawing, not beside it", () => {
+  const view = panel(model({ floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }] }),
+                     { floor: null });
+  const markup = view._stackHtml();
+
+  // Ueber der Mauerkrone, sonst laege der Name auf der Rueckwand.
+  assert.match(markup, /class="storey-name alone"/);
+  const top = Math.min(
+    ...[0, 1].map((x) => view._project(0, x, 0).y - 26),
+  );
+  // Die letzte data-at-y *vor* der Beschriftung -- Knoten tragen
+  // dieselbe Angabe, und die erste im Dokument ist nicht diese.
+  const before = markup.slice(0, markup.indexOf('class="storey-name alone"'));
+  const all = [...before.matchAll(/data-at-y="([-\d.]+)"/g)];
+  const at = Number(all[all.length - 1][1]);
+  assert.ok(at < top, "der Name liegt auf der Zeichnung statt darueber");
+  assert.ok(at > 0, "und faellt oben aus dem Bild");
+});
+
+test("one storey stands on nothing; a stack stands on slabs", () => {
+  // Die Bodenplatte trennt Etagen voneinander -- vier Zeichnungen
+  // uebereinander werden dadurch vier Stockwerke eines Hauses. Steht dort
+  // nur eine, gibt es nichts zu trennen, und was bleibt, ist eine Wanne:
+  // ein Sockel mit dicker Vorderkante unter einem Grundriss, der auf gar
+  // nichts steht. Eine Bauzeichnung zeichnet den Boden nicht.
+  const floors = [
+    { id: "eg", name: "Erdgeschoss", level: 0, icon: "" },
+    { id: "og", name: "Obergeschoss", level: 1, icon: "" },
+  ];
+  const alone = panel(model({ floors: [floors[0]] }), { floor: null });
+  const stacked = panel(model({ floors }), { floor: null });
+  const count = (markup, what) => (markup.match(new RegExp(what, "g")) || []).length;
+
+  assert.equal(count(alone._stackHtml(), 'class="storey"'), 0, "die Wanne ist noch da");
+  assert.equal(count(alone._stackHtml(), "storey-side"), 0);
+
+  assert.equal(count(stacked._stackHtml(), 'class="storey"'), 2,
+    "im Stapel traegt jede Etage eine Platte");
+  assert.ok(count(stacked._stackHtml(), "storey-side") >= 8);
+
+  // Die Aussenwand bleibt in beiden Faellen: sie ist das, was den
+  // Grundriss zu einem Stockwerk macht, und nicht die Platte darunter.
+  assert.ok(count(alone._stackHtml(), "shell-face") >= 4);
 });
