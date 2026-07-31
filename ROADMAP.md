@@ -59,8 +59,9 @@ Zwei Zahlen, an denen das hängt:
 
 - Beide angebundenen Provider sind unsere eigenen. Powerline und
   ESPEasy P2P, beide aus demselben Haus.
-- Der Renderer ist mit ~5.800 Zeilen in *einer* Datei inzwischen größer
-  als der gesamte Hub mit ~3.700 auf fünfzehn Module verteilt.
+- Der Renderer ist mit ~6.400 Zeilen größer als der gesamte Hub mit
+  ~3.700 auf fünfzehn Module. Immerhin liegt er nicht mehr in *einer*
+  Datei — Stylesheet und Geometrie sind heraus, die Klasse bleibt.
 
 Zwei eigene Provider sind eine Integration. Fünf fremde sind eine
 Plattform. Solange nur wir selbst die API benutzen, ist sie womöglich
