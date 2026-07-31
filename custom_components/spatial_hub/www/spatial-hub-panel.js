@@ -53,24 +53,41 @@ import {
   sideName,
   STAIR_WORDS,
   isStairs,
+  planeLift,
+  projectOnto,
+  stackHeight,
+  stackWidth,
+  snapTo,
+  magnetTo,
+  wallLinesOf,
+  flushWith,
+  panRange,
+  touchSpan,
 } from "./panel-geometry.js";
+import {
+  HA_COLOURS,
+  providerOf,
+  vocabularyColour,
+  stateColour,
+  qualityColour,
+  nodeColour,
+  themeVars,
+  providerOpacity,
+  genericIcon,
+  customIcon,
+} from "./panel-colour.js";
+import {
+  roomPolygon,
+  cornerHandlesHtml,
+  doorsHtml,
+  sparklineHtml,
+  escapeHtml,
+} from "./panel-markup.js";
 
 const DOMAIN = "spatial_hub";
 
 /** Fallback edge colours by the shared quality vocabulary. The hub's
  *  theme wins where it states one; these are what "inherit" means. */
-/** Home Assistant's own variables, preferred over the hub's fallback when
- *  running inside it: they follow whatever theme the user already chose.
- *  Keyed by the shared vocabulary, never by a provider's private word. */
-const HA_COLOURS = {
-  online: "var(--success-color, #4caf50)",
-  offline: "var(--error-color, #f44336)",
-  unknown: "var(--disabled-text-color, #9e9e9e)",
-  good: "var(--success-color, #4caf50)",
-  fair: "var(--warning-color, #ff9800)",
-  poor: "var(--error-color, #f44336)",
-};
-
 /** The stacked view: every floor at once, which is the only view in which
  *  a connection between two storeys is visible at all. Per-floor tabs stay
  *  for detail and for arranging -- dragging in a sheared projection would
@@ -96,15 +113,6 @@ const PHONE = 760;
  *  nur bei genau der richtigen Zugweite schliesst, fuehlt sich kaputt an;
  *  ein schneller Wisch nach unten meint immer "weg damit". */
 const SHEET = { close: 0.3, fling: 0.5 };
-
-const escapeHtml = (value) =>
-  String(value ?? "").replace(
-    /[&<>"']/g,
-    (char) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        char
-      ],
-  );
 
 const pretty = (key) =>
   String(key).replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
@@ -512,57 +520,24 @@ class SpatialHubPanel extends HTMLElement {
     ];
   }
 
-  /** How far above the storeys a plane floats.
-   *
-   *  Only the sky floats, and it has to clear the top storey by more than
-   *  a storey's own depth, or a cloud plane reads as an attic with weather
-   *  painted on the ceiling.
-   */
   _planeLift(floorIndex) {
-    const floor = this._stackFloors[floorIndex];
-    return floor && floor.virtual ? STACK.depth * 0.5 + 130 : 0;
+    return planeLift(this._stackFloors[floorIndex]);
   }
 
-  /** Where a point on a given floor lands in the stacked drawing.
-   *
-   *  Coordinates outside 0..1 are not an error -- that is the garden --
-   *  so the whole window is mapped rather than the house alone.
-   */
+  /** Wo ein Punkt einer Etage im Bild landet. Die Rechnung steht in
+   *  `panel-geometry.js`; hier kommt nur der Rahmen dieses Panels dazu. */
   _project(floorIndex, x, y) {
-    const frame = this._frame;
-    const nx = (x - frame.min) / frame.span;
-    const ny = (y - minY(frame)) / spanY(frame);
-    // Headroom for the sky, added to everything so the lift pushes the
-    // clouds up *within* the drawing instead of off the top of it.
-    const sky = Math.max(
-      0,
-      ...this._stackFloors.map((_floor, at) => this._planeLift(at)),
+    return projectOnto(
+      {
+        frame: this._frame,
+        gutter: this._nameGutter,
+        floors: this._stackFloors,
+        index: floorIndex,
+      },
+      x,
+      y,
     );
-    // Ein Stapel. Immer.
-    //
-    // Es gab hier einmal zwei Spalten, damit ein hoher schmaler Turm auf
-    // einem breiten Monitor nicht links und rechts die Flaeche leer
-    // laesst. Das hat den freien Platz gefuellt und dafuer das Bild
-    // zerstoert: vier Etagen wurden zu vier Platten in einem Raster, und
-    // ein Raster ist kein Haus. Ein Sandwich hat eine Achse, sonst ist es
-    // keins -- man liest oben-nach-unten als Stockwerke, nebeneinander
-    // liest man als zwei Gebaeude. Leerer Rand ist der guenstigere Preis;
-    // dagegen hilft der Zoom, nicht das Umbrechen.
-    //
-    // Die Flucht wirkt von der Mitte der Etage aus, nicht von ihrer
-    // linken Kante: nur so weichen beide Flanken nach innen. Zieht man
-    // stattdessen alles nach rechts, lehnen sie gleichsinnig, und man
-    // sieht die eine Aussenwand von aussen und die andere von innen --
-    // was kein Standpunkt ist, den ein Betrachter einnehmen kann.
-    const shrink = STACK.back + (1 - STACK.back) * ny;
-    return {
-      x: this._nameGutter + STACK.stagger * floorIndex +
-        STACK.width / 2 + (nx - 0.5) * STACK.width * shrink,
-      y: STACK.top + sky + floorIndex * STACK.gap + ny * STACK.depth -
-        this._planeLift(floorIndex),
-    };
   }
-
 
   /** How tall the drawing has to be to hold the house.
    *
@@ -576,12 +551,7 @@ class SpatialHubPanel extends HTMLElement {
    *  costs nothing but says which floor is which.
    */
   get _stackHeight() {
-    const sky = Math.max(0, ...this._stackFloors.map((_f, at) => this._planeLift(at)));
-    return (
-      STACK.top + sky +
-      Math.max(0, this._stackFloors.length - 1) * STACK.gap +
-      STACK.depth + STACK.slab + STACK.pad
-    );
+    return stackHeight(this._stackFloors);
   }
 
   /** How wide the drawing has to be. Every storey is offset a little
@@ -593,10 +563,7 @@ class SpatialHubPanel extends HTMLElement {
    *  Vorderkante die breiteste Stelle und `width` die ganze Wahrheit.
    */
   get _stackWidth() {
-    return (
-      this._nameGutter + STACK.pad + STACK.width +
-      Math.max(0, this._stackFloors.length - 1) * STACK.stagger
-    );
+    return stackWidth(this._nameGutter, this._stackFloors.length);
   }
 
   /** Wieviel Platz links neben dem Haus der laengste Etagenname braucht.
@@ -659,30 +626,8 @@ class SpatialHubPanel extends HTMLElement {
     );
   }
 
-  /** How solid a provider's things are drawn, from its layers.
-   *
-   *  The slider next to a layer wrote its value into the layout and the
-   *  value came back in the model, and then nothing read it: turning a
-   *  layer down did precisely nothing on screen. This is the missing half.
-   *
-   *  A node belongs to a provider, not to one layer, so the rule has to
-   *  match the one visibility already uses: hidden when *every* layer is
-   *  hidden, and here, as solid as the clearest layer the provider still
-   *  has. Fading a provider out is then "turn all of its layers down",
-   *  which is the same shape as hiding it.
-   */
   _providerOpacity(itemId) {
-    const owner = this._providerOf(itemId);
-    const mine = ((this._model && this._model.layers) || []).filter(
-      (layer) => (layer.provider_id || "") === owner &&
-                 layer.visible !== false,
-    );
-    if (!mine.length) return 1;
-    return mine.reduce(
-      (best, layer) =>
-        Math.max(best, typeof layer.opacity === "number" ? layer.opacity : 1),
-      0,
-    );
+    return providerOpacity((this._model && this._model.layers) || [], itemId);
   }
 
   /** The theme the hub resolved. Never a preset table of our own -- a
@@ -691,58 +636,25 @@ class SpatialHubPanel extends HTMLElement {
     return (this._model && this._model.theme) || {};
   }
 
-  /** A colour for one word of the shared vocabulary.
-   *
-   *  Order: what the theme says, then what Home Assistant's own theme says
-   *  for the words it has an opinion about, then the hub's resolved
-   *  fallback. That last step is why `on` and `off` are coloured at all:
-   *  keeping a private table here meant every word the hub learned needed
-   *  a change in every renderer, which is exactly what resolving themes in
-   *  the hub was supposed to stop.
-   */
   _vocabularyColour(group, word, spare) {
-    const themed = (this._theme[group] || {})[word];
-    if (themed) return themed;
-    if (HA_COLOURS[word]) return HA_COLOURS[word];
-    const fallback = (this._theme.fallback || {})[group] || {};
-    return fallback[word] || spare;
+    return vocabularyColour(this._theme, group, word, spare);
   }
 
   _stateColour(state) {
-    return this._vocabularyColour(
-      "state_colors", state,
-      "var(--fp-accent, var(--primary-color, #03a9f4))",
-    );
+    return stateColour(this._theme, state);
   }
 
   _qualityColour(quality) {
-    return this._vocabularyColour(
-      "quality_colors", quality,
-      "var(--disabled-text-color, #9e9e9e)",
-    );
+    return qualityColour(this._theme, quality);
   }
 
   /** Theme values a renderer cannot express in CSS alone. */
   get _themeVars() {
-    const theme = this._theme;
-    const parts = [];
-    if (theme.accent) parts.push(`--fp-accent:${theme.accent}`);
-    if (theme.surface) parts.push(`--fp-surface:${theme.surface}`);
-    if (theme.ink) parts.push(`--fp-ink:${theme.ink}`);
-    // Wie deutlich das Haus selbst da ist. Ein Grundriss ohne Innenwände
-    // ist eine Fläche mit Punkten darauf und sagt nicht mehr, wo man
-    // steht; ein Grundriss mit vollen Wänden erschlägt die Geräte, um die
-    // es eigentlich geht. Wo dazwischen es richtig ist, weiß nur der, der
-    // hinsieht -- deshalb ein Regler und keine Entscheidung.
-    // Nur wenn jemand daran gedreht hat: ein Standardwert, den die Seite
-    // trotzdem setzt, ist eine Vorgabe, die man nicht mehr erben kann.
-    const house = houseWeight(theme);
-    if (house !== 1) parts.push(`--fp-house:${house}`);
-    return parts.join(";");
+    return themeVars(this._theme);
   }
 
   _providerOf(itemId) {
-    return String(itemId || "").split(":")[0];
+    return providerOf(itemId);
   }
 
   get _visibleNodes() {
@@ -829,9 +741,7 @@ class SpatialHubPanel extends HTMLElement {
   }
 
   _customIcon(node) {
-    const sets = (this._model && this._model.icon_sets) || {};
-    const set = sets[this._providerOf(node.id)];
-    return (set && set[node.icon]) || null;
+    return customIcon((this._model && this._model.icon_sets) || {}, node);
   }
 
   // ── Rendering ───────────────────────────────────────────
@@ -1116,31 +1026,16 @@ class SpatialHubPanel extends HTMLElement {
     const viewport = this._root.querySelector(".viewport");
     if (!viewport) return;
     const view = this._view;
-    const along = (extent, size) => {
-      // No layout yet (first paint, or a headless test): nothing to clamp
-      // against, and guessing would be worse than leaving it alone.
-      if (!extent || !size) return null;
-      const scaled = size * view.zoom;
-      if (scaled >= extent) {
-        return [extent - scaled, 0]; // bigger than the window: no gap at either end
-      }
-      // Smaller than the window: pinned to the middle rather than allowed
-      // to roam. A house drawn at 55 % in the top-left corner of a wide
-      // monitor looks like a rendering accident, and there is nothing for
-      // the user to do about it -- there is no direction left to drag.
-      const middle = (extent - scaled) / 2;
-      return [middle, middle];
-    };
     const clamp = (value, range) =>
       range === null ? value : Math.min(range[1], Math.max(range[0], value));
 
     view.x = clamp(
       view.x,
-      along(viewport.clientWidth, canvas.offsetWidth),
+      panRange(viewport.clientWidth, canvas.offsetWidth, view.zoom),
     );
     view.y = clamp(
       view.y,
-      along(viewport.clientHeight, canvas.offsetHeight),
+      panRange(viewport.clientHeight, canvas.offsetHeight, view.zoom),
     );
   }
 
@@ -1315,10 +1210,7 @@ class SpatialHubPanel extends HTMLElement {
   }
 
   _touchSpan(touches) {
-    return Math.hypot(
-      touches[0].clientX - touches[1].clientX,
-      touches[0].clientY - touches[1].clientY,
-    );
+    return touchSpan(touches);
   }
 
   /** Editing the building itself: walls, corners, the plot. */
@@ -1707,125 +1599,18 @@ class SpatialHubPanel extends HTMLElement {
     return `<div class="viewport"><div class="canvas">${inner}</div></div>`;
   }
 
+  /** Ein Raum als Zeichnung. Die Formen stehen in `panel-markup.js`;
+   *  hier wird nur die Projektion dieser Etage hineingereicht. */
   _roomPolygon(plane, area, keep = () => true) {
-    const width = (area.size && area.size.width) || 0.3;
-    const height = (area.size && area.size.height) || 0.3;
-    const x0 = area.position.x - width / 2;
-    const y0 = area.position.y - height / 2;
-    // The same outline the single-floor view clips to, projected. The two
-    // views disagreeing about the shape of a room is the bug that made
-    // the cloud a rectangle in the house view, and a niche visible on one
-    // tab only would be the same bug wearing a different hat.
-    const corners = shapeOf(area)
-      .map((point) => [x0 + point.x * width, y0 + point.y * height])
-      .map(([x, y]) => this._project(plane, x, y));
-    const points = corners.map((point) => `${point.x},${point.y}`).join(" ");
-    // Der Raumname im Raum, wie in jedem Grundriss -- aber nicht in
-    // seiner Mitte, sondern im hinteren Drittel.
-    //
-    // In der Mitte stand er genau dort, wo auch die Geraete stehen: die
-    // Automatik setzt ein Geraet ohne eigene Angabe in die Raummitte, und
-    // dessen Beschriftung haengt darunter. Auf dem ersten Bild fuer die
-    // README las man deshalb "Adapter Arbeitszimmer" quer durch das Wort
-    // "Arbeitszimmer". Nach hinten geschoben teilen sich beide den Raum:
-    // der Name des Raumes hinten, was darin steht davor.
-    //
-    // Die Verschiebung geht nach oben statt auf einen festen Punkt im
-    // Raumkasten, damit sie fuer jede Kontur gilt und nicht nur fuer das
-    // Rechteck. Die hintere Kante ist im Bild waagerecht -- die Schraege
-    // des Sandwiches verschiebt nur x --, also liegt alles zwischen Mitte
-    // und dieser Kante sicher noch im Raum.
-    const middle = centreOf(corners);
-    const back = Math.min(...corners.map((corner) => corner.y));
-    const label = { x: middle.x, y: middle.y - (middle.y - back) * 0.55 };
-
-    // A virtual area is a cloud here too. It was a cloud on its own tab
-    // and a rectangle in the house view, so the two views disagreed about
-    // what the thing *is* -- and the house view is the one people open.
-    // Walls, and only for rooms. A garden has no walls, and a cloud has
-    // neither -- standing a terrace up on 26 units of masonry would say
-    // the exact opposite of what a terrace is.
-    //
-    // Three parts, in the order you would see them: the floor inside the
-    // room, the outside faces of the walls standing on it, and the top of
-    // the masonry as a band with two edges. The band is what makes this
-    // read as a plan rather than as a grey rectangle with a line round it.
-    // Ein Balkon und ein Garten sind beide "outdoor", aber nicht dasselbe
-    // Ding: der eine haengt am Haus, der andere liegt darum herum. Das
-    // Modell kennt keinen eigenen Typ dafuer, also gilt hier dieselbe
-    // Regel wie beim Rasen weiter oben -- Erdgeschoss ist Grundstueck,
-    // alles darueber haengt am Bau. Ein Gelaender um den Rasen waere
-    // genau das, wovor der Kommentar direkt darueber warnt.
-    const floor = this._stackFloors[plane];
-    const outdoor = kindOf(area) === AREA_KIND.OUTDOOR;
-    const deck = outdoor && !(floor && floor.ground);
-    let shape = `<polygon class="room ${deck ? "deck" : ""}" points="${points}"/>`;
-    if (kindOf(area) === AREA_KIND.INDOOR) {
-      // Tueren sind Luecken, keine eigenen Formen: die Wand hoert davor
-      // auf und faengt dahinter wieder an. Deshalb wissen Wand und
-      // Mauerkrone davon, und sonst nichts im Bild.
-      const doors = doorsOf(area, corners.length);
-      shape += wallsOf(corners, STACK.rise, "room-wall", keep, doors) +
-        capsOf(
-          corners.map((corner) => ({ x: corner.x, y: corner.y - STACK.rise })),
-          STACK.wall,
-          "room-cap",
-          keep,
-          doors,
-        );
-    }
-    // Stufen. In der Referenzzeichnung ist die Treppe das, was einen
-    // Grundriss auf den ersten Blick als Grundriss lesbar macht.
-    //
-    // Auf Hoehe der Mauerkrone und nach den Waenden gezeichnet, nicht auf
-    // dem Rohboden davor: der Raum ist oben offen, aber seine vordere
-    // Wandflaeche ist undurchsichtig und deckt alles zu, was auf der
-    // Bodenplatte liegt -- die Stufen waren gezeichnet und trotzdem nicht
-    // zu sehen. Quer zur langen Seite, denn dorthin laeuft eine Treppe.
-    if (isStairs(area)) {
-      const alongX = width >= height;
-      const tread = (x, y) => {
-        const point = this._project(plane, x, y);
-        return `${point.x},${point.y - STACK.rise}`;
-      };
-      for (let step = 1; step < STACK.treads; step += 1) {
-        const at = step / STACK.treads;
-        const [from, to] = alongX
-          ? [tread(x0 + at * width, y0), tread(x0 + at * width, y0 + height)]
-          : [tread(x0, y0 + at * height), tread(x0 + width, y0 + at * height)];
-        shape += `<polyline class="tread" points="${from} ${to}"/>`;
-      }
-    }
-    // A balcony stands on the house, it does not stand inside it: a
-    // railing you can see over instead of a wall you can't is the one
-    // thing that says "outside" in a drawing made of nothing but lines.
-    if (deck) {
-      shape += wallsOf(corners, STACK.rise * 0.35, "deck-rail", keep);
-    }
-    if (kindOf(area) === AREA_KIND.VIRTUAL) {
-      // Der Grundriss steht in der Flucht, also steht die Wolke mit
-      // darin: zwei Kanten des projizierten Raumes sind die Achsen, an
-      // denen sie gezeichnet wird. Damit gilt das auch weiter, seit die
-      // Flanken nicht mehr parallel laufen.
-      const origin = this._project(plane, x0, y0);
-      const alongX = this._project(plane, x0 + width, y0);
-      const alongY = this._project(plane, x0, y0 + height);
-      const matrix = [
-        (alongX.x - origin.x) / 100, (alongX.y - origin.y) / 100,
-        (alongY.x - origin.x) / 60, (alongY.y - origin.y) / 60,
-        origin.x, origin.y,
-      ]
-        .map((value) => value.toFixed(4))
-        .join(",");
-      shape = `<path class="stack-cloud" transform="matrix(${matrix})"
-        d="${CLOUD_PATH}"/>`;
-    }
-
-    return `${shape}
-      <g data-at-x="${label.x}" data-at-y="${label.y}"
-         transform="translate(${label.x},${label.y}) scale(${
-           this._counterScale
-         })"><text class="room-label">${escapeHtml(area.name)}</text></g>`;
+    return roomPolygon(
+      {
+        project: (x, y) => this._project(plane, x, y),
+        floor: this._stackFloors[plane],
+        counterScale: this._counterScale,
+      },
+      area,
+      keep,
+    );
   }
 
   _stageHtml() {
@@ -2068,7 +1853,7 @@ class SpatialHubPanel extends HTMLElement {
     // handles and corner handles sit in the same places and would fight
     // over every pointer press, so the toolbar switch decides which
     // question is being answered: how big is this room, or what shape.
-    if (this._corners) return this._cornerHandlesHtml(area);
+    if (this._corners) return cornerHandlesHtml(area);
     return ["n", "s", "e", "w", "nw", "ne", "sw", "se"]
       .map(
         (edge) => `<span class="handle handle-${edge}"
@@ -2090,34 +1875,6 @@ class SpatialHubPanel extends HTMLElement {
    *  system the shape is stored in -- no conversion, and the grips follow
    *  the room through every move and resize on their own.
    */
-  _cornerHandlesHtml(area) {
-    const id = escapeHtml(area.id);
-    const shape = shapeOf(area);
-    const at = (point) =>
-      `left:${(point.x * 100).toFixed(2)}%;top:${(point.y * 100).toFixed(2)}%`;
-    const corners = shape
-      .map(
-        (point, index) => `<span class="corner" style="${at(point)}"
-            data-corner-area="${id}" data-corner-index="${index}"
-            title="Ecke ziehen"
-            ><button class="corner-drop" data-corner-drop="${id}"
-                     data-corner-index="${index}"
-                     title="Diese Ecke entfernen">×</button></span>`,
-      )
-      .join("");
-    // Only worth offering while there is still a corner to spare: below
-    // three points there is no polygon left to draw.
-    const adders = shape
-      .map((point, index) => {
-        const next = shape[(index + 1) % shape.length];
-        const middle = { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 };
-        return `<span class="corner add" style="${at(middle)}"
-            data-corner-add="${id}" data-corner-index="${index}"
-            title="Hier eine neue Ecke setzen">+</span>`;
-      })
-      .join("");
-    return corners + adders;
-  }
 
   /** The property the house stands on.
    *
@@ -2556,26 +2313,11 @@ class SpatialHubPanel extends HTMLElement {
 
   /** The colour of a node's icon plate: its own, its provider's, its state. */
   _nodeColour(node) {
-    const custom = this._customIcon(node);
-    return (
-      node.color ||
-      (custom && custom.default_color) ||
-      this._stateColour(node.state)
-    );
+    return nodeColour(this._theme, node, this._customIcon(node));
   }
 
-  /** What to draw when nobody said anything.
-   *
-   *  Home Assistant's icon comes with the node, and a provider's own icon
-   *  set beats even that -- an integration keeps its face on the plan. This
-   *  is only the last step of the chain, and it is deliberately still an
-   *  icon rather than a dot: a dot says nothing about what the thing is.
-   */
   _genericIcon(node) {
-    const provider = ((this._model && this._model.providers) || []).find(
-      (candidate) => candidate.id === this._providerOf(node.id),
-    );
-    return (provider && provider.icon) || "mdi:shape-outline";
+    return genericIcon((this._model && this._model.providers) || [], node);
   }
 
   /** Is this node sharing its room with enough others to stack labels?
@@ -2852,7 +2594,7 @@ class SpatialHubPanel extends HTMLElement {
                  ${area.single_only ? "checked" : ""}>
           Nur in der Einzelansicht
         </label>
-        ${this._doorsHtml(area)}
+        ${doorsHtml(area)}
       </div>`;
   }
 
@@ -2861,50 +2603,6 @@ class SpatialHubPanel extends HTMLElement {
    *  Nur fuer Raeume: ein Garten hat keine Waende, in die eine Luecke
    *  passen koennte, und die Wolke erst recht nicht.
    */
-  _doorsHtml(area) {
-    if (kindOf(area) !== AREA_KIND.INDOOR) return "";
-    const sides = shapeOf(area).length;
-    const doors = doorsOf(area, sides);
-    const rows = doors
-      .map(
-        (door, index) => `
-        <div class="door">
-          <span class="door-side">${escapeHtml(sideName(Number(door.side)))}</span>
-          <label class="door-slide">
-            <span class="muted">Mitte</span>
-            <input type="range" min="0" max="1" step="0.01"
-                   value="${Number(door.at)}"
-                   data-door="${index}" data-door-field="at">
-          </label>
-          <label class="door-slide">
-            <span class="muted">Breite</span>
-            <input type="range" min="0.05" max="0.9" step="0.01"
-                   value="${Number(door.width)}"
-                   data-door="${index}" data-door-field="width">
-          </label>
-          <button class="icon-btn" data-door-remove="${index}"
-                  title="Tür entfernen">
-            <ha-icon icon="mdi:close"></ha-icon>
-          </button>
-        </div>`,
-      )
-      .join("");
-    const add = Array.from({ length: sides }, (_unused, side) => side)
-      .map(
-        (side) => `<button class="chip" data-door-add="${side}">
-          + ${escapeHtml(sideName(side))}
-        </button>`,
-      )
-      .join("");
-    return `
-      <h3>Türen</h3>
-      <p class="note">Eine Tür ist eine Lücke in der Wand — sie hört davor
-      auf und fängt dahinter wieder an. Angaben als Anteil der Wand, damit
-      die Tür bleibt, wo sie ist, wenn der Raum größer wird.</p>
-      ${rows ? `<div class="doors">${rows}</div>`
-             : '<p class="note">Noch keine Tür.</p>'}
-      <div class="chips">${add}</div>`;
-  }
 
   /** Die Tuerliste dieses Raumes, geaendert und zurueckgeschrieben.
    *
@@ -3637,7 +3335,7 @@ class SpatialHubPanel extends HTMLElement {
             ? `<div class="history">
                  ${
                    this._history
-                     ? this._sparklineHtml(this._history)
+                     ? sparklineHtml(this._history)
                      : `<button class="link" data-history="1">Verlauf laden</button>`
                  }
                </div>`
@@ -3718,32 +3416,6 @@ class SpatialHubPanel extends HTMLElement {
     return links.length ? `<div class="links">${links.join("")}</div>${list}` : "";
   }
 
-  _sparklineHtml(series) {
-    const points = series
-      .map((point) => Number(point.value))
-      .filter((value) => Number.isFinite(value));
-    if (points.length < 2) {
-      return `<p class="note">Zu wenig Verlauf für eine Kurve.</p>`;
-    }
-    const min = Math.min(...points);
-    const max = Math.max(...points);
-    const span = max - min || 1;
-    const path = points
-      .map(
-        (value, index) =>
-          `${(index / (points.length - 1)) * 100},${
-            30 - ((value - min) / span) * 28
-          }`,
-      )
-      .join(" ");
-    return `
-      <svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none">
-        <polyline points="${path}" fill="none"
-          stroke="var(--primary-color, #03a9f4)" stroke-width="1.5"
-          vector-effect="non-scaling-stroke"/>
-      </svg>
-      <p class="note">${points.length} Punkte · ${min} … ${max}</p>`;
-  }
 
   // ── Interaction ─────────────────────────────────────────
 
@@ -3763,11 +3435,7 @@ class SpatialHubPanel extends HTMLElement {
    *  snap it back inside the walls.
    */
   _snap(value, event, frame = { min: 0, span: 1 }) {
-    const low = frame.min;
-    const high = frame.min + frame.span;
-    const clamped = Math.min(high, Math.max(low, value));
-    if (event.shiftKey) return clamped;
-    return Math.min(high, Math.max(low, Math.round(clamped / 0.02) * 0.02));
+    return snapTo(value, frame, event.shiftKey);
   }
 
   /** Every other room's walls on this floor, split by axis.
@@ -3776,30 +3444,21 @@ class SpatialHubPanel extends HTMLElement {
    *  or it would snap to itself and never move again.
    */
   _wallLines(exceptId) {
-    const lines = { x: [], y: [] };
-    for (const area of this._visibleAreas) {
-      if (area.id === exceptId || !joinable(area)) continue;
-      if (this._floor && area.floor_id !== this._floor.id) continue;
-      const box = boxOf(area);
-      lines.x.push(box.left, box.right);
-      lines.y.push(box.top, box.bottom);
-    }
+    const mine = this._visibleAreas.filter(
+      (area) =>
+        area.id !== exceptId && joinable(area) &&
+        !(this._floor && area.floor_id !== this._floor.id),
+    );
     // Und die Aussenkanten der anderen Etagen, damit eine Wand nicht nur
     // an ihre Nachbarn andocken kann, sondern auch an die Flucht des
-    // Hauses. Das ist der Sinn der Konturen: sehen, wo die Wand darunter
-    // verlaeuft -- und dann nicht danebentreffen.
-    //
-    // Nur wenn sie auch zu sehen sind. Ein Magnet an einer Linie, die
-    // niemand sieht, ist kein Einrasten, sondern ein Ruckeln ohne Grund;
-    // derselbe Knopf, der die Konturen einblendet, macht sie anziehend.
-    if (this._ghosts) {
-      for (const floor of this._ghostFloors()) {
-        const box = floor.outline;
-        lines.x.push(box.x, box.x + box.width);
-        lines.y.push(box.y, box.y + box.height);
-      }
-    }
-    return lines;
+    // Hauses -- aber nur, wenn sie auch zu sehen sind. Ein Magnet an
+    // einer Linie, die niemand sieht, ist kein Einrasten, sondern ein
+    // Ruckeln ohne Grund; derselbe Knopf, der die Konturen einblendet,
+    // macht sie anziehend.
+    const outlines = this._ghosts
+      ? this._ghostFloors().map((floor) => floor.outline)
+      : [];
+    return wallLinesOf(mine, outlines);
   }
 
   /** Welche fremden Konturen dieser Kasten gerade genau trifft.
@@ -3811,15 +3470,8 @@ class SpatialHubPanel extends HTMLElement {
    */
   _flushFloors(rect) {
     if (!this._ghosts) return [];
-    const same = (a, b) => Math.abs(a - b) <= JOIN_GAP;
     return this._ghostFloors()
-      .filter((floor) => {
-        const box = floor.outline;
-        return (
-          same(rect.left, box.x) || same(rect.right, box.x + box.width) ||
-          same(rect.top, box.y) || same(rect.bottom, box.y + box.height)
-        );
-      })
+      .filter((floor) => flushWith(rect, floor.outline))
       .map((floor) => floor.id);
   }
 
@@ -3850,21 +3502,7 @@ class SpatialHubPanel extends HTMLElement {
    *  as it did before.
    */
   _magnet(value, axis, event, frame, lines) {
-    if (!event.shiftKey && lines) {
-      let best = null;
-      let reach = SNAP_REACH;
-      for (const line of lines[axis]) {
-        const distance = Math.abs(line - value);
-        if (distance <= reach) {
-          reach = distance;
-          best = line;
-        }
-      }
-      if (best !== null) {
-        return Math.min(frame.min + frame.span, Math.max(frame.min, best));
-      }
-    }
-    return this._snap(value, event, frame);
+    return magnetTo(value, lines && lines[axis], frame, event.shiftKey);
   }
 
   _onPointerDown(event) {

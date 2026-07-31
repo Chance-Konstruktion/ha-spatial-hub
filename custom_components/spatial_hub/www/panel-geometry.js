@@ -567,6 +567,161 @@ const isStairs = (area) =>
       .includes(word),
   );
 
+// ── Der Stapel: wo eine Etage im Bild landet ──────────────
+//
+// Bisher steckte das in der Panel-Klasse, und `tools/shots.mjs` musste
+// `_project` ueberschreiben, um an dieselbe Rechnung zu kommen. Eine
+// Projektion, die man nur mit einem Custom Element in der Hand ausrechnen
+// kann, ist keine Geometrie mehr, sondern ein Nebeneffekt.
+
+/** How far above the storeys a plane floats.
+ *
+ *  Only the sky floats, and it has to clear the top storey by more than
+ *  a storey's own depth, or a cloud plane reads as an attic with weather
+ *  painted on the ceiling.
+ */
+const planeLift = (floor) => (floor && floor.virtual ? STACK.depth * 0.5 + 130 : 0);
+
+/** Headroom for the sky, added to everything so the lift pushes the
+ *  clouds up *within* the drawing instead of off the top of it. */
+const skyOf = (floors) => Math.max(0, ...(floors || []).map(planeLift));
+
+/** Where a point on a given floor lands in the stacked drawing.
+ *
+ *  Coordinates outside 0..1 are not an error -- that is the garden -- so
+ *  the whole window is mapped rather than the house alone.
+ *
+ *  Die Flucht wirkt von der Mitte der Etage aus, nicht von ihrer linken
+ *  Kante: nur so weichen beide Flanken nach innen. Zieht man stattdessen
+ *  alles nach rechts, lehnen sie gleichsinnig, und man sieht die eine
+ *  Aussenwand von aussen und die andere von innen -- was kein Standpunkt
+ *  ist, den ein Betrachter einnehmen kann.
+ */
+const projectOnto = ({ frame, gutter, floors, index }, x, y) => {
+  const nx = (x - frame.min) / frame.span;
+  const ny = (y - minY(frame)) / spanY(frame);
+  const shrink = STACK.back + (1 - STACK.back) * ny;
+  return {
+    x: gutter + STACK.stagger * index +
+      STACK.width / 2 + (nx - 0.5) * STACK.width * shrink,
+    y: STACK.top + skyOf(floors) + index * STACK.gap + ny * STACK.depth -
+      planeLift((floors || [])[index]),
+  };
+};
+
+/** How tall the drawing has to be to hold the house.
+ *
+ *  The storeys used to be squeezed into a fixed 1000x1000 box: with a sky
+ *  plane and four floors the spacing collapsed to under a third of a
+ *  storey's own depth, so every floor was drawn *through* the one below
+ *  it. Air between the storeys is what makes them storeys, so the picture
+ *  grows with the house instead of the house shrinking into the picture.
+ */
+const stackHeight = (floors) =>
+  STACK.top + skyOf(floors) +
+  Math.max(0, (floors || []).length - 1) * STACK.gap +
+  STACK.depth + STACK.slab + STACK.pad;
+
+/** How wide the drawing has to be. Every storey is offset a little
+ *  further right than the one above it, so the bottom one decides. */
+const stackWidth = (gutter, count) =>
+  gutter + STACK.pad + STACK.width + Math.max(0, count - 1) * STACK.stagger;
+
+// ── Einrasten ─────────────────────────────────────────────
+
+/** Auf das Raster, und in den Rahmen. `free` ist die Shift-Taste: sie
+ *  schaltet das Raster ab, nicht die Grenzen -- ausserhalb des Rahmens
+ *  ist kein Ort, an dem etwas liegen koennte. */
+const snapTo = (value, frame = { min: 0, span: 1 }, free = false) => {
+  const low = frame.min;
+  const high = frame.min + frame.span;
+  const clamped = Math.min(high, Math.max(low, value));
+  if (free) return clamped;
+  return Math.min(high, Math.max(low, Math.round(clamped / 0.02) * 0.02));
+};
+
+/** Pull a wall onto a neighbour's wall when one is within reach.
+ *
+ *  This is what makes a shared wall shared without anybody typing a
+ *  number: you drag a room roughly against the next one, it lands
+ *  exactly, and from then on the two walls are one. Falls back to the
+ *  grid, so a room with no neighbour behaves exactly as it did before.
+ */
+const magnetTo = (value, candidates, frame, free = false) => {
+  if (!free && candidates && candidates.length) {
+    let best = null;
+    let reach = SNAP_REACH;
+    for (const line of candidates) {
+      const distance = Math.abs(line - value);
+      if (distance <= reach) {
+        reach = distance;
+        best = line;
+      }
+    }
+    if (best !== null) {
+      return Math.min(frame.min + frame.span, Math.max(frame.min, best));
+    }
+  }
+  return snapTo(value, frame, free);
+};
+
+/** Every wall of these rooms, split by axis -- what a dragged wall can
+ *  land on. `outlines` are the other storeys' outer walls, so a wall can
+ *  dock onto the flush of the building and not just onto its neighbours. */
+const wallLinesOf = (areas, outlines = []) => {
+  const lines = { x: [], y: [] };
+  for (const area of areas) {
+    const box = boxOf(area);
+    lines.x.push(box.left, box.right);
+    lines.y.push(box.top, box.bottom);
+  }
+  for (const box of outlines) {
+    lines.x.push(box.x, box.x + box.width);
+    lines.y.push(box.y, box.y + box.height);
+  }
+  return lines;
+};
+
+/** Welche fremden Konturen dieser Kasten gerade genau trifft.
+ *
+ *  Fuer die Rueckmeldung beim Ziehen: eingerastet und *fast* eingerastet
+ *  sehen auf dem Schirm gleich aus.
+ */
+const flushWith = (rect, box) => {
+  const same = (a, b) => Math.abs(a - b) <= JOIN_GAP;
+  return (
+    same(rect.left, box.x) || same(rect.right, box.x + box.width) ||
+    same(rect.top, box.y) || same(rect.bottom, box.y + box.height)
+  );
+};
+
+// ── Kamera ────────────────────────────────────────────────
+
+/** Wie weit die Zeichnung in einer Achse verschoben werden darf.
+ *
+ *  Groesser als das Fenster: kein Spalt an beiden Enden, der Blick bleibt
+ *  voll Plan. Kleiner: in der Mitte festgenagelt statt frei herumtreibend
+ *  -- ein Haus in der Ecke eines breiten Monitors sieht aus wie ein
+ *  Rendering-Unfall, und der Nutzer kann nichts dagegen tun.
+ *
+ *  `null` heisst "noch kein Layout" (erster Anstrich oder ein Test ohne
+ *  DOM): dann ist Raten schlechter als Nichtstun.
+ */
+const panRange = (extent, size, zoom) => {
+  if (!extent || !size) return null;
+  const scaled = size * zoom;
+  if (scaled >= extent) return [extent - scaled, 0];
+  const middle = (extent - scaled) / 2;
+  return [middle, middle];
+};
+
+/** Der Abstand zweier Finger. */
+const touchSpan = (touches) =>
+  Math.hypot(
+    touches[0].clientX - touches[1].clientX,
+    touches[0].clientY - touches[1].clientY,
+  );
+
 export {
   STACK,
   centreOf,
@@ -608,4 +763,15 @@ export {
   sideName,
   STAIR_WORDS,
   isStairs,
+  planeLift,
+  skyOf,
+  projectOnto,
+  stackHeight,
+  stackWidth,
+  snapTo,
+  magnetTo,
+  wallLinesOf,
+  flushWith,
+  panRange,
+  touchSpan,
 };
