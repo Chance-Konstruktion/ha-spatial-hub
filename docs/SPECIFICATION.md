@@ -543,6 +543,14 @@ Automatisierung.
   Vorgarten steht — bewegt sich allein.
 - Die Antwort enthält `scope`, `target`, `before` und `after` — genug, um es
   vollständig zurückzunehmen.
+- **Ein Gerät kann seit Home Assistant 2026.8 mehrfach in der Registry
+  stehen.** Ein Gerät gehört dort zu genau einem Config-Entry; was vorher
+  über mehrere Integrationen zu einem Gerät verschmolzen war, wird
+  aufgetrennt. Ein Umzug schreibt nur den Eintrag, an dem der Punkt hängt —
+  die anderen Einträge zu überschreiben würde Entitäten mitziehen, die
+  niemand gezogen hat. Bleiben Einträge derselben Hardware in einem anderen
+  Bereich zurück, nennt die Antwort sie in `siblings`
+  (`device_id`, `name`, `area_id`). Ohne solche Einträge fehlt das Feld.
 - Ein Umzug MUSS **sichtbar** sein: eine Zeile über dem Plan, die benennt was
   wohin ging, mit „Rückgängig" darin. Eine Änderung an fremder Konfiguration
   darf nie stillschweigend passieren.

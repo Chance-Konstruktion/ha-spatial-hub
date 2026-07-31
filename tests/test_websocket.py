@@ -453,3 +453,51 @@ def test_a_door_needs_a_wall_to_be_in():
     it is a write the renderer would have to guess at."""
     with pytest.raises(vol.Invalid):
         _layout_values({"doors": [{"at": 0.5, "width": 0.2}]})
+
+
+def test_a_split_device_is_reported_not_silently_left_behind(hass):
+    """From 2026.8 the same physical box can have a second device entry
+    from another integration, with its own area. Moving one moves only
+    that one -- writing the other would drag entities the user never
+    dragged. So the answer names it, and the move stops looking half-done.
+    """
+    from homeassistant.helpers import device_registry as dr
+
+    from tests.conftest import FakeDevice
+
+    _house(hass)
+    devices = dr.async_get(hass)
+    mac = {("mac", "aa:bb:cc:dd:ee:ff")}
+    devices.devices["board"].connections = mac
+    devices.devices["board_net"] = FakeDevice(
+        "board_net", area_id="keller", name="Board (Netzwerk)", connections=mac
+    )
+    connection = _Connection()
+
+    ws.websocket_area_assign(
+        hass, connection,
+        {"id": 1, "type": "x", "entity_id": "sensor.temperatur",
+         "area_id": "kueche"},
+    )
+
+    assert devices.devices["board"].area_id == "kueche"
+    assert devices.devices["board_net"].area_id == "keller", (
+        "the other integration's entry is reported, never written"
+    )
+    assert connection.result["siblings"] == [
+        {"device_id": "board_net", "name": "Board (Netzwerk)", "area_id": "keller"}
+    ]
+
+
+def test_an_ordinary_move_keeps_the_short_answer(hass):
+    """Nothing here assumes the split happened."""
+    _house(hass)
+    connection = _Connection()
+
+    ws.websocket_area_assign(
+        hass, connection,
+        {"id": 1, "type": "x", "entity_id": "sensor.temperatur",
+         "area_id": "kueche"},
+    )
+
+    assert "siblings" not in connection.result

@@ -493,3 +493,70 @@ def test_the_defaults_register_like_anybody_else(hass):
     for layer in DEFAULT_LAYERS:
         provider = Provider.from_registration(registration(hass, layer))
         assert provider.warnings == [], f"{layer['id']}: {provider.warnings}"
+
+
+# ── One physical box, several device entries (2026.8) ─────
+
+
+def _split_controller(hass):
+    """The same controller as two device entries, as 2026.8 leaves it.
+
+    Home Assistant used to merge these into one device because they report
+    the same MAC. From 2026.8 a device belongs to exactly one config entry,
+    so the merge is undone and the hardware has two entries -- still the
+    one box screwed to the wall.
+    """
+    from homeassistant.helpers import device_registry as dr
+
+    from conftest import FakeDevice
+
+    entity_ids = _house_with_a_controller(hass)
+    devices = dr.async_get(hass)
+    mac = {("mac", "aa:bb:cc:dd:ee:ff")}
+    devices.devices["ctrl"].connections = mac
+    devices.devices["ctrl2"] = FakeDevice(
+        "ctrl2", area_id="flur", name="Controller (Netzwerk)", connections=mac
+    )
+    return entity_ids
+
+
+def test_a_split_device_is_still_one_thing_on_the_plan(hass):
+    """Two device entries for one box must not become two dots: the user
+    has one controller in the hallway, whatever the registry now counts."""
+    from custom_components.spatial_hub.generic import VIA_PREFIX, topology
+
+    result = topology(hass, _split_controller(hass))
+
+    assert [n["id"] for n in result["nodes"]] == [f"{VIA_PREFIX}ctrl"]
+    assert {e["target"] for e in result["edges"]} == {f"{VIA_PREFIX}ctrl"}
+
+
+def test_the_merged_node_says_which_entries_it_stands_for(hass):
+    """Drawn as one thing, but a renderer offering "open in Home
+    Assistant" has two pages to offer and must not have to guess."""
+    from custom_components.spatial_hub.generic import topology
+
+    node = topology(hass, _split_controller(hass))["nodes"][0]
+
+    assert node["metadata"]["geraete"] == ["ctrl", "ctrl2"]
+    assert node["metadata"]["hersteller"] == "Beispiel"
+
+
+def test_an_ordinary_device_says_nothing_about_entries(hass):
+    """Nothing here assumes the split happened. On every install where it
+    did not, the node is exactly what it always was."""
+    from custom_components.spatial_hub.generic import topology
+
+    node = topology(hass, _house_with_a_controller(hass))["nodes"][0]
+
+    assert "geraete" not in node["metadata"]
+
+
+def test_devices_without_connections_are_never_merged(hass):
+    """Two entries that share no hardware identity are two devices, and
+    guessing otherwise would fuse unrelated controllers into one dot."""
+    from custom_components.spatial_hub.generic import hardware_key
+
+    from conftest import FakeDevice
+
+    assert hardware_key(FakeDevice("a")) != hardware_key(FakeDevice("b"))

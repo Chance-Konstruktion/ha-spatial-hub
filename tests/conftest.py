@@ -150,8 +150,12 @@ class FakeEntity:
 
 class FakeDevice:
     def __init__(self, device_id, area_id=None, via_device_id=None,
-                 name="", manufacturer="", model="") -> None:
+                 name="", manufacturer="", model="", connections=None) -> None:
         self.id, self.area_id = device_id, area_id
+        # What used to merge two integrations' entries into one device --
+        # and, from 2026.8, what still says they are the same hardware
+        # after Home Assistant splits them apart again.
+        self.connections = set(connections or ())
         # Home Assistant's own topology: "this device is reached through
         # that one". Every integration that has a controller writes it.
         self.via_device_id = via_device_id
