@@ -13,6 +13,37 @@ providers, layers, nodes, edges, actions and capabilities. That is exactly
 why a new integration can become part of the floor plan without a single
 line changing in here.
 
+## Why there is a renderer in here at all
+
+Home Assistant already has beautiful floor plans. What none of them has is
+anywhere to get the *data*. Every one of them is drawn by hand — entity by
+entity, coordinate by coordinate — and every one of them has to be edited
+again when a room is renamed, a device moves, or a light is added.
+
+That hand work is not a shortcoming of those projects. It is a missing
+layer underneath them, and this is an attempt at that layer: one service
+that answers *what is in this house, and where*, assembled from registries
+Home Assistant already keeps correct, and served to any renderer that asks.
+
+So the renderer that ships here is not the product. It exists for two
+reasons. A data service nobody can see is a data service nobody installs —
+and it is the proof that the API is complete, because it is built on
+nothing but the public websocket commands, with no private access of any
+kind. Anything it can draw, a foreign renderer can draw too. It is made as
+good as we can make it, and it is meant to be replaced.
+
+**If you maintain a floor plan card, this is aimed at you.** The hub takes
+over the part your users currently do by hand and redo whenever the house
+changes — and it hands you rooms, storeys, devices, positions, states and
+connections in one subscription. Your drawing stays yours. Two websocket
+calls are the whole integration; [one file in
+`examples/second_renderer/`](examples/second_renderer/) does it in 198
+lines, sharing not one line of code with us.
+
+That is where this becomes worth anything: not in the renderer below, but
+on the day the good floor plans stop asking their users to place every
+lamp twice.
+
 A house of three storeys, fourteen areas and thirteen devices needs
 **nothing set up**. Floors and areas come from Home Assistant, the devices
 from a provider, the arrangement from the automatic placement. Anyone who
@@ -114,11 +145,9 @@ in the repository is what the browser runs. It knows **not one single
 integration by name** — colours come from `state` and `quality`, shapes
 from `icon`, all delivered by the provider. A test holds that in place.
 
-Anyone who brings a renderer of their own switches ours off in the options.
-The hub then goes on delivering its data and nothing else. That this really
-works is **one file** in
-[examples/second_renderer/](examples/second_renderer/): opened from the
-desktop, without a single shared line of code, with exactly two commands.
+Anyone who brings a renderer of their own switches ours off in the options
+— and the hub goes on delivering its data and nothing else, with no feature
+held back for the one it shipped with.
 
 ## The architecture in one picture
 
