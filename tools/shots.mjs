@@ -38,9 +38,12 @@ const panelPath = join(
   here, "..", "custom_components", "spatial_hub", "www", "spatial-hub-panel.js",
 );
 const { SpatialHubPanel } = await import(pathToFileURL(panelPath).href);
-const source = readFileSync(panelPath, "utf8");
-const styles = source.slice(
-  source.indexOf("const STYLES = `") + 16, source.lastIndexOf("`;"),
+// Importiert, nicht aus dem Quelltext geschnitten. Hier stand einmal ein
+// `source.indexOf("const STYLES = \`")` -- das lief, solange niemand die
+// Datei anfasste, und war genau deshalb eine Falle.
+const { STYLES: styles } = await import(
+  pathToFileURL(join(here, "..", "custom_components", "spatial_hub", "www",
+                     "panel-styles.js")).href
 );
 
 const [modelPath, outDir = join(here, "..", "docs", "images")] =

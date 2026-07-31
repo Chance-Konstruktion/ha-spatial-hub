@@ -23,6 +23,9 @@ _LOGGER = logging.getLogger(__name__)
 
 URL_BASE = f"/{DOMAIN}_frontend"
 PANEL_MODULE = "spatial-hub-panel.js"
+# Der Ordner, den der Browser als Renderer bekommt -- Einstiegsmodul
+# plus die Geschwister, die es importiert.
+WWW_DIR = Path(__file__).parent / "www"
 
 
 def panel_version() -> str:
@@ -38,14 +41,26 @@ def panel_version() -> str:
     Hashing the file removes the step a human has to remember. A changed
     renderer is a changed URL, always, and an unchanged one still gets to
     stay in the browser's cache where it belongs.
+
+    Every file in `www`, not just the entry module. The renderer imports
+    its stylesheet and its geometry from siblings, and only the entry
+    module carries the `?v=` -- the siblings are fetched under plain URLs
+    from a static path served with a year of cache headers. Hashing one
+    file would put us straight back in the hole described above, with a
+    twist that is worse to debug: the user gets a *new* panel and a
+    year-old stylesheet, so the renderer is not stale, it is mismatched.
     """
     try:
-        source = (Path(__file__).parent / "www" / PANEL_MODULE).read_bytes()
-    except OSError:  # pragma: no cover - the file ships with the component
+        # Sorted, so the key depends on the content and not on whatever
+        # order the filesystem hands the names back.
+        source = b"".join(
+            path.read_bytes() for path in sorted(WWW_DIR.glob("*.js"))
+        )
+    except OSError:  # pragma: no cover - the files ship with the component
         # Never break the panel over a cache key: an uncacheable URL is a
         # far smaller problem than no renderer at all.
         return "unknown"
-    return hashlib.sha256(source).hexdigest()[:12]
+    return hashlib.sha256(source).hexdigest()[:12] if source else "unknown"
 
 
 async def async_register_panel(hass: HomeAssistant) -> None:
@@ -87,11 +102,11 @@ def async_remove_panel(hass: HomeAssistant) -> None:
 
 async def _async_register_static_path(hass: HomeAssistant) -> None:
     """Publish the www folder, tolerating both HTTP component generations."""
-    path = str(Path(__file__).parent / "www")
+    path = str(WWW_DIR)
     from homeassistant.components.http import StaticPathConfig
 
-    # Cached hard, busted by the ?v= above: the panel is one file and it
-    # should not be re-fetched on every dashboard visit.
+    # Cached hard, busted by the ?v= above -- which is why that key
+    # hashes every file in here and not just the entry module.
     await hass.http.async_register_static_paths(
         [StaticPathConfig(URL_BASE, path, True)]
     )

@@ -32,7 +32,7 @@ from custom_components.spatial_hub.frontend import (
     async_remove_panel,
 )
 
-from conftest import FakeConfigEntry
+from conftest import WWW, FakeConfigEntry, renderer_source
 
 PANEL_JS = (
     Path(__file__).resolve().parents[1]
@@ -94,11 +94,39 @@ def test_the_cache_key_follows_the_file_it_caches(tmp_path, monkeypatch):
     assert frontend.panel_version() == before, "and reverting brings it back"
 
 
-def test_a_missing_panel_never_breaks_the_cache_key(monkeypatch):
+def test_the_cache_key_covers_the_files_the_panel_imports():
+    """A changed stylesheet has to change the URL too.
+
+    Only the entry module gets the `?v=`; its siblings are fetched under
+    plain URLs from a static path served with a year of cache headers. If
+    the key ignored them, an upgrade would hand the browser a new renderer
+    and a year-old stylesheet -- not stale, which is at least
+    recognisable, but *mismatched*, which looks like a rendering bug and
+    sends the user hunting in the wrong place entirely.
+    """
+    from custom_components.spatial_hub import frontend
+
+    siblings = [path for path in sorted(WWW.glob("*.js")) if path.name != PANEL_MODULE]
+    assert siblings, "the renderer is one file again -- this test can go"
+
+    for path in siblings:
+        before = frontend.panel_version()
+        original = path.read_bytes()
+        try:
+            path.write_bytes(original + b"\n/* a change */\n")
+            assert frontend.panel_version() != before, (
+                f"{path.name} changed and the URL did not -- browsers will "
+                "keep the old copy for a year"
+            )
+        finally:
+            path.write_bytes(original)
+
+
+def test_a_missing_panel_never_breaks_the_cache_key(monkeypatch, tmp_path):
     """No renderer is a problem; a traceback during setup is a worse one."""
     from custom_components.spatial_hub import frontend
 
-    monkeypatch.setattr(frontend, "PANEL_MODULE", "not-a-file.js")
+    monkeypatch.setattr(frontend, "WWW_DIR", tmp_path / "gone")
     assert frontend.panel_version() == "unknown"
 
 
@@ -178,7 +206,7 @@ def test_the_renderer_knows_no_integration_by_name():
     changed for every new provider. Colours come from `state` and
     `quality`, shapes from `icon` -- all of it provider-supplied.
     """
-    source = PANEL_JS.read_text().lower()
+    source = renderer_source().lower()
     for integration in ("powerline", "unifi", "shelly", "zigbee", "fritz", "tasmota"):
         assert integration not in source, (
             f"the renderer mentions {integration!r} -- the moment it does, "
@@ -187,7 +215,7 @@ def test_the_renderer_knows_no_integration_by_name():
 
 
 def test_the_renderer_only_uses_documented_commands():
-    source = PANEL_JS.read_text()
+    source = renderer_source()
     used = set(re.findall(r"\$\{DOMAIN\}/([a-z/]+)", source))
     documented = {
         "model",
@@ -226,7 +254,7 @@ def test_the_renderers_own_logic_holds_up():
 
 def test_the_renderer_pulls_nothing_off_the_internet():
     """No CDN, no font host, no build artefact fetched at runtime."""
-    source = PANEL_JS.read_text()
+    source = renderer_source()
     assert "http://" not in source
     assert not re.search(r"https://(?!github\.com)", source), (
         "a local-first dashboard must render with the network unplugged"

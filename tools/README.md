@@ -1,6 +1,6 @@
 # Im Browser nachsehen
 
-293 Python- und 266 JS-Tests prüfen die Logik. Sie können nicht sehen, dass
+300 Python- und 266 JS-Tests prüfen die Logik. Sie können nicht sehen, dass
 ein Kasten über einem anderen liegt — und genau das war der erste echte
 Fehler des Projekts: Bereiche ohne Etage wurden auf *jeder* Etage gezeichnet,
 über Räume, deren Raster ohne sie ausgemessen worden war. Alle Tests waren

@@ -140,8 +140,9 @@ card to configure, no YAML:
   view, a floor plan image per storey, sort and dim layers, undo/redo — all
   with grid snapping, and `Shift` holds the grid off
 
-The renderer is a plain ES module: no build, no npm, no bundle. What lies
-in the repository is what the browser runs. It knows **not one single
+The renderer is plain ES modules — an entry point, its stylesheet and the
+floor plan geometry: no build, no npm, no bundle. What lies in the
+repository is what the browser runs. It knows **not one single
 integration by name** — colours come from `state` and `quality`, shapes
 from `icon`, all delivered by the provider. A test holds that in place.
 

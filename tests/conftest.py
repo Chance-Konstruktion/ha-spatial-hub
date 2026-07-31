@@ -405,3 +405,27 @@ def connection():
             self.messages.append(message)
 
     return Connection()
+
+
+WWW = (
+    Path(__file__).resolve().parents[1]
+    / "custom_components" / "spatial_hub" / "www"
+)
+
+
+def renderer_source() -> str:
+    """Every file the browser loads as the renderer, as one text.
+
+    A handful of tests assert things about the renderer as a whole -- that
+    it names no integration, that it fetches nothing off the internet, that
+    it calls no undocumented command. Those are promises about what reaches
+    the browser, not about one file, and the day the renderer became three
+    files they quietly stopped covering two of them.
+
+    That is the dangerous kind of green: `pulls_nothing_off_the_internet`
+    would have kept passing while no longer reading the stylesheet -- the
+    single likeliest place for a font CDN to appear.
+    """
+    return "\n".join(
+        path.read_text() for path in sorted(WWW.glob("*.js"))
+    )
