@@ -28,7 +28,8 @@ import { fileURLToPath } from "node:url";
  *  jedes Verschieben eine Runde roter Tests, die nichts gefunden haben.
  */
 const rendererSource = () =>
-  ["spatial-hub-panel.js", "panel-styles.js", "panel-geometry.js"]
+  ["spatial-hub-panel.js", "panel-styles.js", "panel-geometry.js",
+   "panel-colour.js", "panel-markup.js"]
     .map((file) => readFileSync(
       join(here, "..", "custom_components", "spatial_hub", "www", file),
       "utf8",
@@ -52,6 +53,16 @@ const { SpatialHubPanel, HA_COLOURS, joinsOf, drawsTheWall } = await import(
   pathToFileURL(
     join(here, "..", "custom_components", "spatial_hub", "www",
          "spatial-hub-panel.js"),
+  ).href
+);
+
+/** Die reinen Bausteine direkt, ohne Panel drumherum. Genau dafuer sind
+ *  sie ausgelagert: eine Kurve zu pruefen soll kein Custom Element
+ *  brauchen. */
+const { sparklineHtml, doorsHtml, cornerHandlesHtml } = await import(
+  pathToFileURL(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "panel-markup.js"),
   ).href
 );
 
@@ -396,14 +407,12 @@ test("a selected item that vanished mid-refresh closes quietly", () => {
 });
 
 test("a flat history draws no misleading curve", () => {
-  const view = panel();
-  assert.match(view._sparklineHtml([{ value: 5 }]), /Zu wenig Verlauf/);
-  assert.match(view._sparklineHtml([{ value: 1 }, { value: 2 }]), /<polyline/);
+  assert.match(sparklineHtml([{ value: 5 }]), /Zu wenig Verlauf/);
+  assert.match(sparklineHtml([{ value: 1 }, { value: 2 }]), /<polyline/);
 });
 
 test("a constant series does not divide by zero", () => {
-  const view = panel();
-  const html = view._sparklineHtml([{ value: 7 }, { value: 7 }, { value: 7 }]);
+  const html = sparklineHtml([{ value: 7 }, { value: 7 }, { value: 7 }]);
   assert.doesNotMatch(html, /NaN/);
 });
 
@@ -3661,4 +3670,101 @@ test("one storey stands on nothing; a stack stands on slabs", () => {
   // Die Aussenwand bleibt in beiden Faellen: sie ist das, was den
   // Grundriss zu einem Stockwerk macht, und nicht die Platte darunter.
   assert.ok(count(alone._stackHtml(), "shell-face") >= 4);
+});
+
+// ── Die reinen Bausteine, ohne Panel drumherum ─────────────
+//
+// Ausgelagert, damit sie einzeln pruefbar sind: die Rechnungen unten
+// entscheiden, wo im Bild etwas landet und welche Farbe es bekommt, und
+// keine davon brauchte je ein Custom Element. In der Panel-Klasse waren
+// sie zwischen 5000 Zeilen Interaktion nur ueber die fertige Zeichnung
+// zu erreichen.
+
+const geometry = await import(
+  pathToFileURL(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "panel-geometry.js"),
+  ).href
+);
+const colour = await import(
+  pathToFileURL(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "panel-colour.js"),
+  ).href
+);
+
+const FRAME = { min: 0, span: 1 };
+
+test("die Flucht zieht beide Flanken nach innen, nicht beide nach rechts", () => {
+  const floors = [{ id: "eg" }];
+  const at = (x, y) =>
+    geometry.projectOnto({ frame: FRAME, gutter: 150, floors, index: 0 }, x, y);
+  // Hinten ist schmaler als vorne -- das ist die ganze Flucht.
+  const frontWidth = at(1, 1).x - at(0, 1).x;
+  const backWidth = at(1, 0).x - at(0, 0).x;
+  assert.ok(backWidth < frontWidth, "die Hinterkante ist schmaler");
+  // Und zwar von der Mitte aus: die linke Kante weicht nach rechts,
+  // die rechte nach links. Gleichsinnig waere das Haus gekippt.
+  assert.ok(at(0, 0).x > at(0, 1).x, "die linke Wand weicht nach rechts");
+  assert.ok(at(1, 0).x < at(1, 1).x, "die rechte Wand weicht nach links");
+});
+
+test("nur der Himmel schwebt", () => {
+  assert.equal(geometry.planeLift({ id: "eg" }), 0);
+  assert.ok(geometry.planeLift({ id: "sky", virtual: true }) > 0);
+});
+
+test("eine Etage mehr macht die Zeichnung hoeher, nicht enger", () => {
+  const one = geometry.stackHeight([{ id: "eg" }]);
+  const two = geometry.stackHeight([{ id: "eg" }, { id: "og" }]);
+  assert.ok(two > one, "das Bild waechst mit dem Haus");
+});
+
+test("Shift schaltet das Raster ab, nicht die Grenzen", () => {
+  assert.equal(geometry.snapTo(0.313, FRAME), 0.32);
+  assert.equal(geometry.snapTo(0.313, FRAME, true), 0.313);
+  assert.equal(geometry.snapTo(4, FRAME, true), 1, "ausserhalb ist kein Ort");
+  assert.equal(geometry.snapTo(-4, FRAME, true), 0);
+});
+
+test("eine Wand in Reichweite gewinnt gegen das Raster", () => {
+  // 0.5 ist ein Rasterpunkt, 0.507 waere darauf zurueckgefallen.
+  assert.equal(geometry.magnetTo(0.507, [0.51], FRAME), 0.51);
+  // Zu weit weg: das Raster entscheidet wieder.
+  assert.equal(geometry.magnetTo(0.507, [0.9], FRAME), 0.5);
+  // Shift schaltet auch den Magneten ab.
+  assert.equal(geometry.magnetTo(0.507, [0.51], FRAME, true), 0.507);
+});
+
+test("eine kleinere Zeichnung wird mittig festgenagelt, keine grosse", () => {
+  // Groesser als das Fenster: kein Spalt an beiden Enden.
+  assert.deepEqual(geometry.panRange(1000, 2000, 1), [-1000, 0]);
+  // Kleiner: beide Grenzen gleich, also genau in der Mitte.
+  const [low, high] = geometry.panRange(1000, 400, 1);
+  assert.equal(low, high);
+  // Noch kein Layout: raten waere schlechter als nichts tun.
+  assert.equal(geometry.panRange(0, 400, 1), null);
+});
+
+test("das Theme schlaegt Home Assistant schlaegt den Fallback des Hubs", () => {
+  const theme = {
+    state_colors: { online: "rebeccapurple" },
+    fallback: { state_colors: { eigen: "teal" } },
+  };
+  assert.equal(colour.stateColour(theme, "online"), "rebeccapurple");
+  assert.equal(colour.stateColour(theme, "offline"), colour.HA_COLOURS.offline);
+  assert.equal(colour.stateColour(theme, "eigen"), "teal");
+  assert.equal(colour.stateColour(theme, "nie gehoert"), colour.STATE_SPARE);
+});
+
+test("ein Provider ist so deutlich wie seine klarste sichtbare Ebene", () => {
+  const layers = [
+    { provider_id: "a", opacity: 0.2 },
+    { provider_id: "a", opacity: 0.8 },
+    { provider_id: "a", opacity: 1, visible: false },
+    { provider_id: "b", opacity: 0.1 },
+  ];
+  assert.equal(colour.providerOpacity(layers, "a:eins"), 0.8);
+  // Kein Wort dazu heisst voll da, nicht unsichtbar.
+  assert.equal(colour.providerOpacity(layers, "c:eins"), 1);
 });

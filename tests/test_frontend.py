@@ -259,3 +259,31 @@ def test_the_renderer_pulls_nothing_off_the_internet():
     assert not re.search(r"https://(?!github\.com)", source), (
         "a local-first dashboard must render with the network unplugged"
     )
+
+
+@pytest.mark.asyncio
+async def test_the_cache_key_is_never_read_in_the_event_loop(hass):
+    """Setup runs in the loop, and hashing the renderer reads files. Home
+    Assistant warns about exactly this, and rightly: on a slow SD card the
+    whole instance waits for our cache key."""
+    from custom_components.spatial_hub import frontend
+
+    handed_over = []
+    original = hass.async_add_executor_job
+
+    async def watched(target, *args):
+        handed_over.append(target)
+        return await original(target, *args)
+
+    hass.async_add_executor_job = watched
+    hass.data.pop("_panels", None)
+
+    await frontend.async_register_panel(hass)
+
+    assert frontend.panel_version in handed_over, (
+        "the file read must go to an executor, not the loop"
+    )
+    custom = hass.data["_panels"][PANEL_URL_PATH]["config"]["_panel_custom"]
+    assert custom["module_url"].endswith(f"?v={frontend.panel_version()}"), (
+        "and it is still the same key the panel gets"
+    )

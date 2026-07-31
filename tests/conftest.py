@@ -32,6 +32,14 @@ if not hasattr(core, "HomeAssistant"):
         def __init__(self) -> None:
             self.data: dict = {}
 
+        async def async_add_executor_job(self, target, *args):
+            """Home Assistant's way out of the event loop.
+
+            Straight through here -- the tests care that blocking work is
+            handed over, not that it lands on another thread.
+            """
+            return target(*args)
+
     core.HomeAssistant = HomeAssistant
     core.callback = lambda func: func
 
