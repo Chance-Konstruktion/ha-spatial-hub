@@ -16,6 +16,25 @@ import { pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+/** Alles, was der Renderer ist, als ein Text.
+ *
+ *  Ein gutes Dutzend Tests sucht eine Regel oder eine Formel im Quelltext,
+ *  statt sie nachzurechnen -- bei CSS geht es nicht anders. Sie haben
+ *  vorher die eine Panel-Datei gelesen, und genau das ist beim Zerlegen
+ *  kaputtgegangen: Die Regeln waren noch da, nur eine Datei weiter.
+ *
+ *  Deshalb hier alle drei zusammen. Ein Test soll pruefen, *dass* der
+ *  Renderer etwas tut, nicht, in welcher Datei es steht -- sonst kostet
+ *  jedes Verschieben eine Runde roter Tests, die nichts gefunden haben.
+ */
+const rendererSource = () =>
+  ["spatial-hub-panel.js", "panel-styles.js", "panel-geometry.js"]
+    .map((file) => readFileSync(
+      join(here, "..", "custom_components", "spatial_hub", "www", file),
+      "utf8",
+    ))
+    .join("\n");
+
 // The module defines a custom element at import time; give it the two
 // browser globals it touches and nothing more.
 globalThis.HTMLElement = class {
@@ -1223,11 +1242,7 @@ test("the camera exposes its zoom so nodes can keep their screen size", () => {
 });
 
 test("node markup counter-scales with the camera", () => {
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   assert.match(source, /var\(--node-scale,1\) \* min\(1, 1 \/ var\(--camera-zoom,1\)\)/);
 });
 
@@ -1246,11 +1261,7 @@ test("counter-scaling never makes a marker bigger than it is", () => {
 });
 
 test("the stacked view scales its markers about their own anchor", () => {
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   // translate first, then scale: the marker grows around the spot it
   // marks instead of drifting away from it the deeper the camera goes.
   assert.match(source, /translate\(\$\{x\},\$\{y\}\) scale\(\$\{counter\}\)/);
@@ -1263,11 +1274,7 @@ test("the stacked view scales its markers about their own anchor", () => {
 });
 
 test("a provider's own icon is never nested raw into the drawing", () => {
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   // A bare <svg> with no width is a nested viewport and defaults to the
   // whole drawing -- one device covered the entire house.
   assert.doesNotMatch(source, /<g class="stack-icon"[^>]*>\$\{custom\.svg\}/);
@@ -1275,22 +1282,14 @@ test("a provider's own icon is never nested raw into the drawing", () => {
 });
 
 test("the canvas is not frozen onto a bitmap layer", () => {
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   // will-change:transform rasterises the plan once and then only stretches
   // that bitmap, which is what made the icons blurry on the way in.
   assert.doesNotMatch(source, /\.canvas \{[^}]*will-change:transform/);
 });
 
 test("the floor tabs claim the free space themselves", () => {
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   // "1 1 auto" was this line for a while, and it is how the strip ended up
   // exactly zero pixels wide on a phone: it claims free space, but it also
   // gives up all of its own when there is none. A stated basis is the half
@@ -1499,11 +1498,7 @@ test("no layout yet means nothing to clamp against", () => {
 test("the floor tabs stay on one line however many storeys there are", () => {
   // A house with a dozen floors used to wrap the header into four rows,
   // so the tabs moved under the user between one render and the next.
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   const tabs = source.slice(source.indexOf(".tabs {"));
   assert.match(tabs.slice(0, 240), /flex-wrap:nowrap/, "one line, always");
   assert.match(tabs.slice(0, 240), /overflow-x:auto/, "and reachable sideways");
@@ -1581,11 +1576,7 @@ test("an item whose provider has no layers is drawn normally", () => {
 });
 
 test("layer opacity and the search dimming multiply", () => {
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   // Inline opacity would beat a class outright, so a dimmed node in a
   // faded layer has to come out fainter than either on its own.
   assert.match(source, /\.node\.dimmed \{ opacity:calc\(var\(--layer-opacity,1\) \* \.25\)/);
@@ -2083,11 +2074,7 @@ test("the cloud gets no walls", () => {
 test("the walls never swallow a click meant for a device", () => {
   // Masonry is decoration here. A node under a wall must still be the
   // thing the click lands on.
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   assert.match(source,
     /\.room-wall, \.room-cap, \.shell-face, \.shell-cap, \.storey-side \{[\s]*pointer-events:none/);
 });
@@ -2099,21 +2086,13 @@ test("there is no roof, in the markup or in the stylesheet", () => {
   assert.doesNotMatch(view._stackHtml(), /roof/i);
   assert.doesNotMatch(view._headerHtml(), /roof/i);
 
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   assert.doesNotMatch(source, /shell-roof|data-toggle-roof/);
 });
 
 
 test("a cloud never swallows the grip that resizes it", () => {
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   assert.match(source, /\.area\.virtual \.cloud \{[^}]*pointer-events:none/);
 });
 
@@ -2573,11 +2552,7 @@ test("a stored zero cannot erase the house", () => {
 
 /** The panel's stylesheet, read from the source it ships. */
 const styleSheet = () => {
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   const start = source.indexOf("const STYLES = `");
   assert.ok(start > 0, "the stylesheet moved");
   return source.slice(start, source.indexOf("`;", start));
@@ -3036,11 +3011,7 @@ test("an entity pulled out of its device is announced as just itself", async () 
 });
 
 test("wall grips keep their screen size instead of growing with the zoom", () => {
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   // Same counter-scale the device icons use: the grips live inside the
   // canvas the camera scales, so at 600 % an untouched 16px dot covered
   // the wall it was there to place.
@@ -3059,11 +3030,7 @@ test("wall grips keep their screen size instead of growing with the zoom", () =>
 });
 
 test("a grip is drawn small and hit large", () => {
-  const source = readFileSync(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "spatial-hub-panel.js"),
-    "utf8",
-  );
+  const source = rendererSource();
   const size = (selector) =>
     Number(
       new RegExp(`\\${selector} \\{[^}]*width:(\\d+)px`, "s").exec(source)[1],

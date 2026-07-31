@@ -1,241 +1,255 @@
 # Spatial Hub
 
-> *„Ein Grundriss, der nicht malt, was du konfigurierst. Er malt, was dein Haus wirklich ist."*
+> *"A floor plan that doesn't draw what you configured. It draws what your
+> house actually is."*
 
-Spatial Hub ist **keine Karte**. Es ist ein Systemdienst in Home
-Assistant, der räumliche Daten aus beliebigen Integrationen einsammelt, mit
-den Stockwerken und Bereichen von Home Assistant zusammenführt und daraus
-**ein** Modell bereitstellt — das jeder Renderer zeichnen kann.
+Spatial Hub is **not a map**. It is a system service inside Home Assistant
+that collects spatial data from any integration, merges it with Home
+Assistant's own floors and areas, and serves **one** model from it — which
+any renderer can draw.
 
-Der Hub weiß nichts über Powerline, UniFi oder Shelly. Er kennt nur
-Provider, Layer, Nodes, Edges, Actions und Capabilities. Genau deshalb
-kann eine neue Integration Teil des Grundrisses werden, ohne dass hier eine
-einzige Zeile geändert wird.
+The hub knows nothing about Powerline, UniFi or Shelly. It knows only
+providers, layers, nodes, edges, actions and capabilities. That is exactly
+why a new integration can become part of the floor plan without a single
+line changing in here.
 
-<p align="center">
-  <img src="docs/images/haus.png" alt="Die Hausansicht: Ober-, Erd- und
-  Untergeschoss übereinander, mit einer Verbindung, die durch alle drei läuft"
-  width="640">
-</p>
+## Why there is a renderer in here at all
 
-Das ist ein Haus aus drei Etagen, vierzehn Bereichen und dreizehn Geräten —
-und daran wurde **nichts eingerichtet**. Etagen und Bereiche kommen aus
-Home Assistant, die Geräte von einem Provider, die Anordnung von der
-Automatik. Wer sie anders haben will, zieht sie hin; wer nicht, muss nichts
-tun.
+Home Assistant already has beautiful floor plans. What none of them has is
+anywhere to get the *data*. Every one of them is drawn by hand — entity by
+entity, coordinate by coordinate — and every one of them has to be edited
+again when a room is renamed, a device moves, or a light is added.
 
-<table>
-<tr>
-<td width="50%"><img src="docs/images/etage.png" alt="Eine einzelne Etage
-mit Räumen, Geräten und der Terrasse als Ring darum"></td>
-<td width="50%"><img src="docs/images/editor.png" alt="Der Editor mit dem
-Rechtsklickmenü und der blassen Kontur der Etage darunter"></td>
-</tr>
-<tr>
-<td>Eine Etage, wie man sie täglich ansieht.</td>
-<td>Der Editor: die Kontur der Etage darunter, und das Menü der rechten
-Maustaste.</td>
-</tr>
-</table>
+That hand work is not a shortcoming of those projects. It is a missing
+layer underneath them, and this is an attempt at that layer: one service
+that answers *what is in this house, and where*, assembled from registries
+Home Assistant already keeps correct, and served to any renderer that asks.
 
-Die Bilder sind erzeugt, nicht abfotografiert:
-[`tools/demo_house.py`](tools/demo_house.py) dreht ein Demohaus durch den
-echten Hub, [`tools/shots.mjs`](tools/shots.mjs) lässt den echten Renderer
-es zeichnen. Sie zeigen also, was der Code tut, und veralten mit ihm statt
-neben ihm.
+So the renderer that ships here is not the product. It exists for two
+reasons. A data service nobody can see is a data service nobody installs —
+and it is the proof that the API is complete, because it is built on
+nothing but the public websocket commands, with no private access of any
+kind. Anything it can draw, a foreign renderer can draw too. It is made as
+good as we can make it, and it is meant to be replaced.
+
+**If you maintain a floor plan card, this is aimed at you.** The hub takes
+over the part your users currently do by hand and redo whenever the house
+changes — and it hands you rooms, storeys, devices, positions, states and
+connections in one subscription. Your drawing stays yours. Two websocket
+calls are the whole integration; [one file in
+`examples/second_renderer/`](examples/second_renderer/) does it in 198
+lines, sharing not one line of code with us.
+
+That is where this becomes worth anything: not in the renderer below, but
+on the day the good floor plans stop asking their users to place every
+lamp twice.
+
+A house of three storeys, fourteen areas and thirteen devices needs
+**nothing set up**. Floors and areas come from Home Assistant, the devices
+from a provider, the arrangement from the automatic placement. Anyone who
+wants it differently drags it there; anyone who doesn't has nothing to do.
+
+> **Pictures are coming.** The drawing is being rebuilt as a proper
+> architectural view — walls with real thickness, doors as gaps, rooms as
+> space rather than cards. Screenshots go back in when they show something
+> worth looking at. The generator is already here
+> ([`tools/demo_house.py`](tools/demo_house.py) drives a demo house through
+> the real hub, [`tools/shots.mjs`](tools/shots.mjs) lets the real renderer
+> draw it), so the pictures will show what the code does and go stale with
+> it instead of beside it.
 
 ## Status
 
-**Die Roadmap ist durch — Phase 1–12:** Datenmodell, Provider-Registry,
-Event-System, Storage, Config-Flow, die komplette Websocket-API, ein
-Renderer in der Seitenleiste, ein Grundriss, der dem Haus von selbst folgt,
-ein Edit-Modus für alles, was die Automatik falsch geraten hat, Themes — und
-eigene Ebenen für jede Integration, die nie einen Adapter schreiben wird, und
-ein SDK für die, die einen schreiben wollen.
+**The roadmap is through — phases 1–15:** data model, provider registry,
+event system, storage, config flow, the complete websocket API, a renderer
+in the sidebar, a floor plan that follows the house by itself, an edit mode
+for everything the automatic placement guessed wrong, themes — plus layers
+of their own for every integration that will never write an adapter, an SDK
+for those who want to, a specification at 1.0, and outer walls that line up
+across every storey.
 
 <details>
-<summary><b>Angebundene Integrationen</b> — jede ein eigenes Repository, keine davon Pflicht</summary>
+<summary><b>Connected integrations</b> — each its own repository, none of them required</summary>
 
 <br>
 
-Der Hub zeichnet dein Haus aus Home Assistants eigenen Bereichen und Etagen,
-und für Integrationen ohne eigenen Adapter bringt er generische Ebenen mit.
-Wer mehr will, installiert genau die, die er braucht — **nicht alle**.
+The hub draws your house from Home Assistant's own areas and floors, and
+for integrations without an adapter of their own it brings generic layers
+along. Anyone who wants more installs exactly the ones they need — **not
+all of them**.
 
-| Integration | Was sie auf den Grundriss bringt |
+| Integration | What it puts on the floor plan |
 |---|---|
-| **[ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline)** | Powerline-Adapter mit ihrer echten Topologie, Linkraten und eigenen Icons |
-| **[ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p)** | ESPEasy-P2P-Mesh: welche Unit sich zuletzt gemeldet hat, bevor sie ausfällt |
-| **[ha-spatial-zwave](https://github.com/Chance-Konstruktion/ha-spatial-zwave)** | Z-Wave-Mesh: Controller, jeder Node in seinem Raum, Kanten nach Signalstärke |
-| **[ha-spatial-esphome](https://github.com/Chance-Konstruktion/ha-spatial-esphome)** | ESPHome-Boards als *ein* Punkt pro Platine statt einem pro Entität |
+| **[ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline)** | Powerline adapters with their real topology, link rates and icons of their own |
+| **[ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p)** | ESPEasy P2P mesh: which unit reported last before it drops out |
+| **[ha-spatial-zwave](https://github.com/Chance-Konstruktion/ha-spatial-zwave)** | Z-Wave mesh: controller, every node in its room, edges by signal strength |
+| **[ha-spatial-esphome](https://github.com/Chance-Konstruktion/ha-spatial-esphome)** | ESPHome boards as *one* point per board instead of one per entity |
 
-Einzelne ESPHome-Entitäten stehen auch ohne Adapter auf dem Plan — dafür ist
-die generische Ebene da, siehe [docs/PROVIDERS.md](docs/PROVIDERS.md).
+Individual ESPHome entities are on the plan without an adapter too — that
+is what the generic layer is for, see
+[docs/PROVIDERS.md](docs/PROVIDERS.md).
 
-`ha-espeasy-p2p` kommt ohne `DataUpdateCoordinator` aus, was zwei Löcher im
-SDK ans Licht gebracht hat — genau wofür diese Adapter da sind.
+`ha-espeasy-p2p` gets by without a `DataUpdateCoordinator`, which brought
+two holes in the SDK to light — exactly what these adapters are for.
 
 </details>
 
-Drei Dokumente, drei Fragen:
+Three documents, three questions:
 
-- **[docs/Vision.md](docs/Vision.md)** — *wohin das Ganze soll.* Installieren,
-  öffnen, alles ist schon da. Kein Dashboard mehr bauen.
-- **[ROADMAP.md](ROADMAP.md)** — *wie weit es ist.* Was steht, was als
-  Nächstes kommt und was bewusst noch fehlt.
-- **[Spatial Provider Specification 1.0](docs/SPECIFICATION.md)** — *woran man
-  sich hält.* Node, Edge, Layer, Position, Popup, Action, Theme, Icon, Camera,
-  Area Type — normativ und mitgetestet.
+- **[docs/Vision.md](docs/Vision.md)** — *where all of this is going.*
+  Install, open, everything is already there. No more dashboard building.
+- **[ROADMAP.md](ROADMAP.md)** — *how far along it is.* What stands, what
+  comes next, and what is deliberately still missing.
+- **[Spatial Provider Specification 1.0](docs/SPECIFICATION.md)** — *what
+  to hold to.* Node, edge, layer, position, popup, action, theme, icon,
+  camera, area type — normative and covered by tests.
 
-## Der Renderer
+## The renderer
 
-Nach der Einrichtung steht **Spatial Hub** in der Seitenleiste. Kein
-Dashboard anlegen, keine Karte konfigurieren, kein YAML:
+After setup, **Spatial Hub** is in the sidebar. No dashboard to create, no
+card to configure, no YAML:
 
-- **Haus**: alle Etagen übereinander, als Erstes und voreingestellt — die
-  einzige Ansicht, in der eine Verbindung zwischen zwei Stockwerken
-  überhaupt zu sehen ist
-- **Etagen** als Reiter, direkt aus der Floor-Registry — zum Anordnen und
-  für Details
-- **Bereiche** als Räume, automatisch angeordnet
-- **Garten und Außenbereich** legen sich als Ring um das Erdgeschoss statt
-  eine eigene Etage zu erfinden — Vorgarten, Terrasse, Garage, Einfahrt,
-  Carport und Pool passen alle darauf
-- **Ebenen** einzeln ein-/ausschaltbar, nach Provider gruppiert, unter dem
-  Grundriss statt daneben — die Auswahl wird gespeichert
-- **Zoom und Pan** überall gleich: Mausrad, zwei Finger, Ziehen, „alles zeigen"
-- **Suche** über alle Geräte — sie blendet nichts aus, sie stellt zurück
-- **Nodes** mit dem Icon aus Home Assistant, dem Icon-Set ihres Providers
-  oder eigenem Inline-SVG — nie als namenloser Punkt
-- **Edges** mit Qualitätsfarbe, gestrichelt für Schätzungen, animiert für Fluss
-- **Popup** mittig über dem Grundriss, mit allen Metadaten, Verlauf, Actions
-  (nur für Admins) und jeder Tür zurück nach Home Assistant: More-Info,
-  Gerät, Entitäten, Einstellungen und die eigene Ansicht des Providers
-- **Diagnose** direkt im Panel: was jeder Provider geliefert hat, und was daran
-  beanstandet wurde
-- **Themes**: fünf Presets, freie Farben, Formen, Beschriftungsmodus,
-  gerade oder gebogene Verbindungen — voreingestellt ist `auto`, das dem
-  Theme folgt, das der Nutzer in Home Assistant ohnehin schon hat
-- **Bearbeiten** (nur Admins): Nodes und Bereiche ziehen, Räume an jeder Wand
-  und jeder Ecke in der Größe ändern, Nodes skalieren und drehen, ausblenden
-  und zurückholen, pro Bereich Art und Sandwich-Verhalten festlegen,
-  Grundriss-Bild pro Etage, Ebenen sortieren und abdunkeln, Undo/Redo —
-  alles mit Rasterfang, `Shift` hält das Raster aus
+- **House**: every floor stacked, first and by default — the only view in
+  which a connection between two storeys can be seen at all
+- **Floors** as tabs, straight from the floor registry — for arranging
+  things and for details
+- **Areas** as rooms, arranged automatically
+- **Garden and outdoor areas** lay themselves as a ring around the ground
+  floor instead of inventing a storey of their own — front garden, terrace,
+  garage, driveway, carport and pool all fit on it
+- **Layers** switchable one by one, grouped by provider, below the floor
+  plan rather than beside it — the selection is remembered
+- **Zoom and pan** the same everywhere: mouse wheel, two fingers, dragging,
+  "show everything"
+- **Search** across every device — it hides nothing, it recedes everything
+  else
+- **Nodes** with the icon from Home Assistant, their provider's icon set,
+  or inline SVG of their own — never a nameless dot
+- **Edges** coloured by quality, dashed for estimates, animated for flow
+- **Popup** centred over the floor plan, with all metadata, history,
+  actions (admins only) and every door back into Home Assistant: more-info,
+  device, entities, settings and the provider's own view
+- **Diagnostics** right in the panel: what each provider delivered, and what
+  was rejected about it
+- **Themes**: five presets, free colours, shapes, label mode, straight or
+  curved connections — the default is `auto`, which follows the theme the
+  user already has in Home Assistant
+- **Editing** (admins only): drag nodes and areas, resize rooms at every
+  wall and every corner, scale and rotate nodes, hide them and bring them
+  back, set each area's kind and whether it appears in the stacked house
+  view, a floor plan image per storey, sort and dim layers, undo/redo — all
+  with grid snapping, and `Shift` holds the grid off
 
-Der Renderer ist ein reines ES-Modul: kein Build, kein npm, kein Bundle.
-Was im Repository liegt, führt der Browser aus. Er kennt **keine einzige
-Integration beim Namen** — Farben kommen aus `state` und `quality`, Formen
-aus `icon`, alles vom Provider geliefert. Ein Test hält das fest.
+The renderer is plain ES modules — an entry point, its stylesheet and the
+floor plan geometry: no build, no npm, no bundle. What lies in the
+repository is what the browser runs. It knows **not one single
+integration by name** — colours come from `state` and `quality`, shapes
+from `icon`, all delivered by the provider. A test holds that in place.
 
-Wer einen eigenen Renderer mitbringt, schaltet unseren in den Optionen ab.
-Der Hub liefert dann weiter seine Daten und nichts anderes. Dass das
-wirklich geht, steht als **eine Datei** in
-[examples/second_renderer/](examples/second_renderer/): vom Desktop aus
-geöffnet, ohne eine geteilte Zeile Code, mit genau zwei Kommandos.
+Anyone who brings a renderer of their own switches ours off in the options
+— and the hub goes on delivering its data and nothing else, with no feature
+held back for the one it shipped with.
 
-## Architektur in einem Bild
+## The architecture in one picture
 
 ```
 Integration A ─┐
 Integration B ─┼─► hass.data["spatial_hub_providers"] ─► Hub ─► Websocket ─► Renderer
 Integration C ─┘                                            ▲
-                          HA Floors + Areas ────────────────┤
-                          Nutzer-Anordnung (Storage) ───────┘
+                          HA floors + areas ────────────────┤
+                          User arrangement (storage) ───────┘
 ```
 
-Die Kopplung ist ein Dict in `hass.data` plus drei Dispatcher-Signale.
-Kein Import in irgendeine Richtung, keine Ladereihenfolge, keine
-Abhängigkeit. Eine Integration mit Provider-Adapter funktioniert unverändert
-weiter, wenn der Hub gar nicht installiert ist.
+The coupling is a dict in `hass.data` plus three dispatcher signals. No
+import in either direction, no load order, no dependency. An integration
+with a provider adapter goes on working unchanged when the hub is not
+installed at all.
 
-## Aufgabenteilung
+## Who does what
 
-| | zuständig für |
+| | responsible for |
 |---|---|
-| **Provider** | *was* es gibt: Nodes, Edges, Zustand, Metadaten |
-| **Home Assistant** | *wo* es grob ist: Floor- und Area-Registry |
-| **Hub** | *wie* es angeordnet ist: Auto-Platzierung + Nutzerkorrekturen |
-| **Renderer** | *wie* es aussieht |
-| **Theme** | *in welchen Farben* — für Zustände und Qualität, nie pro Integration |
+| **Provider** | *what* there is: nodes, edges, state, metadata |
+| **Home Assistant** | *where* it roughly is: floor and area registry |
+| **Hub** | *how* it is arranged: automatic placement + user corrections |
+| **Renderer** | *what it looks like* |
+| **Theme** | *in which colours* — for states and quality, never per integration |
 
-Der mitgelieferte Renderer benutzt ausschließlich die dokumentierte
-Websocket-API — dieselbe, die auch eine 3D-Ansicht oder ein Druck-Export
-benutzen würde. Er hat keinen Sonderzugang.
+The bundled renderer uses nothing but the documented websocket API — the
+same one a 3D view or a print export would use. It has no special access.
 
-Ein Provider erfährt nie, dass der Nutzer seinen Node verschoben hat. Das
-gehört dem Hub und wird bei jedem Refresh neu angewendet.
+A provider never finds out that the user moved its node. That belongs to
+the hub, and is applied afresh on every refresh.
 
-## Zero-Config
+## Zero config
 
-Bereiche stehen bereits in Home Assistant. Sie noch einmal in einem
-Grundriss-Editor zu erfassen, ist genau das, was dieses Projekt vermeiden
-will:
+Areas are already in Home Assistant. Entering them a second time in a floor
+plan editor is exactly what this project wants to avoid:
 
-1. Stockwerke kommen aus der Floor-Registry (nach Level sortiert)
-2. Bereiche werden pro Stockwerk automatisch auf ein Raster gelegt
-3. Jeder Node landet in der Mitte seines Bereichs, mehrere werden gefächert
-4. Der Nutzer korrigiert nur das, was falsch liegt — einmalig, persistent
+1. Storeys come from the floor registry (sorted by level)
+2. Areas are laid out on a grid automatically, per storey
+3. Every node lands in the middle of its area, several are fanned out
+4. The user corrects only what sits wrong — once, and it persists
 
-Und es bleibt richtig. Wird ein Bereich umbenannt, eine Etage angelegt oder
-ein Gerät in einen anderen Raum verschoben, zieht der Grundriss nach; die
-Entities darauf sind live, unabhängig davon, wie langsam der Provider
-pollt, der sie benannt hat. Beobachtet wird dabei nur, was gerade zu sehen
-ist — schaut niemand hin, ist nichts zu aktualisieren.
+And it stays right. Rename an area, add a floor or move a device into
+another room, and the floor plan follows; the entities on it are live, no
+matter how slowly the provider that named them polls. Only what is
+currently visible is watched — if nobody is looking, there is nothing to
+update.
 
-## Ohne Adapter: eigene Ebenen
+## Without an adapter: layers of your own
 
-Die meisten Integrationen werden nie einen Spatial Hub-Provider
-schreiben. Das ist kein Versäumnis, sondern der Normalfall — und eine
-Plattform, die nur für die Eingeweihten funktioniert, funktioniert nicht.
+Most integrations will never write a Spatial Hub provider. That is not a
+failing but the normal case — and a platform that only works for the
+initiated does not work.
 
-**Vier Ebenen sind ab Werk da**: Licht, Klima, Türen & Bewegung, Medien.
-Direkt nach der Installation, ohne dass jemand eine Regel schreibt und
-bevor irgendein Provider existiert. Es sind Regeln, keine Integrationsliste
-— ein Haus mit Z-Wave-Lampen und eines mit ESPHome-Lampen bekommen dieselben
-vier. Wer sie nicht will, löscht sie; wer alle löscht, hat sie gelöscht und
-bekommt sie nicht beim nächsten Neustart zurück.
+**Four layers ship with it**: light, climate, doors & motion, media.
+Straight after installation, without anybody writing a rule and before any
+provider exists. They are rules, not a list of integrations — a house with
+Z-Wave lamps and one with ESPHome lamps get the same four. Anyone who
+doesn't want them deletes them; anyone who deletes them all has deleted
+them, and does not get them back on the next restart.
 
-Darüber hinaus beschreibt der Nutzer eine Ebene selbst: *„alle Lichter"*,
-*„alles mit Label security"*, *„diese vier Entitäten"*. Im Bearbeiten-Modus,
-Seitenleiste, **+ Ebene**.
+Beyond that, the user describes a layer themselves: *"all lights"*,
+*"everything labelled security"*, *"these four entities"*. In edit mode,
+sidebar, **+ Layer**.
 
-Eine **Regel, keine Liste**: „alle Lichter" stimmt auch noch, wenn nächsten
-Monat eine Lampe dazukommt — aus demselben Grund, aus dem Stockwerke und
-Bereiche aus den Registries kommen und nicht aus einem Zeichenprogramm.
+A **rule, not a list**: "all lights" is still true when a lamp is added
+next month — for the same reason storeys and areas come from the registries
+and not from a drawing program.
 
-Und Home Assistant weiß bei vielen Geräten selbst, **worüber** sie erreicht
-werden — jedes Gerät hinter einer Bridge, einem Controller oder einem Hub
-trägt dessen ID. Diese Verbindungen lassen sich pro Ebene einschalten. Das
-ist echte Topologie, ohne dass der Hub eine einzige Integration beim Namen
-nennt: Wer `via_device` schreibt, ist ihm egal, und wie *gut* die Verbindung
-ist, behauptet er nicht — das misst niemand.
+And Home Assistant knows, for many devices, **what they are reached
+through** — every device behind a bridge, a controller or a hub carries its
+ID. These connections can be switched on per layer. That is real topology,
+without the hub naming a single integration: who writes `via_device` is of
+no interest to it, and how *good* the connection is, it does not claim —
+nobody measures that.
 
-Was er dafür bewusst **nicht** tut: in die eigene Websocket-API irgendeiner
-Integration greifen, um Routen, Nachbartabellen oder Signalstärken zu holen.
-Die gibt es je genau einmal, für je genau eine Integration — und die erste,
-die der Hub beim Namen fragt, wäre der letzte Tag, an dem er eine Plattform
-ist.
+What it deliberately does **not** do for this: reach into some
+integration's own websocket API to fetch routes, neighbour tables or signal
+strengths. Those exist exactly once, for exactly one integration — and the
+first one the hub asks by name would be the last day it is a platform.
 
-Und der entscheidende Teil: Diese Ebenen registrieren sich über **denselben
-öffentlichen Provider-Vertrag** wie jeder Fremde. Kein Sonderweg in den Hub,
-dieselbe Validierung, dieselbe Fehler-Isolierung. Ein Test hält das fest —
-eine Abkürzung an dieser Stelle wäre der erste Riss in dem, was den Hub
-überhaupt wertvoll macht.
+And the decisive part: these layers register through the **same public
+provider contract** as any stranger. No side entrance into the hub, the
+same validation, the same error isolation. A test holds that in place — a
+shortcut here would be the first crack in what makes the hub worth anything
+at all.
 
-## Eine Integration anbinden
+## Connecting an integration
 
-Für Maintainer: **[sdk/README.md](sdk/README.md)** — eine Seite, die ganze
-Antwort. Referenz: **[docs/PROVIDER_API.md](docs/PROVIDER_API.md)**.
+For maintainers: **[sdk/README.md](sdk/README.md)** — one page, the whole
+answer. Reference: **[docs/PROVIDER_API.md](docs/PROVIDER_API.md)**.
 
 ```bash
 python3 sdk/install.py --into custom_components/<domain> --tests tests
 ```
 
-Kopiert zwei Dateien und druckt den Code, der noch fehlt. Die vollständige
-Anbindung ist ein Aufruf:
+Copies two files and prints the code that is still missing. The complete
+connection is one call:
 
 ```python
-from .spatial_hub_provider import spatial_provider   # kopierte Datei
+from .spatial_hub_provider import spatial_provider   # the copied file
 
 spatial_provider(
     hass,
@@ -247,32 +261,30 @@ spatial_provider(
 )
 ```
 
-Mehr ist nicht nötig. Der Aufruf registriert, meldet beim Entladen des
-Config-Entries wieder ab und benachrichtigt den Hub nach jedem
-Coordinator-Refresh — Register/Unregister/Notify schreibt niemand von Hand.
+Nothing more is needed. The call registers, deregisters again when the
+config entry unloads, and notifies the hub after every coordinator refresh
+— nobody writes register/unregister/notify by hand.
 
-**Eine Entity-ID ist ein vollständiger Node.** Name, Bereich, Icon und
-Zustand stehen längst in Home Assistant; der Hub holt sie sich dort. Wer
-mehr zu sagen hat, nimmt die Builder `node()` / `edge()` / `action()` —
-alles Zusätzliche landet automatisch in den Metadaten und damit im Popup.
+**An entity id is a complete node.** Name, area, icon and state have long
+been in Home Assistant; the hub fetches them there. Anyone with more to say
+takes the builders `node()` / `edge()` / `action()` — everything extra
+lands in the metadata automatically, and with that in the popup.
 
-**Und ein Conformance-Kit**, das Entwickler in ihre eigene Testsuite
-kopieren ([sdk/spatial_hub_conformance.py](sdk/spatial_hub_conformance.py)):
-eine Klasse, nur pytest als Abhängigkeit, kein Home Assistant und kein
-installierter Hub nötig. Es fängt die Fehler, die Grundrisse im Feld
-zerlegen — allen voran Node-IDs, die sich zwischen zwei Polls ändern und
-damit die gesamte Anordnung des Nutzers stillschweigend wegwerfen, und
-Metadaten, die sich nicht als JSON verschicken lassen und das Modell für
-*alle* Provider mitreißen.
+**And a conformance kit** for developers to copy into their own test suite
+([sdk/spatial_hub_conformance.py](sdk/spatial_hub_conformance.py)): one
+class, pytest as the only dependency, no Home Assistant and no installed
+hub required. It catches the mistakes that take floor plans apart in the
+field — above all node ids that change between two polls and thereby throw
+away the user's entire arrangement in silence, and metadata that cannot be
+sent as JSON and takes the model down for *all* providers with it.
 
-**Zwei lauffähige Beispiele** liegen in
-[examples/](examples/) — keine Schnipsel, sondern Integrationen, die in
-unserer eigenen Testsuite gegen den echten Hub laufen und denselben
-Conformance-Vertrag erfüllen müssen wie fremder Code. Sie können also nicht
-stillschweigend verrotten.
+**Two runnable examples** live in [examples/](examples/) — not snippets,
+but integrations that run against the real hub in our own test suite and
+have to satisfy the same conformance contract as foreign code. So they
+cannot rot in silence.
 
-[`minimal_provider/`](examples/minimal_provider/__init__.py) ist die
-kürzeste ehrliche Fassung — **fünf Zeilen**, eine Liste von Entity-IDs:
+[`minimal_provider/`](examples/minimal_provider/__init__.py) is the
+shortest honest version — **five lines**, a list of entity ids:
 
 ```python
 spatial_provider(
@@ -282,55 +294,55 @@ spatial_provider(
 )
 ```
 
-[`example_provider/`](examples/example_provider/__init__.py) ist die ganze
-Integration, wenn das nicht mehr reicht: Kanten, Popup, Action, und über
-einen Coordinator läuft der Plan live mit.
+[`example_provider/`](examples/example_provider/__init__.py) is the whole
+integration, for when that is no longer enough: edges, popup, action, and
+through a coordinator the plan follows along live.
 
-Und wenn du Nutzer einer Integration bist, die noch fehlt:
-**[docs/ASK_FOR_SUPPORT.de.md](docs/ASK_FOR_SUPPORT.de.md)** ist der Text, den du
-dort einreichst — samt der Bitte, es einmal zu tun und freundlich. Weil die
-meisten Integrationen englischsprachig entwickelt werden, liegt derselbe
-Text auch als [ASK_FOR_SUPPORT.en.md](docs/ASK_FOR_SUPPORT.en.md) bereit.
+And if you are the user of an integration that is still missing:
+**[docs/ASK_FOR_SUPPORT.en.md](docs/ASK_FOR_SUPPORT.en.md)** is the text
+you file over there — including the request to do it once, and kindly. The
+same text is available in German as
+[ASK_FOR_SUPPORT.de.md](docs/ASK_FOR_SUPPORT.de.md).
 
-Wer schon angebunden ist, steht in
-**[docs/PROVIDERS.md](docs/PROVIDERS.md)**. Diese Liste ist reine
-Dokumentation — kein Modul liest sie, und ein Test hält fest, dass keine
-Domain daraus im Quelltext des Hubs vorkommt.
+Who is already connected is listed in
+**[docs/PROVIDERS.md](docs/PROVIDERS.md)**. That list is pure documentation
+— no module reads it, and a test holds it that no domain from it appears in
+the hub's source.
 
-Provider-Code gilt dem Hub als nicht vertrauenswürdig: Wer eine Exception
-wirft, ins Timeout läuft oder Unsinn liefert, verliert seinen eigenen Layer
-für genau einen Refresh — und sonst passiert nichts. Damit das kein
-Ratespiel wird, sagt `spatial_hub/diagnostics` pro Provider, was verworfen
-wurde und warum, inklusive vermuteter Tippfehler in der Registrierung.
+Provider code counts as untrusted to the hub: throw an exception, run into
+a timeout or deliver nonsense, and you lose your own layer for exactly one
+refresh — and nothing else happens. So that this does not become a guessing
+game, `spatial_hub/diagnostics` says per provider what was discarded and
+why, including suspected typos in the registration.
 
-## Websocket-API
+## Websocket API
 
-| Command | Zweck |
+| Command | Purpose |
 |---|---|
-| `spatial_hub/model` | das komplette räumliche Modell |
-| `spatial_hub/providers` | wer registriert ist, und was er kann |
-| `spatial_hub/subscribe` | Push-Hinweis bei Änderungen |
-| `spatial_hub/layout/set` | Nutzeranordnung speichern |
-| `spatial_hub/layout/reset` | Overrides eines Objekts verwerfen |
-| `spatial_hub/history` | Zeitreihe zu Node oder Edge |
-| `spatial_hub/action` | Provider-Action ausführen (Admin) |
-| `spatial_hub/diagnostics` | was jeder Provider geliefert hat, inkl. Fehler |
-| `spatial_hub/entities/facets` | welche Arten, Label und Geräteklassen es im Haus gibt |
-| `spatial_hub/area/assign` | ein Gerät oder eine Entität in einen anderen Bereich legen — **schreibt in Home Assistant**, nur Admin |
+| `spatial_hub/model` | the complete spatial model |
+| `spatial_hub/providers` | who is registered, and what they can do |
+| `spatial_hub/subscribe` | push notice on changes |
+| `spatial_hub/layout/set` | store the user arrangement |
+| `spatial_hub/layout/reset` | discard an object's overrides |
+| `spatial_hub/history` | time series for a node or edge |
+| `spatial_hub/action` | run a provider action (admin) |
+| `spatial_hub/diagnostics` | what each provider delivered, errors included |
+| `spatial_hub/entities/facets` | which kinds, labels and device classes exist in the house |
+| `spatial_hub/area/assign` | put a device or entity into another area — **writes into Home Assistant**, admin only |
 
-Unter `theme` steht das aufgelöste Theme — Preset plus Nutzerkorrekturen,
-fertig ausgerechnet. Ein zweiter Renderer bekommt damit dieselben Farben,
-ohne ein einziges Preset nachzubauen.
+Under `theme` sits the resolved theme — preset plus user corrections, fully
+worked out. A second renderer gets the same colours with it, without
+rebuilding a single preset.
 
-Im Modell steht unter `hidden` außerdem, was der Nutzer ausgeblendet hat —
-Ausblenden ist keine Einbahnstraße, ein Editor braucht die Liste, um es
-zurückzuholen. Ein einfacher Renderer zeichnet weiterhin nur `nodes`.
+The model also carries, under `hidden`, what the user has hidden — hiding
+is not a one-way street, an editor needs the list to bring things back. A
+simple renderer goes on drawing only `nodes`.
 
 ## Installation
 
-HACS → Custom Repository → dieses Repo als *Integration* hinzufügen,
-installieren, Home Assistant neu starten, unter *Geräte & Dienste* →
-*Integration hinzufügen* → **Spatial Hub**. Es gibt nichts einzustellen.
+HACS → custom repository → add this repo as an *integration*, install,
+restart Home Assistant, then under *Devices & services* → *Add integration*
+→ **Spatial Hub**. There is nothing to configure.
 
 ## Tests
 
@@ -338,12 +350,12 @@ installieren, Home Assistant neu starten, unter *Geräte & Dienste* →
 python3 -m pytest
 ```
 
-Läuft in der CI bei jedem Pull Request (pytest, HACS, hassfest) und lokal
-ohne Home-Assistant-Installation — `tests/conftest.py` stubbt die
-benötigten Teile, wie in ha-powerline. Die Renderer-Logik wird von
-`tests/test_panel_logic.mjs` mitgeprüft (`node --test`); pytest ruft sie
-mit auf und überspringt sie, wenn kein Node installiert ist.
+Runs in CI on every pull request (pytest, HACS, hassfest) and locally
+without a Home Assistant installation — `tests/conftest.py` stubs the parts
+that are needed, as in ha-powerline. The renderer's logic is checked along
+with it by `tests/test_panel_logic.mjs` (`node --test`); pytest calls it
+too, and skips it when node is not installed.
 
-## Lizenz
+## Licence
 
 MIT

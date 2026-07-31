@@ -25,6 +25,8 @@ from custom_components.spatial_hub.const import (
     AreaKind,
 )
 
+from conftest import renderer_source
+
 SPEC = Path(__file__).resolve().parents[1] / "docs" / "SPECIFICATION.md"
 PANEL_JS = (
     Path(__file__).resolve().parents[1]
@@ -111,7 +113,7 @@ def test_an_unknown_stored_kind_is_reported_not_swallowed(hass, caplog):
 
 def test_the_renderer_speaks_the_same_vocabulary():
     """Both sides of the wire compare against constants, not literals."""
-    source = PANEL_JS.read_text()
+    source = renderer_source()
     assert "const AREA_KIND = Object.freeze(" in source
     for kind in AreaKind:
         assert f'"{kind.value}"' in source
