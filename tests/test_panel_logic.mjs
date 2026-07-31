@@ -976,9 +976,47 @@ test("the same point on a higher storey is drawn higher up, and a step over", ()
   assert.ok(lower.x > upper.x, "the storeys stand exactly above each other");
 });
 
-test("the back of a storey is sheared right, which is what makes it a solid", () => {
+test("both flanks of a storey lean inwards, not both to the right", () => {
+  // Dieser Test hat einmal nur die linke Wand geprueft -- und deshalb
+  // einen kompletten Umbau der Projektion nicht bemerkt: von der
+  // Parallelverschiebung (nach hinten rutscht alles gleich weit nach
+  // rechts) zur Flucht (die Hinterkante ist schmaler). Auf der linken
+  // Flanke tun beide dasselbe, naemlich nach rechts. Der Unterschied
+  // steht rechts, und dort sah niemand hin.
   const view = panel(model(), { floor: null });
-  assert.ok(view._project(0, 0, 0).x > view._project(0, 0, 1).x);
+  const backLeft = view._project(0, 0, 0);
+  const frontLeft = view._project(0, 0, 1);
+  const backRight = view._project(0, 1, 0);
+  const frontRight = view._project(0, 1, 1);
+
+  assert.ok(backLeft.x > frontLeft.x, "die linke Wand weicht nach innen");
+  assert.ok(backRight.x < frontRight.x, "die rechte Wand weicht nach innen");
+});
+
+test("the back edge of a storey is narrower than its front edge", () => {
+  // Das ist die Perspektive in einem Satz. Bei einer Parallelverschiebung
+  // waeren beide exakt gleich breit, und das Haus wirkt gekippt statt
+  // gesehen: man blickt auf die eine Aussenwand von aussen und auf die
+  // andere von innen, was kein Standpunkt ist, den jemand einnehmen kann.
+  const view = panel(model(), { floor: null });
+  const front = view._project(0, 1, 1).x - view._project(0, 0, 1).x;
+  const back = view._project(0, 1, 0).x - view._project(0, 0, 0).x;
+
+  assert.ok(back < front, "die Hinterkante ist nicht schmaler");
+  assert.ok(back > front * 0.6, "so stark ist es kein Grundriss mehr");
+});
+
+test("the front edge keeps the full width, so nothing is drawn past it", () => {
+  // Die Flucht zieht nach innen. Damit ist die Vorderkante die breiteste
+  // Stelle der Zeichnung -- und `_stackWidth` darf keinen Zuschlag mehr
+  // dafuer machen, wie sie ihn fuer die alte Verschiebung brauchte.
+  const view = panel(model(), { floor: null });
+  const widest = Math.max(
+    ...view._stackFloors.flatMap((_floor, plane) =>
+      [0, 1].flatMap((y) => [0, 1].map((x) => view._project(plane, x, y).x)),
+    ),
+  );
+  assert.ok(widest <= view._stackWidth, "die Zeichnung laeuft aus dem Bild");
 });
 
 test("many storeys get more drawing, not less air between them", () => {

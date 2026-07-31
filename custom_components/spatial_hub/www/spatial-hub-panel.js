@@ -548,9 +548,16 @@ class SpatialHubPanel extends HTMLElement {
     // keins -- man liest oben-nach-unten als Stockwerke, nebeneinander
     // liest man als zwei Gebaeude. Leerer Rand ist der guenstigere Preis;
     // dagegen hilft der Zoom, nicht das Umbrechen.
+    //
+    // Die Flucht wirkt von der Mitte der Etage aus, nicht von ihrer
+    // linken Kante: nur so weichen beide Flanken nach innen. Zieht man
+    // stattdessen alles nach rechts, lehnen sie gleichsinnig, und man
+    // sieht die eine Aussenwand von aussen und die andere von innen --
+    // was kein Standpunkt ist, den ein Betrachter einnehmen kann.
+    const shrink = STACK.back + (1 - STACK.back) * ny;
     return {
       x: this._nameGutter + STACK.stagger * floorIndex +
-        nx * STACK.width + (1 - ny) * STACK.skew,
+        STACK.width / 2 + (nx - 0.5) * STACK.width * shrink,
       y: STACK.top + sky + floorIndex * STACK.gap + ny * STACK.depth -
         this._planeLift(floorIndex),
     };
@@ -578,10 +585,16 @@ class SpatialHubPanel extends HTMLElement {
   }
 
   /** How wide the drawing has to be. Every storey is offset a little
-   *  further right than the one above it, so the bottom one decides. */
+   *  further right than the one above it, so the bottom one decides.
+   *
+   *  Kein Zuschlag mehr fuer die Flucht. Die Parallelverschiebung schob
+   *  die Hinterkante ueber die rechte Bildkante hinaus und musste dort
+   *  wieder eingeholt werden; die Flucht zieht nach innen, also ist die
+   *  Vorderkante die breiteste Stelle und `width` die ganze Wahrheit.
+   */
   get _stackWidth() {
     return (
-      this._nameGutter + STACK.pad + STACK.width + STACK.skew +
+      this._nameGutter + STACK.pad + STACK.width +
       Math.max(0, this._stackFloors.length - 1) * STACK.stagger
     );
   }
@@ -1757,8 +1770,10 @@ class SpatialHubPanel extends HTMLElement {
       shape += wallsOf(corners, STACK.rise * 0.35, "deck-rail", keep);
     }
     if (kindOf(area) === AREA_KIND.VIRTUAL) {
-      // The plan is skewed, so the cloud is skewed with it: two edges of
-      // the projected room are the axes it is drawn along.
+      // Der Grundriss steht in der Flucht, also steht die Wolke mit
+      // darin: zwei Kanten des projizierten Raumes sind die Achsen, an
+      // denen sie gezeichnet wird. Damit gilt das auch weiter, seit die
+      // Flanken nicht mehr parallel laufen.
       const origin = this._project(plane, x0, y0);
       const alongX = this._project(plane, x0 + width, y0);
       const alongY = this._project(plane, x0, y0 + height);

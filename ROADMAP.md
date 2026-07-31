@@ -183,16 +183,88 @@ wird von B gefüllt.
 
 Und erst danach die Feature-Phasen 16–19.
 
+## E — Die Etage als Zeichnung, nicht als Oberfläche
+
+Der Anlass war eine hochgeladene Referenz: ein Grundriss auf schwarzem
+Grund, weiße Haarlinien, Wände mit echter Dicke, Türen als Lücken, die
+Treppe mit einzelnen Stufen, der Balkon schraffiert. Daneben gehalten war
+klar, was hier gebaut worden war: **ein Dashboard, das Räume anzeigt** —
+graue Karten mit gestrichelten Rändern und bunten Kreisen darauf. Die
+Referenz ist das Umgekehrte: eine Zeichnung, die man bedienen kann.
+
+Das ist kein Geschmacksstreit, sondern ein anderer Startpunkt, und der
+war nie übernommen worden.
+
+**Reihenfolge: erst eine Etage, dann der Stapel.** Nicht aus Vorsicht —
+die Bodenplatte unten ist für die einzelne Etage falsch und für das
+Sandwich vermutlich richtig, und beides gleichzeitig zu entscheiden geht
+nicht.
+
+- [x] **Die Perspektive.** War eine Parallelverschiebung: nach hinten
+      rutschte jeder Punkt gleich weit nach rechts, also lehnten beide
+      Seitenwände in dieselbe Richtung. Man sah die eine Außenwand von
+      außen und die andere von innen — kein Standpunkt, den ein
+      Betrachter einnehmen kann. Jetzt ein Fluchtpunkt: die Hinterkante
+      ist schmaler als die Vorderkante, gerechnet von der Mitte aus.
+      Beide Zahlen (Flucht 87 %, Tiefe 250) sind an der Referenz
+      abgemessen, nicht geraten.
+
+      Der alte Test dazu hat den Umbau **nicht bemerkt**, weil er nur die
+      linke Flanke prüfte — die einzige, bei der beide Projektionen
+      dasselbe tun. Der Unterschied steht rechts.
+
+- [ ] **Die Bodenplatte.** Unter der Etage liegt ein massiver Sockel mit
+      dicker Vorderkante; in der Referenz steht die Wand allein. Dabei
+      die Gegenprobe: braucht der Stapel sie umgekehrt, um Etagen
+      voneinander zu trennen? Dann ist es kein Fehler, sondern ein
+      Unterschied zwischen den zwei Ansichten.
+
+- [ ] **Die Raumnamen.** Sie kleben an der Hinterwand und laufen
+      ineinander („DIELE TREPPE ESSZIMMER"). Nach hinten geschoben wurden
+      sie, damit sie nicht auf dem ersten automatisch platzierten Gerät
+      liegen — in einer leeren Zeichnung ist das schlicht falsch. Die
+      Lösung muss beides können, nicht das eine gegen das andere
+      tauschen.
+
+- [ ] **Der leere linke Rand.** Der Etagenname steht groß und gesperrt in
+      einer eigenen Spalte, die bei einer einzelnen Etage ein Drittel der
+      Fläche frisst. In der Referenz ist es ein kleines „EG" oben links.
+      Im Stapel ist die Spalte dagegen richtig — sie sortiert die Etagen.
+      Also wieder: zwei Ansichten, zwei Antworten.
+
+- [ ] **Dann erst das Sandwich.** Und dort noch einmal von vorn: die
+      Flucht gilt jetzt pro Etage, `stagger` schiebt sie gegeneinander —
+      ob das zusammen noch als *ein* Gebäude liest, ist ungeprüft.
+
+Danach kommt die Frage, die bewusst offen liegt: **wo der Zustand
+hingehört.** Die Referenz kennt kein „Licht an" — sie ist eine
+Architekturzeichnung, und das ist ihre Stärke. Der Panel muss es trotzdem
+zeigen. Licht *im Raum* statt als Punkt an der Wand wäre die naheliegende
+Antwort, und es ist genau das, was Phase 16 ohnehin vorhat. Eine
+Gestaltungsentscheidung, keine technische.
+
 ## Nebenher: die eine große Datei
 
-`spatial-hub-panel.js` wächst schneller als alles andere und wird von
-jedem visuellen Feature angefasst. Das ist die Stelle, die in ein paar
-Monaten am meisten ausbremst.
+`spatial-hub-panel.js` wuchs schneller als alles andere und wurde von
+jedem visuellen Feature angefasst — 6272 Zeilen.
 
-Kein Grund, es sofort zu tun, aber der Zeitpunkt kommt — und das Prinzip
-„kein Build-Schritt" schließt es **nicht** aus: ES-Module importieren
-sich nativ, `stack.js`, `editor.js` und `styles.js` gingen ohne
-Werkzeugkette. Besser geplant als erzwungen.
+**Zwei Stücke sind raus** (5091 Zeilen übrig), und zwar nicht nach
+Zeilenzahl, sondern nach dem, was sich schon beschwert hatte:
+`panel-styles.js`, weil zwei Werkzeuge das CSS mit einem `indexOf` aus
+dem Quelltext schnitten, und `panel-geometry.js`, weil für die
+Perspektiv-Proben `_project` monkey-gepatcht und `STACK` von Hand
+nachgebaut werden musste. Das Prinzip „kein Build-Schritt" hat das
+ausgehalten: ES-Module importieren sich nativ.
+
+Dabei fielen zwei Fallen auf, die vorher unsichtbar waren — die
+Cache-Kennung hashte nur eine Datei, und drei Tests, die den *ganzen*
+Renderer bewachen sollten, lasen nur eine.
+
+Die Klasse selbst (4966 Zeilen) bleibt vorerst. Ihre Methoden reden
+durchgehend über `this`; in Mixins zerschnitten sucht man hinterher
+länger als vorher. Nähte gibt es (Editor/Ziehen, Popup, Websocket,
+Kamera) — aber das ist ein eigener Auftrag mit echtem Regressionsrisiko
+und gehört nicht in denselben Atemzug wie ein optischer Umbau.
 
 ---
 
