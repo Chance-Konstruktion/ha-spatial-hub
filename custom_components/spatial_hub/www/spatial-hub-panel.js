@@ -614,6 +614,15 @@ class SpatialHubPanel extends HTMLElement {
    *  viel Rand sieht man kaum, zu wenig schneidet einen Buchstaben ab.
    */
   get _nameGutter() {
+    // Eine einzelne Etage braucht die Spalte nicht. Sie ist dazu da, die
+    // Stockwerke untereinander lesbar zu machen -- bei einem gibt es
+    // nichts zu sortieren, und der Name steht dann oben links am Blatt
+    // statt in einem Rand, der ein Drittel der Flaeche kostet.
+    //
+    // Das ist kein Randfall fuer eine Demo: eine Wohnung ist ein Haus mit
+    // einer Etage. Wer in einer wohnt, hat bisher ein Drittel des Bildes
+    // an eine Spalte verloren, in der ein einziges Wort steht.
+    if (this._oneStorey) return STACK.pad;
     const longest = Math.max(
       0,
       ...this._stackFloors.map((floor) => String(floor.name || "").length),
@@ -621,6 +630,12 @@ class SpatialHubPanel extends HTMLElement {
     // 30px Schriftgroesse, Grossbuchstaben, plus Sperrung -- und die 34,
     // um die der Name von der Plattenkante wegrueckt.
     return Math.max(STACK.margin, longest * 23 + 34 + STACK.pad);
+  }
+
+  /** Steht hier nur ein Stockwerk? Dann ist die Zeichnung ein Grundriss
+   *  und kein Schnitt, und ein paar Entscheidungen kippen mit. */
+  get _oneStorey() {
+    return this._stackFloors.length <= 1;
   }
 
   /** Providers whose every layer is switched off.
@@ -1515,10 +1530,18 @@ class SpatialHubPanel extends HTMLElement {
       // Kante. Die x-Koordinate kommt vom linkesten Punkt der Platte,
       // die y-Koordinate aus der oberen Haelfte: so steht der Name auf
       // Hoehe der Etage, statt an ihrer Unterkante zu haengen.
-      const label = {
-        x: this._project(at, 0, 1).x - 34,
-        y: this._project(at, 0, 0.35).y,
-      };
+      //
+      // Bei einer einzelnen Etage stattdessen oben links ueber dem Blatt,
+      // klein und laufend statt gross und rechtsbuendig: dort gibt es
+      // keine Reihe, in die er sich einordnen muesste, und der Rand, in
+      // dem er sonst steht, waere leere Flaeche neben einem Grundriss.
+      // Ueber die Mauerkrone gesetzt, sonst laege er auf der Rueckwand.
+      const label = this._oneStorey
+        ? { x: this._project(at, 0, 0).x - 34, y: STACK.top - STACK.rise - 10 }
+        : {
+            x: this._project(at, 0, 1).x - 34,
+            y: this._project(at, 0, 0.35).y,
+          };
       // Back to front. Rooms have height now, so a room further back can
       // be hidden behind the walls of one in front -- which is what depth
       // looks like. Drawn in storage order instead, a back room paints
@@ -1557,7 +1580,7 @@ class SpatialHubPanel extends HTMLElement {
           <g data-at-x="${label.x}" data-at-y="${label.y}"
              transform="translate(${label.x},${label.y}) scale(${
                this._counterScale
-             })"><text class="storey-name">${escapeHtml(
+             })"><text class="storey-name ${this._oneStorey ? "alone" : ""}">${escapeHtml(
                String(floor.name || "").toLocaleUpperCase("de"),
              )}</text></g>
         </g>`;
@@ -1582,7 +1605,7 @@ class SpatialHubPanel extends HTMLElement {
         <g data-at-x="${label.x}" data-at-y="${label.y}"
            transform="translate(${label.x},${label.y}) scale(${
              this._counterScale
-           })"><text class="storey-name">${escapeHtml(
+           })"><text class="storey-name ${this._oneStorey ? "alone" : ""}">${escapeHtml(
              String(floor.name || "").toLocaleUpperCase("de"),
            )}</text></g>
       </g>`;

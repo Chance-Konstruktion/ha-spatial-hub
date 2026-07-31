@@ -226,11 +226,15 @@ nicht.
       Lösung muss beides können, nicht das eine gegen das andere
       tauschen.
 
-- [ ] **Der leere linke Rand.** Der Etagenname steht groß und gesperrt in
+- [x] **Der leere linke Rand.** Der Etagenname stand groß und gesperrt in
       einer eigenen Spalte, die bei einer einzelnen Etage ein Drittel der
-      Fläche frisst. In der Referenz ist es ein kleines „EG" oben links.
-      Im Stapel ist die Spalte dagegen richtig — sie sortiert die Etagen.
-      Also wieder: zwei Ansichten, zwei Antworten.
+      Fläche fraß. Jetzt ein kleines Wort oben links, sobald nur ein
+      Stockwerk dasteht; im Stapel bleibt die Spalte, denn dort sortiert
+      sie die Etagen. Zwei Ansichten, zwei Antworten.
+
+      **Das ist kein Randfall.** Eine Wohnung ist ein Haus mit einer
+      Etage — wer in einer wohnt, hat bisher ein Drittel des Bildes an
+      eine Spalte verloren, in der ein einziges Wort steht.
 
 - [ ] **Dann erst das Sandwich.** Und dort noch einmal von vorn: die
       Flucht gilt jetzt pro Etage, `stagger` schiebt sie gegeneinander —
