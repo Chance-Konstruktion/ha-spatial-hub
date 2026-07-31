@@ -63,9 +63,23 @@ def panel_version() -> str:
     return hashlib.sha256(source).hexdigest()[:12] if source else "unknown"
 
 
+async def async_panel_version(hass: HomeAssistant) -> str:
+    """The same cache key, read off the event loop.
+
+    Setup runs in the loop, and reading a handful of files from disk there
+    stalls everything else Home Assistant is doing -- which is exactly what
+    `homeassistant.util.loop` warns about. It is a small read, but "small"
+    is not a property of a filesystem: a slow SD card or a network mount
+    makes the same call take a second, and the whole instance waits.
+    """
+    return await hass.async_add_executor_job(panel_version)
+
+
 async def async_register_panel(hass: HomeAssistant) -> None:
     """Serve the renderer and put it in the sidebar."""
     await _async_register_static_path(hass)
+
+    version = await async_panel_version(hass)
 
     from homeassistant.components import frontend
 
@@ -78,7 +92,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         config={
             "_panel_custom": {
                 "name": "spatial-hub-panel",
-                "module_url": f"{URL_BASE}/{PANEL_MODULE}?v={panel_version()}",
+                "module_url": f"{URL_BASE}/{PANEL_MODULE}?v={version}",
                 "embed_iframe": False,
                 "trust_external": False,
             }
