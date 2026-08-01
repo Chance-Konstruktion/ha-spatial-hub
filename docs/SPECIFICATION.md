@@ -249,6 +249,19 @@ Wie beim `shape` gilt: Der Hub speichert und liefert `doors` und **liest sie
 nie**. Was eine Tür bedeutet, ist die Frage dessen, der den Grundriss
 zeichnet.
 
+### Hintergrundbild eines Bereichs
+
+Ein Bereich DARF ein `background` tragen: ein Bild, das innerhalb seines
+Kastens gezeichnet wird — ein Grundriss-Ausschnitt, ein Foto des Zimmers,
+was auch immer beim Wiedererkennen hilft. Wie bei einer Etage ist es eine
+Datenlänge (typischerweise eine `data:`-URL), keine Datei auf der Platte;
+der Hub speichert und liefert sie und **liest sie nie**.
+
+Es lebt im selben Kasten wie `position` und `size` und wandert mit, wenn der
+Raum verschoben oder verändert wird. Trägt der Bereich zusätzlich `shape`,
+wird das Bild auf dieselbe Kontur beschnitten wie die Füllung — sonst zeigt
+es das ganze Rechteck.
+
 ### Treppen
 
 Ein Renderer DARF einen Raum als **Treppe** zeichnen — als Stufen quer zur

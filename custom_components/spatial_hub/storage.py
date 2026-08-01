@@ -56,8 +56,12 @@ _FLOOR_KEYS = {"background", "aspect", "name", "order", "in_sandwich",
 # `doors` are the openings in this room's walls, box-local like `shape`:
 # which edge, where along it, and how wide as a fraction of that edge. A
 # door drawn in metres would move the moment the room is resized.
+# `background` is a picture inside this one room's box -- a floor plan
+# scan of just that room, a photo of the furniture, whatever helps somebody
+# recognise it at a glance. Same idea as a floor's `background`, just
+# scoped to the box instead of the whole storey.
 _AREA_KEYS = {"position", "size", "color", "hidden", "kind", "in_sandwich",
-              "single_only", "shape", "unjoined", "doors"}
+              "single_only", "shape", "unjoined", "doors", "background"}
 # View-wide settings rather than one item's arrangement. One key, "view".
 _SETTINGS_KEYS = {"theme", "custom_layers"}
 

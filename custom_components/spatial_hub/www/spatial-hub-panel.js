@@ -2180,6 +2180,20 @@ class SpatialHubPanel extends HTMLElement {
               )
               .join(",")})"></div>`
           : "";
+        const areaBackground = area.background
+          ? `<div class="area-background" style="background-image:url('${escapeHtml(
+              area.background,
+            )}');${
+              shaped
+                ? `clip-path:polygon(${shapeOf(area)
+                    .map(
+                      (point) =>
+                        `${(point.x * 100).toFixed(2)}% ${(point.y * 100).toFixed(2)}%`,
+                    )
+                    .join(",")});`
+                : ""
+            }"></div>`
+          : "";
         return `
         <div class="area ${
           kindOf(area) === AREA_KIND.OUTDOOR ? "outdoor" : ""
@@ -2190,6 +2204,7 @@ class SpatialHubPanel extends HTMLElement {
               top:${inFrameY(area.position.y, frame)}%;
               width:${(size.width / frame.span) * 100}%;
               height:${(size.height / spanY(frame)) * 100}%;">
+          ${areaBackground}
           ${fill}
           ${kindOf(area) === AREA_KIND.VIRTUAL ? CLOUD_SVG : ""}
           <span class="area-name">
@@ -2594,6 +2609,16 @@ class SpatialHubPanel extends HTMLElement {
                  ${area.single_only ? "checked" : ""}>
           Nur in der Einzelansicht
         </label>
+        <h3>Hintergrundbild</h3>
+        <label class="field">
+          <span>Bild für diesen Raum</span>
+          <input type="file" accept="image/*" data-area-background="1">
+        </label>
+        ${
+          area.background
+            ? `<button class="link" data-clear-area-background="1">Bild entfernen</button>`
+            : ""
+        }
         ${doorsHtml(area)}
       </div>`;
   }
@@ -4131,6 +4156,9 @@ class SpatialHubPanel extends HTMLElement {
     if (attribute("data-background") !== null && input.files && input.files[0]) {
       this._readBackground(input.files[0]);
     }
+    if (attribute("data-area-background") !== null && input.files && input.files[0]) {
+      this._readAreaBackground(input.files[0]);
+    }
   }
 
   _readBackground(file) {
@@ -4146,6 +4174,21 @@ class SpatialHubPanel extends HTMLElement {
       if (!this._floor) return;
       this._setLayout("floors", this._floor.id, { background: reader.result });
       this._floorDialog = false;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  _readAreaBackground(file) {
+    if (file.size > 3 * 1024 * 1024) {
+      this._error = "Bild zu groß (max. 3 MB). Bitte vorher verkleinern.";
+      this._render();
+      return;
+    }
+    const areaId = this._areaDialog;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (!areaId) return;
+      this._setLayout("areas", areaId, { background: reader.result });
     };
     reader.readAsDataURL(file);
   }
@@ -4543,6 +4586,13 @@ class SpatialHubPanel extends HTMLElement {
     if (hit("data-clear-background")) {
       if (this._floor) this._setLayout("floors", this._floor.id, { background: null });
       this._floorDialog = false;
+      return;
+    }
+
+    if (hit("data-clear-area-background")) {
+      if (this._areaDialog) {
+        this._setLayout("areas", this._areaDialog, { background: null });
+      }
       return;
     }
 
