@@ -1,5 +1,10 @@
 # Spatial Hub
 
+[![Release](https://img.shields.io/github/v/release/Chance-Konstruktion/ha-spatial-hub?include_prereleases&label=release&color=orange)](https://github.com/Chance-Konstruktion/ha-spatial-hub/releases)
+[![Status](https://img.shields.io/badge/status-early--preview-orange)](https://github.com/Chance-Konstruktion/ha-spatial-hub)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 > *"A floor plan that doesn't draw what you configured. It draws what your
 > house actually is."*
 
