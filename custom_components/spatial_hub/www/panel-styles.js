@@ -412,6 +412,14 @@ main { flex:0 0 auto; min-width:0; }
              outline-offset:-1px; pointer-events:none; }
 .area.outdoor.shaped .area-fill { background:var(--fp-outdoor, rgba(76,175,80,.10));
              outline:1px solid var(--fp-outdoor-line, rgba(76,175,80,.6)); }
+/* Ein Bild in genau diesem einen Raum -- derselbe Gedanke wie der
+   Grundriss-Hintergrund einer Etage, nur auf den Kasten des Raumes
+   beschnitten statt auf die ganze Bühne. Liegt unter der Füllung, damit
+   ein Raum mit eigener Kontur das Bild ebenfalls zeigt statt es unter dem
+   Rechteck zu verstecken. */
+.area-background { position:absolute; inset:0; border-radius:10px;
+             background-size:cover; background-position:center;
+             pointer-events:none; }
 /* Ecken-Modus: ein Griff je Ecke, ein kleinerer in jeder Wandmitte zum
    Einfügen. Damit werden Nischen und Wandversätze gezeichnet. */
 /* Der sichtbare Punkt bleibt klein, das Ziel darum herum ist gross: ein
