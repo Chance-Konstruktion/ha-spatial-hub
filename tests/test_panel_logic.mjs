@@ -1088,6 +1088,82 @@ test("a storey with a handful of nodes keeps its labels", () => {
   assert.ok(!/crowded/.test(view._stackHtml()));
 });
 
+// ── Clustering: a room with too many devices to draw separately ─────
+
+test("a room past the threshold collapses into one badge", () => {
+  const data = model({
+    nodes: Array.from({ length: 5 }, (_, i) =>
+      node(`a:n${i}`, { area_id: "wohnzimmer" })),
+  });
+  const view = panel(data);
+  const { singles, clusters } = view._nodeGroups;
+  assert.deepEqual(singles, []);
+  assert.equal(clusters.length, 1);
+  assert.equal(clusters[0].length, 5);
+  assert.match(view._nodesHtml(), /class="node cluster/);
+  assert.match(view._nodesHtml(), /cluster-count">5</);
+});
+
+test("a handful of devices in one room stay as separate icons", () => {
+  const data = model({
+    nodes: [
+      node("a:one", { area_id: "wohnzimmer" }),
+      node("a:two", { area_id: "wohnzimmer" }),
+      node("a:three", { area_id: "wohnzimmer" }),
+    ],
+  });
+  const view = panel(data);
+  const { singles, clusters } = view._nodeGroups;
+  assert.equal(singles.length, 3);
+  assert.equal(clusters.length, 0);
+  assert.doesNotMatch(view._nodesHtml(), /node cluster/);
+});
+
+test("devices with no room never cluster, however many there are", () => {
+  const data = model({
+    nodes: Array.from({ length: 6 }, (_, i) => node(`a:n${i}`, { area_id: null })),
+  });
+  const view = panel(data);
+  assert.equal(view._nodeGroups.clusters.length, 0);
+  assert.equal(view._nodeGroups.singles.length, 6);
+});
+
+test("arranging icons pulls a cluster back apart", () => {
+  const data = model({
+    nodes: Array.from({ length: 5 }, (_, i) =>
+      node(`a:n${i}`, { area_id: "wohnzimmer" })),
+  });
+  const view = panel(data, { what: "icons" });
+  view._edit = true;
+  assert.equal(view._nodeGroups.clusters.length, 0, "a hidden device is one you cannot drag");
+  assert.equal(view._nodeGroups.singles.length, 5);
+});
+
+test("searching pulls a cluster back apart too", () => {
+  const data = model({
+    nodes: Array.from({ length: 5 }, (_, i) =>
+      node(`a:n${i}`, { area_id: "wohnzimmer", label: `Lampe ${i}` })),
+  });
+  const view = panel(data);
+  view._search = "lampe 3";
+  assert.equal(view._nodeGroups.clusters.length, 0);
+});
+
+test("opening a cluster lists every device inside it, closing it selects one", () => {
+  const data = model({
+    nodes: Array.from({ length: 4 }, (_, i) =>
+      node(`a:n${i}`, { area_id: "wohnzimmer", label: `Ding ${i}` })),
+  });
+  const view = panel(data);
+  const areaId = view._nodeGroups.clusters[0][0].area_id;
+  view._clusterOpen = areaId;
+  const html = view._nodesHtml();
+  for (let i = 0; i < 4; i += 1) {
+    assert.match(html, new RegExp(`Ding ${i}`));
+  }
+  assert.match(html, /data-close-cluster="1"/);
+});
+
 // ── Icons: what a device looks like ────────────────────────
 
 test("a device is drawn with the icon Home Assistant gave it", () => {

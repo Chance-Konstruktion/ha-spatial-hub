@@ -382,6 +382,12 @@ main { flex:0 0 auto; min-width:0; }
                border-color:var(--primary-color,#03a9f4);
                box-shadow:0 0 0 3px rgba(3,169,244,.14); }
 .ghost.flush .ghost-name { color:var(--primary-color,#03a9f4); }
+/* Derselbe Gedanke fuer einen Raum, der beim Ziehen auf eine fremde Wand
+   eingerastet ist: ohne dieses Aufleuchten sieht ein Magnet-Treffer genau
+   so aus wie das gewoehnliche 2 %-Raster, und niemand erfaehrt, dass die
+   Wand gerade wirklich mit der Nachbarwand teilt. */
+.area.snapped { outline:2px solid var(--primary-color,#03a9f4);
+                outline-offset:-2px; }
 .ghost-name { position:absolute; top:-9px; left:8px; padding:0 4px;
               font-size:10px; letter-spacing:.04em; text-transform:uppercase;
               color:var(--secondary-text-color,#727272);
@@ -510,6 +516,22 @@ main { flex:0 0 auto; min-width:0; }
 .node.crowded:hover .label, .node.crowded.on .label { opacity:1; }
 .node.crowded:hover, .node.crowded.on { z-index:3; }
 .custom-icon svg { width:22px; height:22px; fill:currentColor; }
+/* Ein Sammel-Icon steht fuer ein ganzes Zimmer voller Geraete -- die
+   Zahl ist der ganze Unterschied zu einem einzelnen Punkt, sonst waere
+   nicht zu sehen, dass hier mehr als eines wartet. */
+.node.cluster .dot { background:var(--secondary-text-color,#727272); }
+.node.cluster .cluster-count {
+  position:absolute; top:-4px; right:-4px; min-width:16px; height:16px;
+  padding:0 3px; border-radius:8px; font-size:10px; line-height:16px;
+  text-align:center; color:#fff; background:var(--fp-accent, var(--primary-color,#03a9f4));
+  box-shadow:0 0 0 2px var(--card-background-color,#fff);
+}
+.cluster-popup .cluster-list { display:flex; flex-direction:column; gap:2px;
+  max-height:60vh; overflow-y:auto; }
+.cluster-item { display:flex; align-items:center; gap:10px; border:0;
+  background:transparent; padding:8px 4px; cursor:pointer; font:inherit;
+  color:inherit; text-align:left; border-radius:8px; }
+.cluster-item:hover { background:var(--secondary-background-color,#fafafa); }
 
 h3 { margin:12px 0 6px; font-size:14px; }
 .rows { display:flex; flex-direction:column; }

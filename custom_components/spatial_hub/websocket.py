@@ -44,6 +44,12 @@ _THEME_SCHEMA = {
     vol.Optional("house_weight"): vol.All(
         vol.Coerce(float), vol.Range(min=0.2, max=1.6)
     ),
+    # How eagerly a dragged wall reaches for a neighbour to snap onto, as a
+    # multiple of the built-in reach. 1 is what shipped for years; higher
+    # forgives a sloppier drag, lower asks for a closer aim.
+    vol.Optional("snap_reach"): vol.All(
+        vol.Coerce(float), vol.Range(min=0.4, max=3)
+    ),
     vol.Optional("labels"): vol.In(["always", "hover", "never"]),
     vol.Optional("edge_style"): vol.In(["straight", "curved"]),
     vol.Optional("room_style"): vol.In(["outline", "filled", "none"]),

@@ -227,6 +227,16 @@ const houseWeight = (theme) => {
   return Math.min(1.6, Math.max(0.2, value));
 };
 
+/** How eagerly a dragged wall reaches for a neighbour, as a multiple of
+ *  `SNAP_REACH`. 0.4 … 3, same clamp as the backend applies to what it
+ *  stores -- a renderer trusts its own theme, but not a number that
+ *  arrived unclamped from an older stored value. */
+const snapReach = (theme) => {
+  const value = Number((theme || {}).snap_reach);
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(3, Math.max(0.4, value));
+};
+
 /** Wie viel Umland das Bild zeigt -- je Himmelsrichtung einzeln.
  *
  *  Frueher war das eine einzige Zahl fuer alle vier Seiten. Wer hinter
@@ -647,10 +657,10 @@ const snapTo = (value, frame = { min: 0, span: 1 }, free = false) => {
  *  exactly, and from then on the two walls are one. Falls back to the
  *  grid, so a room with no neighbour behaves exactly as it did before.
  */
-const magnetTo = (value, candidates, frame, free = false) => {
+const magnetTo = (value, candidates, frame, free = false, reachScale = 1) => {
   if (!free && candidates && candidates.length) {
     let best = null;
-    let reach = SNAP_REACH;
+    let reach = SNAP_REACH * reachScale;
     for (const line of candidates) {
       const distance = Math.abs(line - value);
       if (distance <= reach) {
@@ -735,6 +745,7 @@ export {
   houseMetres,
   metre,
   houseWeight,
+  snapReach,
   frameOf,
   spanY,
   minY,

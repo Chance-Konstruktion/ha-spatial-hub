@@ -25,6 +25,7 @@ import {
   houseMetres,
   metre,
   houseWeight,
+  snapReach,
   frameOf,
   spanY,
   minY,
@@ -114,6 +115,12 @@ const PHONE = 760;
  *  ein schneller Wisch nach unten meint immer "weg damit". */
 const SHEET = { close: 0.3, fling: 0.5 };
 
+/** How many devices in one room turn into a single badge instead of one
+ *  icon each. Past this, overlapping icons stop reading as separate
+ *  devices and start reading as clutter -- the same point where labels
+ *  already switch to stacking (see `_crowded`), one further step. */
+const CLUSTER_THRESHOLD = 3;
+
 const pretty = (key) =>
   String(key).replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
@@ -164,6 +171,7 @@ class SpatialHubPanel extends HTMLElement {
     this._themeDialog = false;
     this._layerDialog = null; // the custom layer being written
     this._areaDialog = null; // the area whose kind is being set
+    this._clusterOpen = null; // the area whose device list is open
     this._menu = null; // {x, y, kind, id}: the right-click menu, if open
     this._press = null; // a finger being held still, on its way to the menu
     this._showEntities = false; // the device's entity list, in the popup
@@ -1664,7 +1672,6 @@ class SpatialHubPanel extends HTMLElement {
       houseAspect * (frameShape.span / spanY(frameShape))
     ).toFixed(4);
     const background = floor && floor.background;
-    const nodes = this._visibleNodes;
     const edges = this._visibleEdges;
 
     const stage = `
@@ -1692,7 +1699,7 @@ class SpatialHubPanel extends HTMLElement {
           </defs>
           ${edges.map((edge) => this._edgeHtml(edge)).join("")}
         </svg>
-        ${nodes.map((node) => this._nodeHtml(node)).join("")}
+        ${this._nodesHtml()}
       </div>`;
 
     return `
@@ -2347,6 +2354,103 @@ class SpatialHubPanel extends HTMLElement {
       (other) => other.area_id === node.area_id,
     ).length;
     return together > 3;
+  }
+
+  /** Devices in the same room, past the point where their icons stop
+   *  being readable as separate things and start being a smear.
+   *
+   *  Sorted into groups sharing an `area_id`, one cluster button per room
+   *  once a room passes `CLUSTER_THRESHOLD`. Switched off while arranging
+   *  icons -- a device you cannot see individually is one you cannot
+   *  drag -- and while searching, or the very device somebody is looking
+   *  for would be the one hidden inside a badge.
+   */
+  get _nodeGroups() {
+    const nodes = this._visibleNodes;
+    if (this._editIcons || this._matches) return { singles: nodes, clusters: [] };
+    const byRoom = new Map();
+    const singles = [];
+    for (const node of nodes) {
+      if (!node.area_id) {
+        singles.push(node);
+        continue;
+      }
+      const key = `${node.floor_id || ""}:${node.area_id}`;
+      if (!byRoom.has(key)) byRoom.set(key, []);
+      byRoom.get(key).push(node);
+    }
+    const clusters = [];
+    for (const group of byRoom.values()) {
+      if (group.length > CLUSTER_THRESHOLD) clusters.push(group);
+      else singles.push(...group);
+    }
+    return { singles, clusters };
+  }
+
+  _nodesHtml() {
+    const { singles, clusters } = this._nodeGroups;
+    return (
+      singles.map((node) => this._nodeHtml(node)).join("") +
+      clusters.map((group) => this._clusterHtml(group)).join("")
+    );
+  }
+
+  /** One badge standing in for a whole room's worth of devices.
+   *
+   *  Placed at the group's own centre of gravity rather than the room's
+   *  box: devices already spread themselves out inside a room, and their
+   *  average position is where a hand would expect to find them.
+   */
+  _clusterHtml(group) {
+    const frame = this._frame;
+    const cx = group.reduce((sum, node) => sum + node.position.x, 0) / group.length;
+    const cy = group.reduce((sum, node) => sum + node.position.y, 0) / group.length;
+    const areaId = group[0].area_id;
+    const area = this._area(areaId);
+    const open = this._clusterOpen === areaId;
+    return `
+      <button class="node cluster ${open ? "on" : ""}" data-cluster="${escapeHtml(
+        areaId,
+      )}"
+        title="${group.length} Geräte${
+          area ? ` in ${escapeHtml(area.name)}` : ""
+        }"
+        style="left:${inFrame(cx, frame)}%; top:${inFrameY(cy, frame)}%;">
+        <span class="dot"><ha-icon icon="mdi:dots-grid"></ha-icon></span>
+        <span class="cluster-count">${group.length}</span>
+        <span class="label">${escapeHtml((area || {}).name || "")}</span>
+      </button>
+      ${open ? this._clusterListHtml(group, area) : ""}`;
+  }
+
+  /** The devices behind one cluster, named and tappable.
+   *
+   *  Picking one opens exactly the same details popup a lone icon would
+   *  -- clustering changes how a room is drawn, never what a device is.
+   */
+  _clusterListHtml(group, area) {
+    const rows = group
+      .map(
+        (node) => `
+      <button class="cluster-item" data-cluster-node="${escapeHtml(node.id)}">
+        <ha-icon icon="${escapeHtml(
+          node.icon || this._genericIcon(node),
+        )}"></ha-icon>
+        <span>${escapeHtml(node.label)}</span>
+      </button>`,
+      )
+      .join("");
+    return `
+      <div class="scrim" data-close-cluster="1"></div>
+      <div class="popup centred cluster-popup">
+        <div class="popup-head">
+          <h2>${escapeHtml((area || {}).name || "Geräte")}</h2>
+          <button class="icon-btn" data-close-cluster="1">
+            <ha-icon icon="mdi:close"></ha-icon>
+          </button>
+        </div>
+        <div class="cluster-list">${rows}</div>
+      </div>`;
   }
 
   _nodeHtml(node) {
@@ -3187,6 +3291,14 @@ class SpatialHubPanel extends HTMLElement {
         Ganz links bleibt fast nur der Umriss und die Geräte stehen für
         sich; ganz rechts ist es ein Bauplan, in dem man sieht, welcher
         Raum welcher ist.</p>
+        <label class="field">
+          <span>Einrasten <b data-snap-value>${snapReach(theme).toFixed(2)}×</b></span>
+          <input type="range" min="0.4" max="3" step="0.1"
+                 value="${snapReach(theme)}" data-theme-snap="1">
+        </label>
+        <p class="note">Wie leicht eine gezogene Wand an der Nachbarwand
+        oder der Hausflucht einrastet. Ganz links zielt man genau, ganz
+        rechts reicht ungefähr hin.</p>
         ${swatches("state-color", theme.state_colors, "Zustände")}
         ${swatches("quality-color", theme.quality_colors, "Qualität")}
         <button class="link" data-reset-theme="1">Auf Standard zurücksetzen</button>
@@ -3480,6 +3592,10 @@ class SpatialHubPanel extends HTMLElement {
     // einer Linie, die niemand sieht, ist kein Einrasten, sondern ein
     // Ruckeln ohne Grund; derselbe Knopf, der die Konturen einblendet,
     // macht sie anziehend.
+    //
+    // Die eigene Aussenkante zaehlt bewusst *nicht* dazu: sie ist aus
+    // genau den Raeumen abgeleitet, die hier gezogen werden, und ein Raum,
+    // der sich an seiner eigenen Kontur festhaelt, kommt nicht mehr los.
     const outlines = this._ghosts
       ? this._ghostFloors().map((floor) => floor.outline)
       : [];
@@ -3498,6 +3614,22 @@ class SpatialHubPanel extends HTMLElement {
     return this._ghostFloors()
       .filter((floor) => flushWith(rect, floor.outline))
       .map((floor) => floor.id);
+  }
+
+  /** Hat die gerade gezogene Wand auf eine fremde Wand eingerastet?
+   *
+   *  Eingerastet und *fast* eingerastet sehen auf dem Bildschirm gleich
+   *  aus -- ohne dieses Signal weiss niemand, ob das Ruckeln beim
+   *  Ziehen ein Magnet war oder nur das 2 %-Raster.
+   */
+  _showSnap(element, rect, lines) {
+    if (!element || !element.classList || !element.classList.toggle) return;
+    const hit = (value, list) =>
+      (list || []).some((line) => Math.abs(line - value) <= JOIN_GAP);
+    const snapped =
+      hit(rect.left, lines && lines.x) || hit(rect.right, lines && lines.x) ||
+      hit(rect.top, lines && lines.y) || hit(rect.bottom, lines && lines.y);
+    element.classList.toggle("snapped", snapped);
   }
 
   /** Die getroffenen Konturen hervorheben, ohne neu zu zeichnen.
@@ -3527,7 +3659,10 @@ class SpatialHubPanel extends HTMLElement {
    *  as it did before.
    */
   _magnet(value, axis, event, frame, lines) {
-    return magnetTo(value, lines && lines[axis], frame, event.shiftKey);
+    return magnetTo(
+      value, lines && lines[axis], frame, event.shiftKey,
+      snapReach(this._theme),
+    );
   }
 
   _onPointerDown(event) {
@@ -3846,6 +3981,7 @@ class SpatialHubPanel extends HTMLElement {
       drag.element.style.width = `${(drag.value.size.width / frame.span) * 100}%`;
       drag.element.style.height = `${(drag.value.size.height / spanY(frame)) * 100}%`;
       this._showFlush(rect);
+      this._showSnap(drag.element, rect, lines);
       return;
     }
 
@@ -3914,6 +4050,10 @@ class SpatialHubPanel extends HTMLElement {
     // Die Hervorhebung gehoert zum Ziehen, nicht zum Ergebnis: was
     // stehenbleibt, waere eine Etage, die dauerhaft leuchtet.
     this._showFlush({ left: NaN, right: NaN, top: NaN, bottom: NaN });
+    if (drag && drag.element && drag.element.classList &&
+        drag.element.classList.remove) {
+      drag.element.classList.remove("snapped");
+    }
     // A room that was pressed and not moved was asked a question: what is
     // this attached to. Pressing it again puts the marks away, so the
     // same gesture is both halves of it.
@@ -4098,6 +4238,13 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
+    if (attribute("data-theme-snap") !== null) {
+      const label = this._root.querySelector("[data-snap-value]");
+      if (label) label.textContent = `${Number(input.value).toFixed(2)}×`;
+      if (committed) this._setTheme({ snap_reach: Number(input.value) });
+      return;
+    }
+
     const layerToggle = attribute("data-layer-toggle");
     if (layerToggle !== null && this._layerDialog) {
       this._layerDialog[layerToggle] = input.checked;
@@ -4211,6 +4358,7 @@ class SpatialHubPanel extends HTMLElement {
         edge_style: theme.edge_style,
         room_style: theme.room_style,
         house_weight: theme.house_weight,
+        snap_reach: theme.snap_reach,
         state_colors: { ...theme.state_colors },
         quality_colors: { ...theme.quality_colors },
         ...patch,
@@ -4761,6 +4909,27 @@ class SpatialHubPanel extends HTMLElement {
         actionButton.getAttribute("data-action"),
         actionButton.getAttribute("data-confirm") === "1",
       );
+      return;
+    }
+
+    const clusterButton = hit("data-cluster");
+    if (clusterButton) {
+      const areaId = clusterButton.getAttribute("data-cluster");
+      this._clusterOpen = this._clusterOpen === areaId ? null : areaId;
+      this._render();
+      return;
+    }
+
+    if (hit("data-close-cluster")) {
+      this._clusterOpen = null;
+      this._render();
+      return;
+    }
+
+    const clusterNode = hit("data-cluster-node");
+    if (clusterNode) {
+      this._clusterOpen = null;
+      this._select("node", clusterNode.getAttribute("data-cluster-node"));
       return;
     }
 
