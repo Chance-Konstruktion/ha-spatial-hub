@@ -60,6 +60,10 @@ _AUTO: dict[str, Any] = {
     # for. Where between those two is right depends on the house and the
     # screen, so it is a dial rather than a decision.
     "house_weight": 1.0,
+    # How eagerly a dragged wall reaches for a neighbour to snap onto, as a
+    # multiple of the geometry's own reach. Editing purely by feel: nobody
+    # measures a snap distance, they either fight it or they don't.
+    "snap_reach": 1.0,
     "labels": "always",
     "edge_style": "straight",
     "room_style": "outline",
@@ -177,6 +181,10 @@ def resolve(stored: Any) -> dict[str, Any]:
         # Never zero: a stored zero would erase the house and leave a panel
         # that looks broken, with the setting that did it three dialogs away.
         resolved["house_weight"] = min(1.6, max(0.2, float(weight)))
+
+    reach = theme.get("snap_reach")
+    if isinstance(reach, (int, float)):
+        resolved["snap_reach"] = min(3.0, max(0.4, float(reach)))
 
     # Per-word overrides sit on top of the preset, so a user can recolour
     # just "offline" without giving up everything else the preset decided.

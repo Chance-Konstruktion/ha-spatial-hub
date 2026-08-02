@@ -63,7 +63,11 @@ _FLOOR_KEYS = {"background", "aspect", "name", "order", "in_sandwich",
 _AREA_KEYS = {"position", "size", "color", "hidden", "kind", "in_sandwich",
               "single_only", "shape", "unjoined", "doors", "background"}
 # View-wide settings rather than one item's arrangement. One key, "view".
-_SETTINGS_KEYS = {"theme", "custom_layers"}
+# `custom_shapes` is the user's own drawn annotations -- a hallway, a
+# decorative outline -- with no counterpart in Home Assistant's area
+# registry, so they live as a list here rather than an override of
+# anything a provider sent.
+_SETTINGS_KEYS = {"theme", "custom_layers", "custom_shapes"}
 
 _SECTIONS = {
     "nodes": _NODE_KEYS,

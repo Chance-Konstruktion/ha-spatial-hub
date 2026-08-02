@@ -44,6 +44,12 @@ _THEME_SCHEMA = {
     vol.Optional("house_weight"): vol.All(
         vol.Coerce(float), vol.Range(min=0.2, max=1.6)
     ),
+    # How eagerly a dragged wall reaches for a neighbour to snap onto, as a
+    # multiple of the built-in reach. 1 is what shipped for years; higher
+    # forgives a sloppier drag, lower asks for a closer aim.
+    vol.Optional("snap_reach"): vol.All(
+        vol.Coerce(float), vol.Range(min=0.4, max=3)
+    ),
     vol.Optional("labels"): vol.In(["always", "hover", "never"]),
     vol.Optional("edge_style"): vol.In(["straight", "curved"]),
     vol.Optional("room_style"): vol.In(["outline", "filled", "none"]),
@@ -66,6 +72,28 @@ _CUSTOM_LAYER_SCHEMA = vol.Schema(
         vol.Optional("exclude"): _NAMES,
         vol.Optional("topology"): bool,
         vol.Optional("z_index"): vol.Coerce(int),
+    }
+)
+
+# A shape the user drew for its own sake -- a hallway, a decorative
+# annotation -- and not because Home Assistant has an area there. It lives
+# next to `custom_layers` for the same reason: nothing in the area registry
+# can hold it, so it is the user's own list rather than an override of
+# something a provider sent. Points share `_PLOT_POINT`'s range: both are
+# floor coordinates and both are drawn well past the walls on purpose.
+_CUSTOM_SHAPE_POINT = {
+    vol.Required("x"): vol.All(vol.Coerce(float), vol.Range(min=-4, max=5)),
+    vol.Required("y"): vol.All(vol.Coerce(float), vol.Range(min=-4, max=5)),
+}
+_CUSTOM_SHAPE_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): vol.All(str, vol.Length(min=1, max=64)),
+        vol.Required("floor_id"): vol.All(str, vol.Length(min=1, max=128)),
+        vol.Required("name"): vol.All(str, vol.Length(max=128)),
+        vol.Optional("color"): vol.All(str, vol.Length(max=64)),
+        vol.Required("points"): vol.All(
+            [_CUSTOM_SHAPE_POINT], vol.Length(min=3, max=64)
+        ),
     }
 )
 
@@ -195,6 +223,9 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
             vol.Optional("theme"): vol.Any(None, _THEME_SCHEMA),
             vol.Optional("custom_layers"): vol.Any(
                 None, vol.All([_CUSTOM_LAYER_SCHEMA], vol.Length(max=25))
+            ),
+            vol.Optional("custom_shapes"): vol.Any(
+                None, vol.All([_CUSTOM_SHAPE_SCHEMA], vol.Length(max=40))
             ),
             vol.Optional("position"): vol.Any(None, _POSITION_SCHEMA),
             vol.Optional("size"): vol.Any(None, _SIZE_SCHEMA),

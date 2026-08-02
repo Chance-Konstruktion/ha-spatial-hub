@@ -290,6 +290,20 @@ Ein Renderer SOLL es **unter allem anderen** zeichnen. Es ist der Grund, auf
 dem das Haus steht, und Nebengebäude — Garage, Gartenhütte — sind Außenbereiche
 darauf, keine Geschosse.
 
+### Eigene Flächen
+
+Das Modell TRÄGT eine Liste `shapes`: Flächen, die jemand gezeichnet hat, ohne
+dass ein Bereich aus Home Assistant dahintersteht — ein Flur, eine
+dekorative Kontur, was auch immer sonst keinen eigenen Platz im Bereichs-
+register hat. Jeder Eintrag trägt `id`, `floor_id`, `name`, `color` und
+`points`: eine Liste von mindestens drei Punkten `{x, y}` in
+Etagenkoordinaten, wie `plot`.
+
+Anders als `plot` gibt es davon beliebig viele je Etage, und jede hat eine
+eigene Kennung, die sich der Editor selbst ausdenkt — es gibt kein
+Register, das eine vergibt. Wie beim `plot` und beim `shape` eines Raumes
+gilt: Der Hub speichert und liefert `shapes` und **liest sie nie**.
+
 Das Grundstück bestimmt, **wie viel Umgebung es gibt**. Ein Renderer MUSS
 sein Sichtfenster so weit öffnen, dass ein gezeichnetes `plot` vollständig
 hineinpasst; ein fester Rand um das Haus wäre eine Behauptung über fremde
