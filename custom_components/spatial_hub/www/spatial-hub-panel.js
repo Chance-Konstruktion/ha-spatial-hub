@@ -172,6 +172,8 @@ class SpatialHubPanel extends HTMLElement {
     this._layerDialog = null; // the custom layer being written
     this._areaDialog = null; // the area whose kind is being set
     this._clusterOpen = null; // the area whose device list is open
+    this._shapeEdit = null; // the custom shape currently reshaped by corners
+    this._shapeDialog = null; // the custom shape whose name/colour is being set
     this._menu = null; // {x, y, kind, id}: the right-click menu, if open
     this._press = null; // a finger being held still, on its way to the menu
     this._showEntities = false; // the device's entity list, in the popup
@@ -822,6 +824,7 @@ class SpatialHubPanel extends HTMLElement {
       ${this._themeDialog ? this._themeDialogHtml() : ""}
       ${this._layerDialog ? this._layerDialogHtml() : ""}
       ${this._areaDialog ? this._areaDialogHtml() : ""}
+      ${this._shapeDialog ? this._shapeDialogHtml() : ""}
       ${this._popupHtml()}
       ${this._menuHtml()}
     `;
@@ -1689,6 +1692,7 @@ class SpatialHubPanel extends HTMLElement {
         ${this._plotHtml()}
         ${this._buildingLineHtml()}
         ${this._ghostsHtml()}
+        ${this._shapesHtml()}
         ${this._areasHtml()}
         <svg class="edges" viewBox="0 0 1000 1000" preserveAspectRatio="none">
           <defs>
@@ -2118,6 +2122,240 @@ class SpatialHubPanel extends HTMLElement {
     const points = plot.map((point) => ({ ...point }));
     points.splice(index, 1);
     this._writePlot(points);
+  }
+
+  // ── Eigene Flaechen: ohne HA-Bereich dahinter ────────────
+  //
+  // Ein Grundstueck ist einer je Etage; eine eigene Flaeche ist keins von
+  // beidem eingeschraenkt -- ein Flur, eine dekorative Kontur, beliebig
+  // viele pro Etage. Deshalb eine eigene, kleinere Kopie derselben
+  // Eck-Bearbeitung statt einer gemeinsamen Funktion: ein Grundstueck
+  // gehoert zur Etage, eine Flaeche zu sich selbst, und ein Versuch, beide
+  // unter einem Dach zu verallgemeinern, ist genau die Art Umbau, die das
+  // Grundstueck kaputt macht, um die Flaeche zu retten.
+
+  /** Every shape drawn on the floor currently open. */
+  get _shapes() {
+    const floor = this._floor;
+    if (!floor) return [];
+    return (this._model.shapes || []).filter(
+      (shape) => shape.floor_id === floor.id,
+    );
+  }
+
+  _shape(id) {
+    return (this._model.shapes || []).find((shape) => shape.id === id) || null;
+  }
+
+  /** A short id nobody else could have picked, since a shape has no
+   *  registry to hand one out. */
+  _newShapeId() {
+    return `shape-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  }
+
+  /** A first rectangle to start from, the same idea as `_defaultPlot` but
+   *  smaller: a plot wraps the whole picture, a shape starts as something
+   *  one can immediately see is a single room-sized thing to reshape. */
+  _defaultShapePoints() {
+    const frame = this._frame;
+    const cx = frame.min + frame.span / 2;
+    const cy = minY(frame) + spanY(frame) / 2;
+    const hw = frame.span * 0.08;
+    const hh = spanY(frame) * 0.08;
+    return [
+      { x: cx - hw, y: cy - hh }, { x: cx + hw, y: cy - hh },
+      { x: cx + hw, y: cy + hh }, { x: cx - hw, y: cy + hh },
+    ].map((point) => ({
+      x: Number(point.x.toFixed(4)),
+      y: Number(point.y.toFixed(4)),
+    }));
+  }
+
+  /** Draw a brand new shape and drop straight into reshaping it -- a
+   *  rectangle nobody can adjust is not a drawing tool, it is a sticker. */
+  _addShape() {
+    const floor = this._floor;
+    if (!floor) return;
+    const name = window.prompt("Name der Fläche?", "Fläche") || "Fläche";
+    const shape = {
+      id: this._newShapeId(),
+      floor_id: floor.id,
+      name,
+      color: "",
+      points: this._defaultShapePoints(),
+    };
+    this._writeShapes([...(this._model.shapes || []), shape]);
+    this._shapeEdit = shape.id;
+    this._corners = true;
+  }
+
+  _writeShapes(shapes) {
+    this._setLayout(
+      "settings", "view",
+      { custom_shapes: shapes.map((shape) => ({
+        id: shape.id,
+        floor_id: shape.floor_id,
+        name: shape.name,
+        color: shape.color || "",
+        points: shape.points.map((point) => ({
+          x: Number(point.x.toFixed(4)),
+          y: Number(point.y.toFixed(4)),
+        })),
+      })) },
+      { custom_shapes: this._model.shapes || [] },
+    );
+  }
+
+  _renameShape(id, patch) {
+    const shapes = (this._model.shapes || []).map((shape) =>
+      shape.id === id ? { ...shape, ...patch } : shape,
+    );
+    this._writeShapes(shapes);
+  }
+
+  _deleteShape(id) {
+    if (this._shapeEdit === id) this._shapeEdit = null;
+    if (this._shapeDialog === id) this._shapeDialog = null;
+    this._writeShapes((this._model.shapes || []).filter((shape) => shape.id !== id));
+  }
+
+  _addShapeCorner(id, index) {
+    const shape = this._shape(id);
+    if (!shape || !Number.isInteger(index) || !shape.points[index]) return;
+    const points = shape.points.map((point) => ({ ...point }));
+    const next = shape.points[(index + 1) % shape.points.length];
+    points.splice(index + 1, 0, {
+      x: (shape.points[index].x + next.x) / 2,
+      y: (shape.points[index].y + next.y) / 2,
+    });
+    this._writeShapes(
+      (this._model.shapes || []).map((entry) =>
+        entry.id === id ? { ...entry, points } : entry,
+      ),
+    );
+  }
+
+  _dropShapeCorner(id, index) {
+    const shape = this._shape(id);
+    if (!shape || !Number.isInteger(index) || !shape.points[index]) return;
+    if (shape.points.length <= 3) {
+      this._deleteShape(id);
+      return;
+    }
+    const points = shape.points.map((point) => ({ ...point }));
+    points.splice(index, 1);
+    this._writeShapes(
+      (this._model.shapes || []).map((entry) =>
+        entry.id === id ? { ...entry, points } : entry,
+      ),
+    );
+  }
+
+  _shapesHtml() {
+    const shapes = this._shapes;
+    if (!shapes.length) return "";
+    const frame = this._frame;
+    return shapes
+      .map((shape) => {
+        const polygon = shape.points
+          .map(
+            (point) =>
+              `${inFrame(point.x, frame).toFixed(2)}% ${inFrameY(
+                point.y,
+                frame,
+              ).toFixed(2)}%`,
+          )
+          .join(",");
+        const centre = centreOf(shape.points);
+        const left = inFrame(centre.x, frame).toFixed(2);
+        const top = inFrameY(centre.y, frame).toFixed(2);
+        const editingThis = this._editRooms && this._shapeEdit === shape.id;
+        return `
+          <div class="custom-shape" data-shape="${escapeHtml(shape.id)}"
+               style="clip-path:polygon(${polygon});${
+                 shape.color ? `background:${escapeHtml(shape.color)};` : ""
+               }"></div>
+          <span class="custom-shape-name" style="left:${left}%; top:${top}%;">
+            ${escapeHtml(shape.name)}
+          </span>
+          ${
+            this._editRooms
+              ? `<button class="shape-config" data-shape-dialog="${escapeHtml(
+                  shape.id,
+                )}" style="left:${left}%; top:${top}%;"
+                  title="Fläche einstellen">
+                  <ha-icon icon="mdi:tune-variant"></ha-icon>
+                </button>`
+              : ""
+          }
+          ${editingThis ? this._shapeGripsHtml(shape) : ""}`;
+      })
+      .join("");
+  }
+
+  _shapeGripsHtml(shape) {
+    const frame = this._frame;
+    const points = shape.points;
+    const spot = (point) =>
+      `left:${inFrame(point.x, frame).toFixed(2)}%;top:${inFrameY(
+        point.y,
+        frame,
+      ).toFixed(2)}%`;
+    return (
+      points
+        .map(
+          (point, index) => `<span class="corner plot-corner"
+              style="${spot(point)}" data-shape-index="${index}"
+              data-shape-owner="${escapeHtml(shape.id)}"
+              title="Ecke ziehen"
+              ><button class="corner-drop" data-shape-drop="${index}"
+                       data-shape-owner="${escapeHtml(shape.id)}"
+                       title="Diese Ecke entfernen">×</button></span>`,
+        )
+        .join("") +
+      points
+        .map((point, index) => {
+          const next = points[(index + 1) % points.length];
+          return `<span class="corner add plot-corner" style="${spot({
+            x: (point.x + next.x) / 2,
+            y: (point.y + next.y) / 2,
+          })}" data-shape-add="${index}" data-shape-owner="${escapeHtml(
+            shape.id,
+          )}" title="Hier eine neue Ecke setzen">+</span>`;
+        })
+        .join("")
+    );
+  }
+
+  _shapeDialogHtml() {
+    const shape = this._shape(this._shapeDialog);
+    if (!shape) return "";
+    return `
+      <div class="scrim" data-close-shape="1"></div>
+      <div class="popup centred">
+        <div class="popup-head">
+          <h2>${escapeHtml(shape.name)}</h2>
+          <button class="icon-btn" data-close-shape="1">
+            <ha-icon icon="mdi:close"></ha-icon>
+          </button>
+        </div>
+        <label class="field">
+          <span>Name</span>
+          <input type="text" value="${escapeHtml(shape.name)}"
+                 data-shape-name="${escapeHtml(shape.id)}">
+        </label>
+        <label class="field">
+          <span>Farbe</span>
+          <input type="color" value="${escapeHtml(shape.color || "#8899aa")}"
+                 data-shape-color="${escapeHtml(shape.id)}">
+        </label>
+        <button class="link" data-shape-reshape="${escapeHtml(shape.id)}">
+          ${this._shapeEdit === shape.id ? "Ecken fertig" : "Ecken bearbeiten"}
+        </button>
+        <button class="link" data-shape-delete="${escapeHtml(shape.id)}">
+          Fläche löschen
+        </button>
+      </div>`;
   }
 
   /** The other storeys' outer walls, behind the one being edited.
@@ -2876,6 +3114,8 @@ class SpatialHubPanel extends HTMLElement {
                    label: this._plot ? "Grundstück entfernen"
                                      : "Grundstück zeichnen",
                    icon: "mdi:vector-polygon", on: !!this._plot });
+      items.push({ id: "shape-new", label: "Neue Fläche zeichnen",
+                   icon: "mdi:shape-polygon-plus" });
     }
     if (this._floor) {
       items.push({ id: "floor-reset", label: "Etage zurücksetzen",
@@ -2971,6 +3211,9 @@ class SpatialHubPanel extends HTMLElement {
         return;
       case "plot-toggle":
         this._togglePlot();
+        return;
+      case "shape-new":
+        this._addShape();
         return;
       case "floor-reset":
         this._resetFloor();
@@ -3707,10 +3950,11 @@ class SpatialHubPanel extends HTMLElement {
 
     const plotGrip = find("data-plot-index");
     const cornerGrip = find("data-corner-area");
+    const shapeGrip = find("data-shape-index");
     const grip = find("data-resize-area");
     const areaElement = find("data-area");
     const nodeElement = find("data-node");
-    const anyGrip = plotGrip || cornerGrip;
+    const anyGrip = plotGrip || cornerGrip || shapeGrip;
     const draggable =
       this._edit && stage &&
       (anyGrip || grip || areaElement || nodeElement) &&
@@ -3724,6 +3968,7 @@ class SpatialHubPanel extends HTMLElement {
       // corner first and delete it second, which is one gesture too many.
       !find("data-corner-drop") && !find("data-plot-drop") &&
       !find("data-corner-add") && !find("data-plot-add") &&
+      !find("data-shape-drop") && !find("data-shape-add") &&
       // Two editing modes, two sets of things that move. Rooms hold still
       // while devices are sorted, and devices hold still while walls are
       // dragged -- otherwise every grab in a busy room hits the wrong one.
@@ -3745,6 +3990,14 @@ class SpatialHubPanel extends HTMLElement {
           key: (this._floor || {}).id,
           index: Number(plotGrip.getAttribute("data-plot-index")),
           element: plotGrip,
+        }
+      : shapeGrip
+      ? {
+          mode: "shape",
+          section: "settings",
+          key: shapeGrip.getAttribute("data-shape-owner"),
+          index: Number(shapeGrip.getAttribute("data-shape-index")),
+          element: shapeGrip,
         }
       : cornerGrip
       ? {
@@ -3782,6 +4035,8 @@ class SpatialHubPanel extends HTMLElement {
           ? this._shapeBefore(this._area(target.key) || {})
           : target.mode === "plot"
           ? { plot: (this._floor || {}).plot || null }
+          : target.mode === "shape"
+          ? { custom_shapes: this._model.shapes || [] }
           : this._layoutOf(target.section, target.key),
       start: this._rectOf(target.section, target.key),
       // The neighbours' walls, taken once. Recomputing them on every
@@ -3911,6 +4166,42 @@ class SpatialHubPanel extends HTMLElement {
       }
       drag.element.style.left = `${inFrame(plot[drag.index].x, frame).toFixed(2)}%`;
       drag.element.style.top = `${inFrameY(plot[drag.index].y, frame).toFixed(2)}%`;
+      return;
+    }
+
+    if (drag.mode === "shape") {
+      // Same idea as a plot corner -- floor coordinates straight through,
+      // no box to be relative to -- except there can be several of these
+      // per floor, so the one being dragged is picked out by its own id.
+      const shape = this._shape(drag.key);
+      if (!shape || !shape.points[drag.index]) return;
+      const points = shape.points.map((point) => ({ ...point }));
+      points[drag.index] = {
+        x: this._snap(x, event, frame),
+        y: this._snap(y, event, yFrame(frame)),
+      };
+      drag.value = {
+        shapes: (this._model.shapes || []).map((entry) =>
+          entry.id === drag.key ? { ...entry, points } : entry,
+        ),
+      };
+      const shell = drag.element.parentElement &&
+        drag.element.parentElement.querySelector(
+          `[data-shape="${drag.key}"]`,
+        );
+      if (shell) {
+        shell.style.clipPath = `polygon(${points
+          .map(
+            (point) =>
+              `${inFrame(point.x, frame).toFixed(2)}% ${inFrameY(
+                point.y,
+                frame,
+              ).toFixed(2)}%`,
+          )
+          .join(",")})`;
+      }
+      drag.element.style.left = `${inFrame(points[drag.index].x, frame).toFixed(2)}%`;
+      drag.element.style.top = `${inFrameY(points[drag.index].y, frame).toFixed(2)}%`;
       return;
     }
 
@@ -4090,6 +4381,26 @@ class SpatialHubPanel extends HTMLElement {
       );
       return;
     }
+    if (drag.mode === "shape") {
+      this._setLayout(
+        "settings",
+        "view",
+        {
+          custom_shapes: drag.value.shapes.map((shape) => ({
+            id: shape.id,
+            floor_id: shape.floor_id,
+            name: shape.name,
+            color: shape.color || "",
+            points: shape.points.map((point) => ({
+              x: round(point.x),
+              y: round(point.y),
+            })),
+          })),
+        },
+        drag.before,
+      );
+      return;
+    }
     if (drag.mode === "corner") {
       this._setLayout(
         "areas",
@@ -4149,6 +4460,18 @@ class SpatialHubPanel extends HTMLElement {
           box.setSelectionRange(box.value.length, box.value.length);
         }
       }
+      return;
+    }
+
+    const shapeName = attribute("data-shape-name");
+    if (shapeName !== null && committed) {
+      this._renameShape(shapeName, { name: input.value.trim() || "Fläche" });
+      return;
+    }
+
+    const shapeColor = attribute("data-shape-color");
+    if (shapeColor !== null && committed) {
+      this._renameShape(shapeColor, { color: input.value });
       return;
     }
 
@@ -4477,6 +4800,70 @@ class SpatialHubPanel extends HTMLElement {
     const plotAdder = hit("data-plot-add");
     if (plotAdder) {
       this._addPlotCorner(Number(plotAdder.getAttribute("data-plot-add")));
+      return;
+    }
+
+    const shapeDrop = hit("data-shape-drop");
+    if (shapeDrop) {
+      this._dropShapeCorner(
+        shapeDrop.getAttribute("data-shape-owner"),
+        Number(shapeDrop.getAttribute("data-shape-drop")),
+      );
+      return;
+    }
+
+    const shapeCorner = hit("data-shape-index");
+    if (shapeCorner && (event.altKey || event.metaKey)) {
+      this._dropShapeCorner(
+        shapeCorner.getAttribute("data-shape-owner"),
+        Number(shapeCorner.getAttribute("data-shape-index")),
+      );
+      return;
+    }
+
+    const shapeAdder = hit("data-shape-add");
+    if (shapeAdder) {
+      this._addShapeCorner(
+        shapeAdder.getAttribute("data-shape-owner"),
+        Number(shapeAdder.getAttribute("data-shape-add")),
+      );
+      return;
+    }
+
+    const shapeDialog = hit("data-shape-dialog");
+    if (shapeDialog) {
+      this._shapeDialog = shapeDialog.getAttribute("data-shape-dialog");
+      this._render();
+      return;
+    }
+
+    if (hit("data-close-shape")) {
+      this._shapeDialog = null;
+      this._render();
+      return;
+    }
+
+    const shapeReshape = hit("data-shape-reshape");
+    if (shapeReshape) {
+      const id = shapeReshape.getAttribute("data-shape-reshape");
+      this._shapeEdit = this._shapeEdit === id ? null : id;
+      this._corners = true;
+      this._shapeDialog = null;
+      this._render();
+      return;
+    }
+
+    const shapeDelete = hit("data-shape-delete");
+    if (shapeDelete) {
+      const id = shapeDelete.getAttribute("data-shape-delete");
+      const shape = this._shape(id);
+      if (
+        !shape ||
+        window.confirm(`„${shape.name}“ wirklich löschen?`)
+      ) {
+        this._deleteShape(id);
+      }
+      this._render();
       return;
     }
 

@@ -1015,3 +1015,47 @@ async def test_a_room_says_nothing_about_doors_by_default(hass, hub):
     room = next(area for area in model["areas"] if area["id"] == "wohnzimmer")
 
     assert "doors" not in room
+
+
+@pytest.mark.asyncio
+async def test_a_custom_shape_has_no_area_behind_it_at_all(hass, hub):
+    """A hallway drawn for its own sake, with no Home Assistant area."""
+    model = await hub.async_model()
+    assert model["shapes"] == []
+
+    boundary = [{"x": 0.1, "y": 0.1}, {"x": 0.4, "y": 0.1}, {"x": 0.4, "y": 0.9}]
+    hub.store.update("settings", "view", {
+        "custom_shapes": [
+            {"id": "flur-1", "floor_id": "eg", "name": "Flur",
+             "color": "#8899aa", "points": boundary},
+        ],
+    })
+    model = await hub.async_model()
+    assert model["shapes"] == [
+        {"id": "flur-1", "floor_id": "eg", "name": "Flur",
+         "color": "#8899aa", "points": boundary},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_custom_shape_is_dropped_not_guessed_at(hass, hub):
+    """Nothing in Home Assistant can validate these on the way in."""
+    hub.store.update("settings", "view", {
+        "custom_shapes": [
+            "not even a dict",
+            {"id": "", "floor_id": "eg", "points": [
+                {"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1},
+            ]},
+            {"id": "too-few", "floor_id": "eg", "points": [
+                {"x": 0, "y": 0}, {"x": 1, "y": 1},
+            ]},
+            {"id": "bad-point", "floor_id": "eg", "points": [
+                {"x": "nope", "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1},
+            ]},
+            {"id": "ok", "floor_id": "eg", "points": [
+                {"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1},
+            ]},
+        ],
+    })
+    model = await hub.async_model()
+    assert [shape["id"] for shape in model["shapes"]] == ["ok"]

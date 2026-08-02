@@ -278,7 +278,49 @@ class SpatialHub:
             # put them back after the user has taken them apart.
             "custom_layers_are_default": effective_layers(self.store)[1],
             "icon_sets": icon_sets,
+            # Shapes drawn for their own sake -- a hallway, a decorative
+            # outline -- with no area behind them at all. Never derived,
+            # never repaired: exactly what the editor last wrote, or gone.
+            "shapes": self._custom_shapes(),
         }
+
+    def _custom_shapes(self) -> list[dict[str, Any]]:
+        """The user's own drawn annotations, sanitised rather than trusted.
+
+        Nothing in Home Assistant can validate these on the way in -- there
+        is no registry entry to check them against -- so this is the one
+        place that does. A malformed entry (a point that is not a number, a
+        line collapsed to two corners) is dropped rather than passed on to a
+        renderer that has to guess what to do with it.
+        """
+        stored = self.store.get("settings", "view").get("custom_shapes")
+        if not isinstance(stored, list):
+            return []
+        shapes: list[dict[str, Any]] = []
+        for shape in stored:
+            if not isinstance(shape, dict):
+                continue
+            shape_id = str(shape.get("id") or "").strip()
+            floor_id = str(shape.get("floor_id") or "").strip()
+            if not shape_id or not floor_id:
+                continue
+            points: list[dict[str, float]] = []
+            for point in shape.get("points") or []:
+                if not isinstance(point, dict):
+                    continue
+                x, y = point.get("x"), point.get("y")
+                if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+                    points.append({"x": float(x), "y": float(y)})
+            if len(points) < 3:
+                continue
+            shapes.append({
+                "id": shape_id,
+                "floor_id": floor_id,
+                "name": str(shape.get("name") or "Fläche"),
+                "color": str(shape.get("color") or ""),
+                "points": points,
+            })
+        return shapes
 
     def _enrich_from_entities(self, nodes: list[Node]) -> None:
         """Fill blanks on entity-backed nodes from Home Assistant itself.

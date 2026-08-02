@@ -411,6 +411,22 @@ main { flex:0 0 auto; min-width:0; }
         outline:2px solid var(--fp-plot-line, rgba(124,179,66,.55));
         outline-offset:-2px; border-radius:2px; }
 .plot-corner { z-index:4; }
+/* Eine eigene Flaeche: ein Polygon ohne Bereich dahinter, ueber dem Plan
+   aber unter den Raeumen -- ein Flur oder eine Kontur ist etwas, das man
+   sieht, nicht etwas, in dem ein Geraet steht. */
+.custom-shape { position:absolute; inset:0; z-index:1; pointer-events:none;
+                background:var(--fp-plot, rgba(3,169,244,.12));
+                outline:1.5px solid var(--fp-accent, var(--primary-color,#03a9f4));
+                outline-offset:-1.5px; }
+.custom-shape-name { position:absolute; transform:translate(-50%,-50%);
+                      font-size:11px; padding:1px 5px; border-radius:4px;
+                      pointer-events:none; white-space:nowrap; z-index:2;
+                      color:var(--primary-text-color,#212121);
+                      background:var(--card-background-color,#fff); }
+.shape-config { position:absolute; transform:translate(-50%, 8px); z-index:3;
+                border:0; background:var(--card-background-color,#fff);
+                color:var(--secondary-text-color,#727272); cursor:pointer;
+                padding:2px; border-radius:50%; box-shadow:0 1px 3px rgba(0,0,0,.25); }
 .area.shaped { border-color:transparent; background:transparent; }
 .area-fill { position:absolute; inset:0; border-radius:10px;
              background:var(--secondary-background-color,#fafafa);

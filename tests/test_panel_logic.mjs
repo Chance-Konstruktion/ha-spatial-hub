@@ -46,7 +46,7 @@ globalThis.HTMLElement = class {
 };
 globalThis.customElements = { define() {} };
 globalThis.window = { addEventListener() {}, removeEventListener() {},
-                      confirm: () => true };
+                      confirm: () => true, prompt: () => "Fläche" };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const { SpatialHubPanel, HA_COLOURS, joinsOf, drawsTheWall } = await import(
@@ -2433,6 +2433,118 @@ test("a plot cannot be whittled below a boundary", () => {
   assert.deepEqual(view._written[0][2], { plot: null });
 });
 
+// ── Custom shapes: no Home Assistant area behind them ────────
+
+const withShapes = (shapes) => model({ shapes });
+
+test("no shapes on a floor that never got one", () => {
+  assert.equal(panel(model())._shapesHtml(), "");
+  assert.deepEqual(panel(model())._shapes, []);
+});
+
+test("a shape only shows up on the floor it was drawn on", () => {
+  const data = withShapes([
+    { id: "flur", floor_id: "eg", name: "Flur", color: "",
+      points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] },
+    { id: "andere", floor_id: "og", name: "Anderswo", color: "",
+      points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] },
+  ]);
+  const view = panel(data);
+  assert.deepEqual(view._shapes.map((s) => s.id), ["flur"]);
+
+  view._floorId = "og";
+  assert.deepEqual(view._shapes.map((s) => s.id), ["andere"]);
+});
+
+test("drawing a new shape drops straight into reshaping it", () => {
+  const view = panel(model(), { edit: true });
+  view._addShape();
+
+  assert.equal(view._written[0][0], "settings");
+  assert.equal(view._written[0][1], "view");
+  const written = view._written[0][2].custom_shapes;
+  assert.equal(written.length, 1);
+  assert.equal(written[0].name, "Fläche");
+  assert.equal(written[0].points.length, 4);
+  assert.equal(view._shapeEdit, written[0].id);
+  assert.equal(view._corners, true);
+});
+
+test("a shape is drawn as its own polygon, named and configurable", () => {
+  const data = withShapes([
+    { id: "flur", floor_id: "eg", name: "Flur", color: "#112233",
+      points: [{ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.1 }, { x: 0.4, y: 0.9 },
+               { x: 0.1, y: 0.9 }] },
+  ]);
+  const html = panel(data)._shapesHtml();
+  assert.match(html, /data-shape="flur"/);
+  assert.match(html, /clip-path:polygon\(/);
+  assert.match(html, /background:#112233/);
+  assert.match(html, /Flur/);
+});
+
+test("reshaping is only offered while arranging rooms", () => {
+  const data = withShapes([
+    { id: "flur", floor_id: "eg", name: "Flur", color: "",
+      points: [{ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.1 }, { x: 0.4, y: 0.9 }] },
+  ]);
+  const view = panel(data, { edit: false });
+  assert.doesNotMatch(view._shapesHtml(), /shape-config/);
+});
+
+test("a shape corner is added at the midpoint, in floor coordinates", () => {
+  const data = withShapes([
+    { id: "flur", floor_id: "eg", name: "Flur", color: "",
+      points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] },
+  ]);
+  const view = panel(data, { edit: true });
+  view._addShapeCorner("flur", 0);
+
+  const written = view._written[0][2].custom_shapes[0];
+  assert.deepEqual(written.points[1], { x: 0.5, y: 0 });
+  assert.equal(written.points.length, 4);
+});
+
+test("a shape below three corners is deleted rather than left broken", () => {
+  const data = withShapes([
+    { id: "flur", floor_id: "eg", name: "Flur", color: "",
+      points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] },
+  ]);
+  const view = panel(data, { edit: true });
+  view._dropShapeCorner("flur", 1);
+
+  assert.deepEqual(view._written[0][2].custom_shapes, []);
+});
+
+test("deleting a shape clears whatever was pointed at it", () => {
+  const data = withShapes([
+    { id: "flur", floor_id: "eg", name: "Flur", color: "",
+      points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] },
+  ]);
+  const view = panel(data, { edit: true });
+  view._shapeEdit = "flur";
+  view._shapeDialog = "flur";
+  view._deleteShape("flur");
+
+  assert.equal(view._shapeEdit, null);
+  assert.equal(view._shapeDialog, null);
+  assert.deepEqual(view._written[0][2].custom_shapes, []);
+});
+
+test("renaming and recolouring a shape keeps its points untouched", () => {
+  const points = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }];
+  const data = withShapes([
+    { id: "flur", floor_id: "eg", name: "Flur", color: "", points },
+  ]);
+  const view = panel(data, { edit: true });
+  view._renameShape("flur", { name: "Diele", color: "#ff0000" });
+
+  const written = view._written[0][2].custom_shapes[0];
+  assert.equal(written.name, "Diele");
+  assert.equal(written.color, "#ff0000");
+  assert.deepEqual(written.points, points);
+});
+
 // ── Clouds over the roof ──────────────────────────────────
 
 const withSky = () =>
@@ -3411,7 +3523,7 @@ test("the menu stays inside the window instead of hanging out of it", () => {
 test("the empty plan offers what belongs to the whole storey", () => {
   const view = panel(model(), { edit: true });
   rightClick(view, [stage()]);
-  assert.deepEqual(ids(view), ["plot-toggle", "floor-reset"]);
+  assert.deepEqual(ids(view), ["plot-toggle", "shape-new", "floor-reset"]);
   // Ohne gezeichnetes Grundstueck heisst der Eintrag anders herum.
   const item = view._menuItems().find((entry) => entry.id === "plot-toggle");
   assert.match(item.label, /zeichnen/);
