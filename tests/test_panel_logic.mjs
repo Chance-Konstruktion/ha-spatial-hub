@@ -2821,8 +2821,51 @@ test("the legend follows the plan instead of sinking to the bottom", () => {
   // told to take all the leftover height and the plan sat at its top.
   const style = styleSheet();
 
-  assert.match(style, /\nmain \{[^}]*flex:0 0 auto/,
+  // "flex:0 ..." ist der Punkt: der Plan waechst nicht in freien Platz
+  // hinein. Schrumpfen darf er inzwischen ("0 1 auto"), damit ein flacher
+  // Rahmen ihn kuerzt statt ihn unten abzuschneiden -- die Luecke zur
+  // Legende entsteht nur beim Wachsen.
+  assert.match(style, /\nmain \{[^}]*flex:0 [01] auto/,
                "the plan takes the height it needs and no more");
+});
+
+test("the frame is measured, not guessed", () => {
+  const style = styleSheet();
+  // "100vh" ist das Browserfenster, nicht das Panel: Home Assistants
+  // Kopfzeile, die eigene Kopfzeile, Banner und Legende stehen alle noch
+  // davor. Die Hoehe des Ausschnitts kommt deshalb aus "_sizeFrame".
+  assert.doesNotMatch(style, /\.viewport \{[^}]*100vh/,
+                      "the plan is not sized against the browser window");
+  assert.match(style, /\.viewport \{[^}]*aspect-ratio:var\(--frame-aspect/,
+               "the frame takes the shape of the drawing");
+  // Eine feste Mindestbreite war auf einem Telefon im Hochformat breiter
+  // als der Bildschirm: der Grundriss ragte heraus, bevor ihn jemand
+  // angefasst hatte.
+  assert.doesNotMatch(style, /\.canvas \{[^}]*clamp\(/,
+                      "the drawing has no fixed minimum width any more");
+});
+
+test("both views hand their shape to the frame", () => {
+  assert.match(panel()._stageHtml(), /--frame-aspect:[0-9.]+/,
+               "a single storey");
+  const house = panel(model(), { floor: null });
+  assert.equal(house._stacked, true);
+  assert.match(house._stageHtml(), /--frame-aspect:[0-9.]+/,
+               "the whole house");
+});
+
+test("a new frame re-fits a camera nobody has touched", () => {
+  const view = framed(panel(), { viewport: 400, canvas: 1000 });
+  view._model = view._model || { areas: [], providers: [] };
+  view._onFrameResize();
+  const fitted = view._view.zoom;
+  assert.ok(fitted < 1, "the plan is fitted into the smaller frame");
+
+  // Wer selbst gezoomt hat, behaelt seinen Ausschnitt.
+  view._zoomBy(2, null);
+  const chosen = view._view.zoom;
+  view._onFrameResize();
+  assert.equal(view._view.zoom, chosen, "a hand-set camera survives a resize");
 });
 
 const screen = (innerWidth, innerHeight) => ({

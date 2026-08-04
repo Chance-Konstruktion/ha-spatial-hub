@@ -104,6 +104,17 @@ const ZOOM = { min: 0.4, max: 6, step: 1.15 };
  *  nach Uebersicht aus, sondern nach abgeschnitten. */
 const FIT = { fill: 0.9 };
 
+/** Die kleinste Hoehe, auf die der Ausschnitt zusammengedrueckt werden
+ *  darf. Ein Rahmen von 40 Pixeln ist kein Grundriss mehr, sondern ein
+ *  Strich: bleibt neben aufgeklappter Legende und drei Bannern weniger
+ *  uebrig, rollt lieber die Seite. */
+const FRAME_MIN = 180;
+
+/** Und die groesste Breite. Ein Grundriss, der ueber zwei Meter
+ *  Monitorbreite laeuft, ist kein Ueberblick mehr -- man liest ihn dann
+ *  mit dem Hals statt mit den Augen. */
+const FRAME_MAX = 1280;
+
 /** Ab wann ein Bildschirm ein Telefon ist -- dieselbe Grenze wie im
  *  Stylesheet, damit Vollbild und Umbruch nicht bei verschiedenen
  *  Breiten umschalten und sich gegenseitig widersprechen. */
@@ -253,10 +264,22 @@ class SpatialHubPanel extends HTMLElement {
       this._wasPhone = this._isPhone();
       window.addEventListener("resize", this._onResize);
     }
+    // "resize" allein reicht nicht: das Panel wird auch schmaler, wenn
+    // Home Assistant seine Seitenleiste aufklappt oder ein Dialog daneben
+    // aufgeht -- das Fenster aendert sich dabei nicht, der Rahmen des
+    // Grundrisses schon. Beobachtet wird deshalb das Element selbst.
+    if (typeof ResizeObserver !== "undefined") {
+      this._frameObserver = new ResizeObserver(() => this._onFrameResize());
+      this._frameObserver.observe(this);
+    }
     if (this._hass && !this._unsubscribe) this._connect();
   }
 
   disconnectedCallback() {
+    if (this._frameObserver) {
+      this._frameObserver.disconnect();
+      this._frameObserver = null;
+    }
     if (this._onResize && typeof window !== "undefined") {
       window.removeEventListener("resize", this._onResize);
       this._onResize = null;
@@ -838,6 +861,10 @@ class SpatialHubPanel extends HTMLElement {
       this._fitted = true;
       this._fitToScreen();
     } else {
+      // Der Rahmen zuerst, die Kamera danach: eine andere Etage kann ein
+      // anderes Seitenverhaeltnis haben, und "_clampView" misst den
+      // Ausschnitt -- also muss der schon seine neue Hoehe haben.
+      this._sizeFrame();
       this._applyCamera();
     }
     this._revealCurrentTab();
@@ -1056,6 +1083,9 @@ class SpatialHubPanel extends HTMLElement {
     const next = Math.min(ZOOM.max, Math.max(ZOOM.min, view.zoom * factor));
     const applied = next / view.zoom;
     if (applied === 1) return;
+    // Ab hier gehoert die Kamera dem Nutzer: ein neuer Rahmen passt sie
+    // nicht mehr von selbst neu ein.
+    this._cameraMoved = true;
     const viewport = this._root.querySelector(".viewport");
     const box = viewport ? viewport.getBoundingClientRect() : null;
     const point = anchor
@@ -1065,6 +1095,70 @@ class SpatialHubPanel extends HTMLElement {
     view.y = point.y - (point.y - view.y) * applied;
     view.zoom = next;
     this._applyCamera();
+  }
+
+  /** Wie hoch der Ausschnitt hier ueberhaupt sein darf.
+   *
+   *  Gemessen, nicht geraten. Die alte Regel hiess `calc(100vh - 200px)`
+   *  und beide Zahlen stimmten nie: "100vh" ist das Browserfenster und
+   *  nicht das Panel, und was ueber und unter dem Plan steht -- Banner,
+   *  Hinweise, die Legende -- ist mal 40 und mal 300 Pixel hoch. Deshalb
+   *  hing das Haus auf einem 16:9-Monitor unten heraus und stand im
+   *  Hochformat in einem halb leeren Rahmen.
+   *
+   *  Der Rest des Koerpers wird gemessen, indem der Ausschnitt aus seiner
+   *  eigenen Hoehe herausgerechnet wird: was uebrig bleibt, gehoert den
+   *  anderen. Das Ergebnis ist eine Zahl, kein Verhaeltnis -- die Breite
+   *  rechnet der Browser aus dem Seitenverhaeltnis selbst zurueck, genau
+   *  wie ein SVG mit "preserveAspectRatio=meet".
+   *
+   *  Auf dem Telefon gilt das nicht: dort ist der Grundriss der ganze
+   *  Bildschirm, und die Hoehe steht im Stylesheet.
+   */
+  _sizeFrame() {
+    const root = this._root;
+    if (!root || typeof root.querySelector !== "function") return;
+    const viewport = root.querySelector(".viewport");
+    const body = root.querySelector(".body");
+    if (!viewport || !viewport.style) return;
+    if (this._isPhone()) {
+      viewport.style.width = "";
+      viewport.style.height = "";
+      return;
+    }
+    const main = root.querySelector("main");
+    if (!body || !body.clientHeight || !main || !main.clientWidth) return;
+    // Was der Rest des Koerpers schon belegt: die eigene Hoehe des
+    // Ausschnitts aus der Gesamthoehe herausgerechnet, der Rest gehoert
+    // den anderen -- Banner, Hinweise, Legende, samt Abstaenden.
+    const used = Math.max(0, body.scrollHeight - viewport.offsetHeight);
+    const room = body.clientHeight - used;
+    const aspect =
+      Number(viewport.style.getPropertyValue("--frame-aspect")) || 1.6;
+    // "meet", von Hand: die knappere der beiden Achsen entscheidet, die
+    // andere folgt aus dem Seitenverhaeltnis. Nur "max-height" reichte
+    // nicht -- CSS rechnet aus einer gedeckelten Hoehe keine schmalere
+    // Breite zurueck, also stand das Haus in einem viel zu weiten Rahmen
+    // und liess links und rechts je einen leeren Streifen stehen.
+    const width = Math.min(main.clientWidth, FRAME_MAX, room * aspect);
+    const height = Math.max(FRAME_MIN, width / aspect);
+    viewport.style.width = `${Math.round(height * aspect)}px`;
+    viewport.style.height = `${Math.round(height)}px`;
+  }
+
+  /** Ein anderer Rahmen ist ein anderer Bildschirm.
+   *
+   *  Gedrehtes Telefon, aufgeklappte Seitenleiste, geteiltes Fenster: der
+   *  Plan wurde bisher genau einmal eingepasst und blieb danach auf der
+   *  Groesse haengen, die beim Oeffnen zufaellig galt. Wer die Kamera
+   *  selbst angefasst hat, behaelt sie -- neu eingepasst wird nur, was
+   *  noch niemand angefasst hat.
+   */
+  _onFrameResize() {
+    if (!this._model || !this._root) return;
+    this._sizeFrame();
+    if (this._cameraMoved) this._applyCamera();
+    else this._fitToScreen();
   }
 
   /** Back to the whole plan, centred. The way out of any lost zoom.
@@ -1082,6 +1176,8 @@ class SpatialHubPanel extends HTMLElement {
    */
   _fitToScreen() {
     this._view = { zoom: 1, x: 0, y: 0 };
+    this._cameraMoved = false;
+    this._sizeFrame();
     const canvas = this._root && this._root.querySelector(".canvas");
     const viewport = this._root && this._root.querySelector(".viewport");
     if (canvas && viewport && canvas.offsetWidth && canvas.offsetHeight) {
@@ -1119,6 +1215,7 @@ class SpatialHubPanel extends HTMLElement {
       moveEvent.preventDefault();
       this._view.x = this._pan.originX + (moveEvent.clientX - this._pan.startX);
       this._view.y = this._pan.originY + (moveEvent.clientY - this._pan.startY);
+      this._cameraMoved = true;
       // Any real movement means this was a pan, not a click on the plan.
       if (
         Math.abs(moveEvent.clientX - this._pan.startX) > 3 ||
@@ -1569,13 +1666,18 @@ class SpatialHubPanel extends HTMLElement {
       })
       .join("");
 
-    return `${this._viewportHtml(`<div class="stack">
-      <svg viewBox="0 0 ${Math.round(this._stackWidth)} ${Math.round(this._stackHeight)}">
+    const width = Math.round(this._stackWidth);
+    const height = Math.round(this._stackHeight);
+    return `${this._viewportHtml(
+      `<div class="stack">
+      <svg viewBox="0 0 ${width} ${height}">
         ${plans.join("")}
         ${edges}
         ${nodes}
       </svg>
-    </div>`)}
+    </div>`,
+      (width / height).toFixed(4),
+    )}
     <p class="hint">Alle Etagen auf einmal — die einzige Ansicht, in der eine
     Verbindung zwischen zwei Stockwerken überhaupt zu sehen ist. Zum
     Anordnen und für Details eine einzelne Etage wählen.</p>`;
@@ -1605,9 +1707,16 @@ class SpatialHubPanel extends HTMLElement {
               class="stack-icon">${inner}</foreignObject>`;
   }
 
-  /** The camera lives here: one wrapper, both views, identical behaviour. */
-  _viewportHtml(inner) {
-    return `<div class="viewport"><div class="canvas">${inner}</div></div>`;
+  /** The camera lives here: one wrapper, both views, identical behaviour.
+   *
+   *  Der Ausschnitt bekommt das Seitenverhaeltnis der Zeichnung mit --
+   *  daraus rechnet das Stylesheet seine Form, und `_sizeFrame` deckelt
+   *  nur noch die Hoehe. So passt sich der Rahmen dem Bild an, statt das
+   *  Bild in einen geratenen Rahmen zu zwingen.
+   */
+  _viewportHtml(inner, aspect) {
+    const shape = Number(aspect) > 0 ? ` style="--frame-aspect:${aspect}"` : "";
+    return `<div class="viewport"${shape}><div class="canvas">${inner}</div></div>`;
   }
 
   /** Ein Raum als Zeichnung. Die Formen stehen in `panel-markup.js`;
@@ -1708,7 +1817,7 @@ class SpatialHubPanel extends HTMLElement {
 
     return `
       ${moved}${banner}
-      ${this._viewportHtml(stage)}
+      ${this._viewportHtml(stage, aspect)}
       ${this._trayHtml()}
       ${this._editHintHtml()}
       ${this._metersHtml()}

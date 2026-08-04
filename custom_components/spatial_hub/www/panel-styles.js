@@ -25,9 +25,14 @@ export const STYLES = `
 /* Vollbild heisst randlos: kein Innenabstand, keine Karte, keine
  * Schatten. Was hier noch Platz kostet, kostet ihn am Haus. */
 .app.phone .body { padding:0; gap:0; overflow:hidden; position:relative; }
-.app.phone main { flex:1 1 auto; min-height:0; display:flex; }
-.app.phone .viewport { max-height:none; height:100%; width:100%;
-                       border-radius:0; }
+.app.phone main { flex:1 1 auto; }
+/* Der Ausschnitt nimmt, was nach Banner und Hinweis uebrig ist -- und
+ * zwar nur die Hoehe. "display:flex" ohne Richtung hiess Zeile: das
+ * Banner stand *neben* dem Grundriss und quetschte ihn auf hundert
+ * Pixel, ein Streifen Haus am rechten Rand eines Telefons. */
+.app.phone .viewport { max-height:none; min-height:0; height:auto; width:100%;
+                       max-width:none; aspect-ratio:auto; margin-inline:0;
+                       flex:1 1 auto; border-radius:0; }
 .app.phone .stage, .app.phone .stack { border-radius:0; box-shadow:none; }
 /* Die Kopfzeile ist im Vollbild nicht schmaler, sondern weg -- und mit
  * ihr die Etagenreiter. Deshalb bleibt der eine Knopf, der sie
@@ -102,14 +107,18 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
 .icon-btn.on { background:rgba(255,255,255,.25); }
 /* Ebenen und Provider stehen unter dem Grundriss, nicht daneben: der Plan
    ist das Einzige, was Breite wirklich braucht. */
-.body { flex:1; display:flex; flex-direction:column; gap:16px; padding:16px; overflow:auto; }
+.body { flex:1; min-height:0; display:flex; flex-direction:column; gap:16px; padding:16px; overflow:auto; }
 /* "flex:1" hat den Plan oben festgenagelt und die Legende ans untere
    Ende geschoben -- auf einem 22:9-Telefon lagen 381 leere Pixel
    dazwischen. Der Plan ist quadratisch und damit von der Breite
    begrenzt; die uebrige Hoehe gehoert deshalb nicht in die Mitte,
    sondern hinter alles. Jetzt steht die Legende direkt unter dem
    Grundriss, egal wie hoch der Bildschirm ist. */
-main { flex:0 0 auto; min-width:0; }
+/* Immer eine Spalte. Banner, Grundriss und Hinweise stehen
+   untereinander -- nebeneinander waren sie nur, solange niemand ein
+   Banner sah. */
+main { flex:0 1 auto; min-width:0; min-height:0;
+       display:flex; flex-direction:column; }
 /* Eingeklappt: erst das Haus, dann die Erklärung dazu. */
 .legend-toggle { display:flex; align-items:center; gap:6px; border:0;
                  background:transparent; color:var(--secondary-text-color,#727272);
@@ -173,34 +182,51 @@ main { flex:0 0 auto; min-width:0; }
 .icon-btn[disabled] { opacity:.4; cursor:default; }
 
 /* The camera. Transform only, so panning never rebuilds the plan. */
-/* Der Grundriss ist quadratisch, ein Bildschirm ist es nicht. Ohne Deckel
-   ragt das Haus auf einem 16:9-Monitor unten aus dem Fenster und die
-   Ansicht wirkt wie im Hochformat. */
+/* Der Rahmen, nicht die Zeichnung, bestimmt die Form.
+ *
+ * Vorher gab die Breite die Hoehe vor und ein "max-height:calc(100vh -
+ * 200px)" schnitt oben ab, was zu viel war. Beide Zahlen waren geraten:
+ * "100vh" ist das Browserfenster, nicht das Panel (Home Assistant hat
+ * eine Kopfzeile, das Panel eine eigene, darunter stehen Banner und
+ * Legende), und die 200 waren der Versuch, all das mit einer Konstante
+ * zu treffen. Auf 16:9 blieb das Haus trotzdem unten haengen, im
+ * Hochformat stand der halbe Rahmen leer.
+ *
+ * Jetzt bekommt der Ausschnitt das Seitenverhaeltnis der Zeichnung
+ * ("--frame-aspect") und darf nur so hoch werden, wie im Rahmen wirklich
+ * Platz ist ("max-height" wird gemessen, siehe "_sizeFrame"). Der
+ * Browser rechnet die Breite selbst zurueck -- genau das, was ein SVG
+ * mit "preserveAspectRatio=meet" tut, nur fuer eine HTML-Buehne. Damit
+ * passt derselbe Plan in jeden Rahmen: Telefon, 16:9, 9:16. */
 .viewport { overflow:hidden; touch-action:none; border-radius:12px;
-            max-height:calc(100vh - 200px); }
+            aspect-ratio:var(--frame-aspect, 1.6);
+            width:min(1280px, 100%); max-width:100%;
+            min-height:180px; margin-inline:auto; }
+/* Die beiden Zahlen sind der Anfangswert. Sobald "_sizeFrame" gemessen
+   hat, stehen Breite und Hoehe am Element selbst -- das erste Bild ist
+   damit schon nah dran und springt nicht sichtbar zurecht. */
 /* Kein "will-change:transform": das befördert die Fläche auf eine eigene
    Ebene, die einmal gerastert und danach nur noch als Bitmap vergrößert
    wird -- beim Hineinzoomen werden die Icons dadurch unscharf statt neu
    gezeichnet. Chromium tut das konsequent, Firefox nicht, daher sah es
    auf dem einen Rechner scharf und auf dem anderen matschig aus. */
-/* Untergrenze, Obergrenze, Mitte. Die Zeichnung skaliert mit der Breite
-   des Fensters, und ohne Untergrenze wurde aus einem schmalen Fenster ein
-   noch schmalerer Turm: der Grundriss schrumpfte weiter, obwohl die
-   Kamera ohnehin schieben und zoomen kann. Unter 560px wird jetzt nicht
-   mehr gequetscht, sondern geschoben. */
-/* Kein "margin-inline:auto". Zentriert wird die Zeichnung von der
-   Kamera: ist sie kleiner als das Fenster, setzt "_clampView" sie in die
-   Mitte. Beides zusammen zentriert zweimal -- einmal die Box im Fenster
-   (halber Rest der *ungezoomten* Breite) und einmal den Inhalt per
-   translate (halber Rest der *gezoomten*) -- und die Summe schob den
-   Grundriss auf einem breiten Bildschirm in die rechte Haelfte, immer
-   wieder, weil jeder Klick neu klemmt. Eine Zentrierung genuegt, und die
-   der Kamera ist die, die auch beim Zoomen noch stimmt. */
-.canvas { transform-origin:0 0; width:clamp(560px, 100%, 1280px); }
+/* Die Zeichnung fuellt den Ausschnitt, statt ihn zu bestimmen.
+   Die feste Untergrenze von 560px ist weg: auf einem Telefon im
+   Hochformat war sie breiter als der Bildschirm, also ragte der
+   Grundriss seitlich heraus, bevor ihn ueberhaupt jemand verschoben
+   hatte. Zu klein wird hier nichts mehr -- der Ausschnitt haelt das
+   Seitenverhaeltnis, und wer naeher heran will, zoomt.
+   Zentriert wird weiterhin nur einmal: die Box vom Rahmen
+   ("margin-inline:auto" am Ausschnitt), den Inhalt darin die Kamera. */
+.canvas { transform-origin:0 0; width:100%; }
 
 .stack { background:var(--fp-surface, var(--card-background-color,#fff));
          border-radius:12px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12));
-         padding:8px; }
+         padding:8px; box-sizing:border-box; }
+/* Die Zeichnung behaelt ihre Form: die "viewBox" gibt sie vor, die
+   Breite gibt die Groesse. Den Rahmen darum passt "_sizeFrame" an --
+   nicht umgekehrt. Waere es andersherum, wuerde ein Telefon im
+   Hochformat aus jedem Zimmer einen hohen Streifen machen. */
 .stack svg { display:block; width:100%; height:auto; }
 /* Es gibt keinen Gebäudekörper mehr, der über allen Etagen liegt. Weder
    durchscheinende Wände noch ein Dach noch Eckpfosten: alles davon lag
