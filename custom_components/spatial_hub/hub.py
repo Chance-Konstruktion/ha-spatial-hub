@@ -635,7 +635,7 @@ class SpatialHub:
             # it and never reads it. A room that is not a rectangle is a
             # question for whatever draws the plan, not for the model.
             for key in ("position", "size", "color", "name", "in_sandwich",
-                        "single_only", "shape", "doors"):
+                        "single_only", "shape", "doors", "windows"):
                 if key in override and override[key] is not None:
                     area[key] = override[key]
                     if key == "position":

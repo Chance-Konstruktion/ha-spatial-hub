@@ -1009,6 +1009,21 @@ async def test_doors_are_carried_but_never_read(hass, hub):
 
 
 @pytest.mark.asyncio
+async def test_windows_are_carried_like_doors(hass, hub):
+    """Windows travel the same road as doors: stored, served, never read.
+
+    Their own list rather than a flag on a door, because the difference is
+    in the drawing -- a swing arc against a sill -- and not in the survey.
+    """
+    windows = [{"side": 2, "at": 0.3, "width": 0.2}]
+    hub.store.update("areas", "wohnzimmer", {"windows": windows})
+    model = await hub.async_model()
+
+    room = next(area for area in model["areas"] if area["id"] == "wohnzimmer")
+    assert room["windows"] == windows
+
+
+@pytest.mark.asyncio
 async def test_a_room_says_nothing_about_doors_by_default(hass, hub):
     """No doors is not "a room with no way in"; it is nothing said yet."""
     model = await hub.async_model()

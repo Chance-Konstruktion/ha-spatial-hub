@@ -86,13 +86,15 @@ const shoot = async (name, view, { width, height = null, body }) => {
       body { margin:0; background:var(--card-background-color,#fff);
              font-family:Roboto,-apple-system,system-ui,sans-serif; }
       ${styles}
-      /* Im Panel begrenzt "max-height" den Ausschnitt auf das Fenster von
-         Home Assistant. Hier gibt es kein Fenster, nur ein Bild -- und ein
-         Bild, das die unterste Etage abschneidet, zeigt kein Haus. */
-      .viewport { height:${height ? `${height - 40}px` : "auto"};
-                  max-height:${height ? `${height - 40}px` : "none"}; }
     </style>
     <div class="app" style="${view._themeVars || ""}">${body(view)}</div>`);
+  // Im Panel misst "_sizeFrame" den Rahmen, den Home Assistant uebrig
+  // laesst. Hier gibt es keinen Rahmen, nur ein Bild: der Ausschnitt
+  // bekommt die volle Bildbreite, die Hoehe folgt aus der Zeichnung.
+  await page.addStyleTag({
+    content: ".viewport { width:100%; max-width:none; height:auto;"
+             + " min-height:0; margin-inline:0; }",
+  });
   const file = join(resolve(outDir), `${name}.png`);
   await page.screenshot({ path: file, fullPage: !height });
   await page.close();
