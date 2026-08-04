@@ -384,6 +384,26 @@ main { flex:0 1 auto; min-width:0; min-height:0;
 .deck-rail { fill:var(--fp-surface, var(--card-background-color,#fff));
              stroke:var(--fp-house-line, currentColor); stroke-opacity:.7;
              stroke-width:1px; vector-effect:non-scaling-stroke; }
+/* Das Grundstueck in der Bauzeichnung: eine gestrichelte Linie um alles,
+   was dazugehoert, und keine Flaeche. Eine Bauzeichnung fuellt nicht --
+   die Grenze ist die Aussage. */
+.plane-plot { fill:var(--fp-plot, rgba(120,160,120,.10));
+              stroke:var(--fp-plot-line, rgba(110,150,110,.85));
+              stroke-width:1.4px; stroke-dasharray:10 7;
+              vector-effect:non-scaling-stroke; }
+/* Eine selbst gezogene Flaeche -- ein Flur, eine Terrasse, was immer
+   jemand markieren wollte. Leiser als ein Raum, denn sie ist keiner. */
+.plane-shape { fill:var(--fp-shape, rgba(120,144,180,.16));
+               stroke:var(--fp-shape-line, rgba(120,144,180,.75));
+               stroke-width:1.2px; vector-effect:non-scaling-stroke; }
+.plane-shape-name { font-size:11px; fill:var(--fp-ink, currentColor);
+                    opacity:.7; letter-spacing:.08em;
+                    text-anchor:middle; dominant-baseline:middle; }
+/* Die Flaeche, mit der man einen Raum trifft. Unsichtbar, aber da:
+   die gezeichnete Kontur ist eine Linie, und eine Linie trifft man
+   nicht. "fill:transparent" und nicht "fill:none" -- "none" heisst auch
+   fuer die Maus nichts da. */
+.room-hit { fill:transparent; stroke:none; cursor:pointer; }
 /* Die Fugen des Belags: das Leiseste im Bild. Sie sagen "hier steht
    man", nicht "hier ist ein Raster". */
 .deck-seam { fill:none; stroke:var(--fp-house-line, currentColor);
