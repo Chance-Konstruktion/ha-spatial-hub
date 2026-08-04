@@ -151,7 +151,8 @@ In denselben Etagen-Koordinaten wie `position`, und `position` ist die
 `x - width/2` bis `x + width/2`. Ein Renderer, der die Ecke annimmt,
 zeichnet jeden Raum um eine halbe Raumbreite verschoben.
 
-Alles, was ein Bereich sonst an Geometrie trägt — `shape`, `doors` — ist
+Alles, was ein Bereich sonst an Geometrie trägt — `shape`, `doors`,
+`windows` — ist
 **kastenlokal** und rechnet gegen genau dieses Rechteck. Das ist der Grund
 für die Aufteilung: Der Kasten wird verschoben, an den Wänden vergrößert und
 in der Hausansicht projiziert, und der Inhalt fährt unverändert mit.
@@ -248,6 +249,24 @@ Tür, wo sie hingehört.
 Wie beim `shape` gilt: Der Hub speichert und liefert `doors` und **liest sie
 nie**. Was eine Tür bedeutet, ist die Frage dessen, der den Grundriss
 zeichnet.
+
+### Fenster
+
+Ein Bereich DARF eine Liste `windows` tragen. Sie ist **wie `doors` gebaut**
+— dieselben drei Felder, dieselben Regeln, dieselbe kastenlokale Rechnung.
+
+Eine eigene Liste und kein Feld `art` an der Tür, weil der Unterschied nicht
+in der Vermessung liegt, sondern in der Zeichnung: Eine Tür bekommt einen
+Schwenkbogen, ein Fenster behält seine **Brüstung** — die Mauer läuft
+darunter weiter. Eine Öffnung ohne Brüstung ist ein Durchgang, und eine
+Küchenzeile sähe damit aus wie eine offene Hauswand.
+
+- Ein Renderer, der Wände mit Stärke zeichnet, SOLL das Fenster als Öffnung
+  in Wandfläche und Mauerkrone führen und darin die Scheibe zeigen.
+- Alles Übrige gilt wie bei den Türen: überlappende Öffnungen sind eine,
+  unlesbare Einträge werden weggelassen, `width` erreicht nie `1`.
+
+Auch `windows` speichert und liefert der Hub, ohne sie je zu lesen.
 
 ### Hintergrundbild eines Bereichs
 

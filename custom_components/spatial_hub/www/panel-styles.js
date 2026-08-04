@@ -328,8 +328,11 @@ main { flex:0 1 auto; min-width:0; min-height:0;
 /* Raumnamen wie in einer Bauzeichnung: Versalien, gesperrt, ruhig. Bei
    .55 Deckkraft standen sie auf dem dunklen Boden praktisch nicht da --
    ein Grundriss, dessen Raeume man nicht lesen kann, ist ein Muster. */
-.stack .room-label { font-size:16px; fill:var(--fp-ink, currentColor);
-                     opacity:.92; letter-spacing:.06em;
+/* Kein "font-size": die Groesse steht in panel-markup.js als Attribut
+   am Text, weil dort gerechnet wird, ob ein Name in sein Zimmer passt.
+   Zwei Zahlen, die zueinander stimmen muessen, sind eine zu viel. */
+.stack .room-label { fill:var(--fp-ink, currentColor);
+                     opacity:.92; letter-spacing:.08em;
                      text-anchor:middle; dominant-baseline:middle; }
 /* Ein Balkon ist kein Zimmer: die Deckflaeche bekommt einen eigenen Ton
    statt der Zimmerfarbe, das Gelaender bleibt niedrig. */
@@ -346,9 +349,46 @@ main { flex:0 1 auto; min-width:0; min-height:0;
 .tread { fill:none; stroke:var(--fp-house-line, currentColor);
          stroke-opacity:.75; stroke-width:1px;
          vector-effect:non-scaling-stroke; }
+/* Der Lauf als Umriss und der Pfeil darin: erst beides zusammen macht
+   aus Querstrichen eine Treppe. Der Umriss ist gefuellt, damit die
+   Stufen auf etwas liegen und nicht auf dem Boden des Raumes schweben. */
+.stair-run { fill:var(--fp-wall-top, var(--fp-surface, var(--card-background-color,#fff)));
+             fill-opacity:.5; stroke:var(--fp-house-line, currentColor);
+             stroke-opacity:.8; stroke-width:1px;
+             vector-effect:non-scaling-stroke; }
+.stair-way { fill:none; stroke:var(--fp-ink, currentColor); stroke-opacity:.6;
+             stroke-width:1.2px; stroke-linejoin:round; stroke-linecap:round;
+             vector-effect:non-scaling-stroke; }
+/* Die Tuer: Blatt und Bogen. Duenner als die Wand, in der sie haengt --
+   sie ist eine Bewegung und kein Bauteil. */
+.door-arc { fill:none; stroke:var(--fp-house-line, currentColor);
+            stroke-opacity:.55; stroke-width:1px; stroke-dasharray:none;
+            vector-effect:non-scaling-stroke; }
+.door-leaf { stroke:var(--fp-house-line, currentColor); stroke-opacity:.85;
+             stroke-width:1.4px; stroke-linecap:round;
+             vector-effect:non-scaling-stroke; }
+/* Das Fenster: die Mauer laeuft duenner weiter, in ihrer Mitte steht die
+   Scheibe, und unten bleibt die Bruestung stehen. Eine blosse Luecke
+   waere ein Durchgang. */
+.window-sill { fill:var(--fp-wall, var(--fp-surface, var(--card-background-color,#fff)));
+               stroke:var(--fp-shell-line, currentColor);
+               stroke-opacity:calc(.8 * var(--fp-house,1));
+               stroke-width:calc(1.1px * var(--fp-house,1));
+               stroke-linejoin:round; vector-effect:non-scaling-stroke; }
+.window-frame { fill:var(--fp-wall-top, var(--fp-surface, var(--card-background-color,#fff)));
+                fill-opacity:.55; stroke:var(--fp-shell-line, currentColor);
+                stroke-opacity:.7; stroke-width:1px;
+                vector-effect:non-scaling-stroke; }
+.window-glass { stroke:var(--fp-house-line, currentColor); stroke-opacity:.9;
+                stroke-width:1.4px; vector-effect:non-scaling-stroke; }
 .deck-rail { fill:var(--fp-surface, var(--card-background-color,#fff));
              stroke:var(--fp-house-line, currentColor); stroke-opacity:.7;
              stroke-width:1px; vector-effect:non-scaling-stroke; }
+/* Die Fugen des Belags: das Leiseste im Bild. Sie sagen "hier steht
+   man", nicht "hier ist ein Raster". */
+.deck-seam { fill:none; stroke:var(--fp-house-line, currentColor);
+             stroke-opacity:.25; stroke-width:1px;
+             vector-effect:non-scaling-stroke; }
 .stack-edge { stroke-linecap:round; opacity:var(--layer-opacity,1); }
 /* A connection between two storeys is the whole reason this view exists. */
 .stack-edge.across { opacity:calc(var(--layer-opacity,1) * .95); }
@@ -360,7 +400,11 @@ main { flex:0 1 auto; min-width:0; min-height:0;
 .stack-node circle { stroke:var(--card-background-color,#fff); stroke-width:2; }
 .stack-node.on circle { stroke:var(--fp-accent, var(--primary-color,#03a9f4)); stroke-width:4; }
 .stack-node.floorless circle { stroke-dasharray:3 2; }
-.stack-label { font-size:18px; fill:currentColor; text-anchor:middle; }
+/* So gross wie ein Raumname, nicht groesser: bei 18 gegen 11 stand
+   "Adapter Arbeitszimmer" doppelt so gross im Bild wie das Zimmer, in
+   dem der Adapter steckt -- die Zeichnung las sich als Geraeteliste mit
+   Haus im Hintergrund statt als Grundriss. */
+.stack-label { font-size:11px; fill:currentColor; text-anchor:middle; }
 /* Nineteen labels on one storey is a smear, not information. On a crowded
    plane they appear on hover and for the selected node -- the dot is still
    there, and clicking it still says what it is. */
@@ -368,11 +412,11 @@ main { flex:0 1 auto; min-width:0; min-height:0;
 .stack-node.crowded:hover .stack-label,
 .stack-node.crowded.on .stack-label { opacity:1; }
 .stack-icon { color:#fff; pointer-events:none; overflow:visible; }
-.stack-icon ha-icon { --mdc-icon-size:22px; color:#fff; }
+.stack-icon ha-icon { --mdc-icon-size:18px; color:#fff; }
 /* Das mitgelieferte Provider-SVG bringt keine Größe mit. Im HTML-Kontext
    des foreignObject greift diese hier zuverlässig. */
-.stack-icon .custom-icon { display:block; width:22px; height:22px; }
-.stack-icon .custom-icon svg { width:22px; height:22px; display:block; fill:#fff; }
+.stack-icon .custom-icon { display:block; width:18px; height:18px; }
+.stack-icon .custom-icon svg { width:18px; height:18px; display:block; fill:#fff; }
 /* Der Garten ist der Ring ums Erdgeschoss, keine eigene Etage. */
 .apron { fill:var(--fp-outdoor, rgba(76,175,80,.10));
          stroke:var(--fp-outdoor-line, rgba(76,175,80,.45));

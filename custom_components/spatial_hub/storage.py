@@ -56,12 +56,16 @@ _FLOOR_KEYS = {"background", "aspect", "name", "order", "in_sandwich",
 # `doors` are the openings in this room's walls, box-local like `shape`:
 # which edge, where along it, and how wide as a fraction of that edge. A
 # door drawn in metres would move the moment the room is resized.
+# `windows` are measured the same way and kept apart from the doors,
+# because the drawing treats them differently: a door gets a swing arc,
+# a window keeps its sill.
 # `background` is a picture inside this one room's box -- a floor plan
 # scan of just that room, a photo of the furniture, whatever helps somebody
 # recognise it at a glance. Same idea as a floor's `background`, just
 # scoped to the box instead of the whole storey.
 _AREA_KEYS = {"position", "size", "color", "hidden", "kind", "in_sandwich",
-              "single_only", "shape", "unjoined", "doors", "background"}
+              "single_only", "shape", "unjoined", "doors", "windows",
+              "background"}
 # View-wide settings rather than one item's arrangement. One key, "view".
 # `custom_shapes` is the user's own drawn annotations -- a hallway, a
 # decorative outline -- with no counterpart in Home Assistant's area

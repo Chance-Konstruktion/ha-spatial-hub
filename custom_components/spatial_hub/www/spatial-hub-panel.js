@@ -50,11 +50,14 @@ import {
   kindOf,
   fold,
   doorsOf,
+  windowsOfArea,
+  mapOpening,
   SIDE_NAMES,
   sideName,
   STAIR_WORDS,
   isStairs,
   planeLift,
+  depthOf,
   projectOnto,
   stackHeight,
   stackWidth,
@@ -79,6 +82,9 @@ import {
 } from "./panel-colour.js";
 import {
   roomPolygon,
+  roomFittingsHtml,
+  roomLabelHtml,
+  roomLabelAt,
   cornerHandlesHtml,
   doorsHtml,
   sparklineHtml,
@@ -501,8 +507,14 @@ class SpatialHubPanel extends HTMLElement {
     return widest;
   }
 
-  /** Does this area appear in the stacked house view? */
+  /** Does this area appear in the stacked house view?
+   *
+   *  In der Einzelansicht gilt die Frage nicht: "nur einzeln" heisst
+   *  genau hier, und aus dem Haus genommen zu sein heisst nicht, aus der
+   *  eigenen Etage genommen zu sein.
+   */
   _inSandwich(item) {
+    if (this._solo) return true;
     return item.in_sandwich !== false && !item.single_only;
   }
 
@@ -532,6 +544,26 @@ class SpatialHubPanel extends HTMLElement {
     );
   }
 
+  /** Eine einzelne Etage, gezeichnet wie das Haus.
+   *
+   *  Der Grundriss einer Etage und die Hausansicht sind dieselbe
+   *  Zeichnung -- eine Etage ist ein Haus mit einem Stockwerk. Vorher war
+   *  die Einzelansicht eine flache Buehne aus HTML-Kaesten und die
+   *  Hausansicht eine Bauzeichnung: derselbe Raum sah an zwei Stellen
+   *  verschieden aus, und die eine Stelle, an der man ihn taeglich
+   *  ansieht, war die schlechtere.
+   *
+   *  Beim Bearbeiten nicht. Gezogen, in der Ecke angefasst und mit
+   *  Geraeten bestueckt wird in der flachen Buehne: dort ist ein
+   *  Bildpunkt ein Grundrisspunkt, und niemand muss eine Flucht
+   *  zurueckrechnen, um eine Wand zu treffen.
+   */
+  get _solo() {
+    return Boolean(
+      !this._stacked && !this._edit && !this._placing && this._floor,
+    );
+  }
+
   /** Floors bottom-up in the model; drawn top-down, like a section.
    *
    *  The storey for rooms with no floor is not a storey and must not be
@@ -539,6 +571,11 @@ class SpatialHubPanel extends HTMLElement {
    *  else" belongs.
    */
   get _stackFloors() {
+    // Die Einzelansicht ist ein Stapel aus einer Etage. Damit gilt jede
+    // Entscheidung, die `_oneStorey` schon trifft -- kein Etagenrand,
+    // keine Bodenplatte, der Name klein oben links -- ohne dass sie hier
+    // ein zweites Mal getroffen werden muesste.
+    if (this._solo) return [this._floor];
     const floors = this._floors.filter((floor) => this._inSandwich(floor));
     const real = floors.filter(
       (floor) => !floor.unassigned && !floor.virtual,
@@ -554,7 +591,18 @@ class SpatialHubPanel extends HTMLElement {
   }
 
   _planeLift(floorIndex) {
-    return planeLift(this._stackFloors[floorIndex]);
+    return planeLift(this._stackFloors[floorIndex], this._stackDepth);
+  }
+
+  /** Wie tief die Zeichnung ist. Aus dem Haus gerechnet, damit ein Zimmer,
+   *  das im Grundriss quadratisch ist, auch im Bild quadratisch bleibt --
+   *  siehe `depthOf`. Ein Stapel teilt sich einen Rahmen, also auch eine
+   *  Tiefe: verschieden tiefe Etagen laegen nicht mehr uebereinander. */
+  get _stackDepth() {
+    return depthOf(
+      this._frame,
+      this._stacked ? this._widestFloor : this._floor,
+    );
   }
 
   /** Wo ein Punkt einer Etage im Bild landet. Die Rechnung steht in
@@ -566,6 +614,7 @@ class SpatialHubPanel extends HTMLElement {
         gutter: this._nameGutter,
         floors: this._stackFloors,
         index: floorIndex,
+        depth: this._stackDepth,
       },
       x,
       y,
@@ -584,7 +633,7 @@ class SpatialHubPanel extends HTMLElement {
    *  costs nothing but says which floor is which.
    */
   get _stackHeight() {
-    return stackHeight(this._stackFloors);
+    return stackHeight(this._stackFloors, this._stackDepth);
   }
 
   /** How wide the drawing has to be. Every storey is offset a little
@@ -1556,27 +1605,45 @@ class SpatialHubPanel extends HTMLElement {
       // front draws it; the other simply leaves that wall out.
       const joins = joinsOf(onThisFloor);
       const byId = new Map(onThisFloor.map((area) => [area.id, area]));
-      const rooms = onThisFloor
+      const ordered = onThisFloor
         .slice()
-        .sort((a, b) => a.position.y - b.position.y)
-        .map((area) => {
-          const shared = joins.get(area.id);
-          const keep = shared
-            ? (side) => {
-                const other = byId.get(shared.get(side));
-                return !other || drawsTheWall(area, other);
-              }
-            : undefined;
-          return this._roomPolygon(at, area, keep);
-        })
+        .sort((a, b) => a.position.y - b.position.y);
+      // Wand, Einbau und Name sind drei Lagen und nicht eine: die
+      // Aussenwand des Hauses kommt nach den Raeumen, also muss alles,
+      // was in ihr steckt oder auf ihr steht, noch spaeter kommen.
+      const drawn = ordered.map((area) => {
+        const shared = joins.get(area.id);
+        const keep = shared
+          ? (side) => {
+              const other = byId.get(shared.get(side));
+              return !other || drawsTheWall(area, other);
+            }
+          : undefined;
+        const borrowed = this._borrowedOpenings(area, shared, byId, joins);
+        return { area, keep, borrowed };
+      });
+      const rooms = drawn
+        .map(({ area, keep, borrowed }) =>
+          this._roomPolygon(at, area, keep, borrowed, false, false))
         .join("");
+      const fittings = drawn
+        .map(({ area, keep, borrowed }) =>
+          this._roomFittingsHtml(at, area, keep, borrowed))
+        .join("");
+      // Die Namen zuletzt, ueber allem: die Vorderwand des Hauses wird
+      // nach den Raeumen gezeichnet und deckte sonst genau die
+      // Beschriftungen zu, die dem Betrachter am naechsten sind.
+      const names = ordered
+        .map((area) => this._roomLabelHtml(at, area))
+        .join("");
+      const onTop = `${fittings}${names}`;
       // Sky is not a storey. It got a floor slab and an outline like
       // every other plane, which is exactly what made the cloud level
       // read as an attic with clouds painted on it. Up there the clouds
       // are the whole plane -- nothing under them, nothing around them.
       if (floor.virtual) {
         return `<g class="plane virtual">
-          ${rooms}
+          ${rooms}${onTop}
           <g data-at-x="${label.x}" data-at-y="${label.y}"
              transform="translate(${label.x},${label.y}) scale(${
                this._counterScale
@@ -1612,6 +1679,7 @@ class SpatialHubPanel extends HTMLElement {
         ${rooms}
         ${wallsOf(house, STACK.rise, "shell-face", FRONT_WALL)}
         ${capsOf(crown, STACK.outerWall, "shell-cap")}
+        ${onTop}
         <g data-at-x="${label.x}" data-at-y="${label.y}"
            transform="translate(${label.x},${label.y}) scale(${
              this._counterScale
@@ -1659,9 +1727,9 @@ class SpatialHubPanel extends HTMLElement {
                    transform="translate(${at.x},${at.y}) scale(${
                      this._counterScale
                    })">
-          <circle r="14" fill="${this._nodeColour(node)}"/>
+          <circle r="11" fill="${this._nodeColour(node)}"/>
           ${this._stackIconHtml(node)}
-          <text class="stack-label" y="30">${escapeHtml(node.label)}</text>
+          <text class="stack-label" y="24">${escapeHtml(node.label)}</text>
         </g>`;
       })
       .join("");
@@ -1678,9 +1746,14 @@ class SpatialHubPanel extends HTMLElement {
     </div>`,
       (width / height).toFixed(4),
     )}
-    <p class="hint">Alle Etagen auf einmal — die einzige Ansicht, in der eine
-    Verbindung zwischen zwei Stockwerken überhaupt zu sehen ist. Zum
-    Anordnen und für Details eine einzelne Etage wählen.</p>`;
+    ${
+      this._solo
+        ? `<p class="hint">Zum Anordnen auf <b>Bearbeiten</b> — dort liegt der
+           Grundriss flach, und ein Bildpunkt ist ein Grundrisspunkt.</p>`
+        : `<p class="hint">Alle Etagen auf einmal — die einzige Ansicht, in der eine
+           Verbindung zwischen zwei Stockwerken überhaupt zu sehen ist. Zum
+           Anordnen und für Details eine einzelne Etage wählen.</p>`
+    }`;
   }
 
   /** The icon in the stack, in the same shape as on a single floor.
@@ -1703,7 +1776,7 @@ class SpatialHubPanel extends HTMLElement {
       : `<ha-icon icon="${escapeHtml(
           node.icon || this._genericIcon(node),
         )}"></ha-icon>`;
-    return `<foreignObject x="-11" y="-11" width="22" height="22"
+    return `<foreignObject x="-9" y="-9" width="18" height="18"
               class="stack-icon">${inner}</foreignObject>`;
   }
 
@@ -1721,16 +1794,83 @@ class SpatialHubPanel extends HTMLElement {
 
   /** Ein Raum als Zeichnung. Die Formen stehen in `panel-markup.js`;
    *  hier wird nur die Projektion dieser Etage hineingereicht. */
-  _roomPolygon(plane, area, keep = () => true) {
+  _roomPolygon(plane, area, keep = () => true, borrowed = null,
+               withLabel = true, withFittings = true) {
     return roomPolygon(
       {
         project: (x, y) => this._project(plane, x, y),
         floor: this._stackFloors[plane],
         counterScale: this._counterScale,
+        borrowed,
+        withLabel,
+        withFittings,
       },
       area,
       keep,
     );
+  }
+
+  /** Fenster und Tuerbogen eines Raumes, getrennt vom Raum. */
+  _roomFittingsHtml(plane, area, keep, borrowed) {
+    return roomFittingsHtml(
+      { project: (x, y) => this._project(plane, x, y), borrowed },
+      area,
+      keep,
+    );
+  }
+
+  /** Die Beschriftung eines Raumes, getrennt vom Raum.
+   *
+   *  Weil die Reihenfolge im Bild eine andere ist: erst alle Raeume, dann
+   *  die Vorderwand des Hauses, zuletzt die Namen. Beim Raum gezeichnet
+   *  lagen die Namen der vorderen Zimmer hinter genau der Wand, die dem
+   *  Betrachter am naechsten ist.
+   */
+  _roomLabelHtml(plane, area) {
+    const project = (x, y) => this._project(plane, x, y);
+    return roomLabelHtml(
+      { counterScale: this._counterScale },
+      area,
+      roomLabelAt({ project }, area),
+    );
+  }
+
+  /** Die Oeffnungen des Nachbarn in einer Wand, die dieser Raum zeichnet.
+   *
+   *  Von zwei Raeumen an einer gemeinsamen Wand zeichnet nur einer sie.
+   *  Die Tuer des anderen war damit unsichtbar -- eingetragen in einer
+   *  Wand, die niemand malt. Eine Tuer gehoert der Wand: wer sie zeichnet,
+   *  zeichnet auch ihre Loecher.
+   */
+  _borrowedOpenings(area, shared, byId, joins) {
+    const doors = [];
+    const windows = [];
+    if (!shared) return { doors, windows };
+    for (const [side, otherId] of shared) {
+      const other = byId.get(otherId);
+      if (!other) continue;
+      // Diese Wand zeichnet der Nachbar -- dann braucht er auch nichts
+      // geliehen zu bekommen.
+      if (!drawsTheWall(area, other)) continue;
+      const back = joins.get(other.id);
+      if (!back) continue;
+      let mine = null;
+      for (const [otherSide, backId] of back) {
+        if (backId === area.id) mine = otherSide;
+      }
+      if (mine === null) continue;
+      for (const door of doorsOf(other)) {
+        if (Number(door.side) !== mine) continue;
+        const moved = mapOpening(other, mine, area, side, door);
+        if (moved) doors.push(moved);
+      }
+      for (const hole of windowsOfArea(other)) {
+        if (Number(hole.side) !== mine) continue;
+        const moved = mapOpening(other, mine, area, side, hole);
+        if (moved) windows.push(moved);
+      }
+    }
+    return { doors, windows };
   }
 
   _stageHtml() {
@@ -1771,7 +1911,11 @@ class SpatialHubPanel extends HTMLElement {
          Integration räumliche Daten liefert, erscheint sie hier von selbst —
          einzurichten ist dafür nichts.</p>`;
 
-    if (this._stacked) return `${moved}${banner}${this._stackHtml()}`;
+    // Eine Etage und das ganze Haus sind dieselbe Zeichnung. Nur wer
+    // gerade etwas verschiebt, bekommt die flache Buehne darunter.
+    if (this._stacked || this._solo) {
+      return `${moved}${banner}${this._stackHtml()}`;
+    }
 
     // Das Seitenverhaeltnis des Hauses mal dem des Rahmens. Sonst wuerde
     // ein Grundstueck, das nur nach hinten reicht, die Buehne in die
@@ -3087,15 +3231,23 @@ class SpatialHubPanel extends HTMLElement {
    *  hiesse, dem Server zu erklaeren, wie man eine Liste sortiert.
    */
   _setDoors(area, change) {
-    const doors = doorsOf(area, shapeOf(area).length)
-      .map((door) => ({
-        side: Number(door.side),
-        at: Number(door.at),
-        width: Number(door.width),
-      }));
-    const next = change(doors);
+    return this._setOpenings(area, "doors", change);
+  }
+
+  /** Dieselbe Buchhaltung fuer Fenster: eine Liste, ganz geschrieben. */
+  _setOpenings(area, key, change) {
+    const sides = shapeOf(area).length;
+    const current = (key === "doors"
+      ? doorsOf(area, sides)
+      : windowsOfArea(area, sides)
+    ).map((opening) => ({
+      side: Number(opening.side),
+      at: Number(opening.at),
+      width: Number(opening.width),
+    }));
+    const next = change(current);
     if (!next) return;
-    this._setLayout("areas", area.id, { doors: next }, { doors: next });
+    this._setLayout("areas", area.id, { [key]: next }, { [key]: next });
   }
 
   // ── Das Menue unter der rechten Maustaste ───────────────
@@ -4598,19 +4750,20 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
-    const doorField = attribute("data-door-field");
-    if (doorField !== null && this._areaDialog) {
+    for (const [kind, key] of [["door", "doors"], ["window", "windows"]]) {
+      const field = attribute(`data-${kind}-field`);
+      if (field === null || !this._areaDialog) continue;
       const area = (this._model.areas || []).find(
         (candidate) => candidate.id === this._areaDialog,
       );
-      const index = Number(input.getAttribute("data-door"));
+      const index = Number(input.getAttribute(`data-${kind}`));
       const value = Number(input.value);
       // Erst beim Loslassen speichern: ein Schieberegler feuert bei jedem
       // Pixel, und jeder davon waere sonst ein Schreibvorgang.
       if (area && committed) {
-        this._setDoors(area, (doors) =>
-          doors.map((door, at) =>
-            at === index ? { ...door, [doorField]: value } : door));
+        this._setOpenings(area, key, (list) =>
+          list.map((opening, at) =>
+            at === index ? { ...opening, [field]: value } : opening));
       }
       return;
     }
@@ -5053,31 +5206,34 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
 
-    const doorAdd = hit("data-door-add");
-    if (doorAdd && this._areaDialog) {
-      const area = (this._model.areas || []).find(
-        (candidate) => candidate.id === this._areaDialog,
-      );
-      const side = Number(doorAdd.getAttribute("data-door-add"));
-      // In der Mitte und knapp ein Fuenftel breit: eine Tuer, die man
-      // sieht, und die man von dort aus dahin schiebt, wo sie hingehoert.
-      if (area) {
-        this._setDoors(area, (doors) => [...doors, { side, at: 0.5, width: 0.2 }]);
+    for (const [kind, key] of [["door", "doors"], ["window", "windows"]]) {
+      const add = hit(`data-${kind}-add`);
+      if (add && this._areaDialog) {
+        const area = (this._model.areas || []).find(
+          (candidate) => candidate.id === this._areaDialog,
+        );
+        const side = Number(add.getAttribute(`data-${kind}-add`));
+        // In der Mitte und knapp ein Fuenftel breit: eine Oeffnung, die
+        // man sieht, und die man von dort aus dahin schiebt, wo sie
+        // hingehoert.
+        if (area) {
+          this._setOpenings(area, key, (list) =>
+            [...list, { side, at: 0.5, width: 0.2 }]);
+        }
+        return;
       }
-      return;
-    }
-
-    const doorRemove = hit("data-door-remove");
-    if (doorRemove && this._areaDialog) {
-      const area = (this._model.areas || []).find(
-        (candidate) => candidate.id === this._areaDialog,
-      );
-      const index = Number(doorRemove.getAttribute("data-door-remove"));
-      if (area) {
-        this._setDoors(area, (doors) =>
-          doors.filter((_door, at) => at !== index));
+      const remove = hit(`data-${kind}-remove`);
+      if (remove && this._areaDialog) {
+        const area = (this._model.areas || []).find(
+          (candidate) => candidate.id === this._areaDialog,
+        );
+        const index = Number(remove.getAttribute(`data-${kind}-remove`));
+        if (area) {
+          this._setOpenings(area, key, (list) =>
+            list.filter((_opening, at) => at !== index));
+        }
+        return;
       }
-      return;
     }
 
     const navigate = hit("data-navigate");
@@ -5135,6 +5291,12 @@ class SpatialHubPanel extends HTMLElement {
     if (floorButton) {
       this._floorId = floorButton.getAttribute("data-floor");
       this._selected = null;
+      // Eine andere Etage ist eine andere Zeichnung: das ganze Haus ist
+      // drei Stockwerke hoch, eine Etage ein flaches Blatt. Den Zoom des
+      // einen auf das andere zu uebernehmen zeigte entweder einen
+      // Ausschnitt oder eine Briefmarke. Der Reiter passt deshalb neu
+      // ein -- nicht die Aktualisierung, nicht das Verschieben.
+      this._fitted = false;
       this._render();
       return;
     }

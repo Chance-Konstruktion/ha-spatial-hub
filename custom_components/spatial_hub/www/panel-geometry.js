@@ -41,6 +41,15 @@ const STACK = {
   // Breite. Sie haengen zusammen: dieselbe Flucht wirkt bei tieferem
   // Grundriss staerker, weil die Flanken laenger sind.
   back: 0.87, depth: 250,
+  // Wie stark die Tiefe gestaucht wird. Eine Schraegansicht verkuerzt,
+  // was vom Betrachter wegfuehrt -- ohne das waere der Grundriss ein
+  // Grundriss von oben und nicht das Bild eines Hauses.
+  //
+  // Die Zahl ist der alte Festwert, rueckwaerts gerechnet: 250 Tiefe zu
+  // 620 Breite bei einem Haus im Standardverhaeltnis 1,6 zu 1. Damit
+  // sieht ein Haus, das nichts angibt, aus wie vorher -- und eines, das
+  // sein Verhaeltnis kennt, endlich richtig.
+  squash: 0.645,
   // Rooms have standing walls and a storey has thickness. Flat outlines
   // drawn on top of each other are what turned this view into porridge:
   // four sheets of the same weight, and nothing in the picture saying
@@ -179,6 +188,138 @@ const wallsOf = (corners, rise, className, keep = () => true, doors = null) =>
         .map(([from, to]) => {
           const start = along(corner, next, from);
           const end = along(corner, next, to);
+          return `<polygon class="${className}" points="${start.x},${start.y} ` +
+            `${end.x},${end.y} ${end.x},${end.y - rise} ` +
+            `${start.x},${start.y - rise}"/>`;
+        })
+        .join("");
+    })
+    .join("");
+
+/** Der Schwenkbogen einer Tuer.
+ *
+ *  Das Zeichen, an dem ein Grundriss als Grundriss gelesen wird: Blatt und
+ *  Bogen sagen, wo die Tuer haengt und wohin sie aufgeht. Eine Luecke
+ *  allein sagt nur, dass die Wand dort aufhoert -- ein Durchgang und eine
+ *  Tuer sehen dann gleich aus.
+ *
+ *  Der Bogen wird abgetastet und nicht als `A` geschrieben. Die Projektion
+ *  schert das Bild, ein Kreis wird darin zur Ellipse in beliebiger Lage --
+ *  und die schreibt man in SVG nur mit Halbachsen und Drehwinkel, die hier
+ *  niemand hat. Punkte dagegen bilden sich einzeln ab und liegen immer
+ *  richtig, weil die Abbildung affin ist.
+ */
+const SWING = { steps: 12 };
+
+const swingsOf = (corners, doors, className, keep = () => true) => {
+  const middle = centreOf(corners);
+  return corners
+    .map((corner, index) => {
+      if (!keep(index)) return "";
+      const next = corners[(index + 1) % corners.length];
+      return (Array.isArray(doors) ? doors : [])
+        .filter((door) => door && Number(door.side) === index)
+        .map((door) => {
+          const width = Math.min(Math.max(Number(door.width) || 0, 0), 1);
+          const at = Math.min(Math.max(Number(door.at), 0), 1);
+          const from = at - width / 2;
+          const to = at + width / 2;
+          if (!(to > from)) return "";
+          // Das Band haengt an der Kante: Angel am einen Ende der
+          // Oeffnung, geschlossen liegt das Blatt am anderen.
+          const hinge = along(corner, next, from);
+          const shut = along(corner, next, to);
+          const leaf = { x: shut.x - hinge.x, y: shut.y - hinge.y };
+          // Nach innen heisst zur Raummitte -- und zwar um genau die
+          // Blattlaenge, sonst waere der Bogen keiner.
+          const edge = along(corner, next, 0.5);
+          const inward = { x: middle.x - edge.x, y: middle.y - edge.y };
+          const reach = Math.hypot(inward.x, inward.y) || 1;
+          const open = {
+            x: (inward.x / reach) * Math.hypot(leaf.x, leaf.y),
+            y: (inward.y / reach) * Math.hypot(leaf.x, leaf.y),
+          };
+          const arc = [];
+          for (let step = 0; step <= SWING.steps; step += 1) {
+            const angle = (step / SWING.steps) * (Math.PI / 2);
+            arc.push(
+              `${(hinge.x + leaf.x * Math.cos(angle) + open.x * Math.sin(angle)).toFixed(2)},` +
+                `${(hinge.y + leaf.y * Math.cos(angle) + open.y * Math.sin(angle)).toFixed(2)}`,
+            );
+          }
+          return (
+            `<polyline class="${className}-arc" points="${arc.join(" ")}"/>` +
+            `<line class="${className}-leaf" x1="${hinge.x.toFixed(2)}" y1="${hinge.y.toFixed(2)}" ` +
+            `x2="${(hinge.x + open.x).toFixed(2)}" y2="${(hinge.y + open.y).toFixed(2)}"/>`
+          );
+        })
+        .join("");
+    })
+    .join("");
+};
+
+/** Fenster: eine Oeffnung, durch die man nicht geht.
+ *
+ *  Gezeichnet wie in jeder Bauzeichnung -- die Mauer laeuft duenner
+ *  weiter, und in ihrer Mitte steht die Scheibe als Linie. Eine Tuer
+ *  unterbricht die Wand, ein Fenster fuellt sie anders: waeren beide nur
+ *  Luecken, saehe eine Kuechenzeile aus wie eine offene Hauswand.
+ */
+const windowsOf = (corners, windows, thickness, className, keep = () => true) => {
+  const inner = insetOf(corners, thickness);
+  return corners
+    .map((corner, index) => {
+      if (!keep(index)) return "";
+      const next = (index + 1) % corners.length;
+      return (Array.isArray(windows) ? windows : [])
+        .filter((hole) => hole && Number(hole.side) === index)
+        .map((hole) => {
+          const width = Math.min(Math.max(Number(hole.width) || 0, 0), 1);
+          const at = Math.min(Math.max(Number(hole.at), 0), 1);
+          const from = at - width / 2;
+          const to = at + width / 2;
+          if (!(to > from)) return "";
+          const outerA = along(corners[index], corners[next], from);
+          const outerB = along(corners[index], corners[next], to);
+          const innerA = along(inner[index], inner[next], from);
+          const innerB = along(inner[index], inner[next], to);
+          const glassA = along(outerA, innerA, 0.5);
+          const glassB = along(outerB, innerB, 0.5);
+          return (
+            `<polygon class="${className}-frame" points="${outerA.x},${outerA.y} ` +
+            `${outerB.x},${outerB.y} ${innerB.x},${innerB.y} ${innerA.x},${innerA.y}"/>` +
+            `<line class="${className}-glass" x1="${glassA.x.toFixed(2)}" ` +
+            `y1="${glassA.y.toFixed(2)}" x2="${glassB.x.toFixed(2)}" ` +
+            `y2="${glassB.y.toFixed(2)}"/>`
+          );
+        })
+        .join("");
+    })
+    .join("");
+};
+
+/** Die Bruestung unter einem Fenster.
+ *
+ *  Ohne sie ist ein Fenster eine Luecke wie eine Tuer: die Wandflaeche
+ *  hoert auf, und man sieht durch das Haus hindurch. Ein Fenster hat aber
+ *  unten Mauerwerk -- das ist der Unterschied zwischen einem Fenster und
+ *  einem Loch, und in einer Zeichnung aus lauter Linien der einzige.
+ */
+const sillsOf = (corners, windows, rise, className, keep = () => true) =>
+  corners
+    .map((corner, index) => {
+      if (!keep(index)) return "";
+      const next = corners[(index + 1) % corners.length];
+      return (Array.isArray(windows) ? windows : [])
+        .filter((hole) => hole && Number(hole.side) === index)
+        .map((hole) => {
+          const width = Math.min(Math.max(Number(hole.width) || 0, 0), 1);
+          const at = Math.min(Math.max(Number(hole.at), 0), 1);
+          const from = at - width / 2;
+          const to = at + width / 2;
+          if (!(to > from)) return "";
+          const start = along(corner, next, Math.max(0, from));
+          const end = along(corner, next, Math.min(1, to));
           return `<polygon class="${className}" points="${start.x},${start.y} ` +
             `${end.x},${end.y} ${end.x},${end.y - rise} ` +
             `${start.x},${start.y - rise}"/>`;
@@ -493,6 +634,65 @@ const joinsOf = (areas, honourBreaks = true) => {
   return found;
 };
 
+/** Die Endpunkte einer Kastenkante im Grundriss.
+ *
+ *  In der Reihenfolge von RECTANGLE: oben laeuft nach rechts, rechts nach
+ *  unten, unten nach links, links nach oben. Das ist dieselbe Ordnung, in
+ *  der die Waende gezeichnet werden -- eine zweite Zaehlweise waere eine
+ *  zweite Wahrheit.
+ */
+const edgeOf = (area, side) => {
+  const box = boxOf(area);
+  const corners = [
+    [{ x: box.left, y: box.top }, { x: box.right, y: box.top }],
+    [{ x: box.right, y: box.top }, { x: box.right, y: box.bottom }],
+    [{ x: box.right, y: box.bottom }, { x: box.left, y: box.bottom }],
+    [{ x: box.left, y: box.bottom }, { x: box.left, y: box.top }],
+  ];
+  return corners[side] || corners[0];
+};
+
+/** Eine Oeffnung des Nachbarn, auf die eigene Kante umgerechnet.
+ *
+ *  Zwei Raeume teilen sich eine Wand, aber nur einer zeichnet sie -- sonst
+ *  stuenden dort zwei Waende. Die Tuer des anderen verschwand damit
+ *  spurlos: sie war in einer Wand eingetragen, die niemand malt. Eine Tuer
+ *  gehoert aber der Wand und nicht dem Raum, der sie eingetragen hat.
+ *
+ *  Gerechnet wird ueber den Grundriss und nicht ueber die Anteile: die
+ *  beiden Kanten sind gleich lang nur im Glueckfall, und sie laufen
+ *  gegeneinander -- die rechte Kante des einen Raumes zeigt nach unten,
+ *  die linke des anderen nach oben. Anteile direkt zu uebernehmen haette
+ *  jede Tuer gespiegelt.
+ */
+const mapOpening = (from, sideFrom, to, sideTo, opening) => {
+  const source = edgeOf(from, sideFrom);
+  const target = edgeOf(to, sideTo);
+  const width = Math.min(Math.max(Number(opening.width) || 0, 0), 1);
+  const at = Math.min(Math.max(Number(opening.at), 0), 1);
+  const span = {
+    x: target[1].x - target[0].x,
+    y: target[1].y - target[0].y,
+  };
+  const length = span.x * span.x + span.y * span.y;
+  if (!length) return null;
+  // Punkt auf der fremden Kante -> Anteil auf der eigenen. Beide liegen
+  // aufeinander, also genuegt die Projektion auf die eigene Richtung.
+  const share = (share_) => {
+    const point = along(source[0], source[1], share_);
+    return (
+      ((point.x - target[0].x) * span.x + (point.y - target[0].y) * span.y) /
+      length
+    );
+  };
+  const one = share(at - width / 2);
+  const two = share(at + width / 2);
+  const low = Math.max(0, Math.min(one, two));
+  const high = Math.min(1, Math.max(one, two));
+  if (!(high > low)) return null;
+  return { ...opening, side: sideTo, at: (low + high) / 2, width: high - low };
+};
+
 /** Of two rooms sharing a wall, which one draws it.
  *
  *  The one in front. Rooms are painted back to front, so a wall drawn
@@ -550,6 +750,30 @@ const doorsOf = (area, sides = 4) =>
     );
   });
 
+/** Die Fenster eines Raumes -- dieselbe Buchhaltung wie bei den Tueren.
+ *
+ *  Bewusst eine eigene Liste und kein Feld "art" an der Tuer: eine Tuer
+ *  hat eine Angel und einen Bogen, ein Fenster hat eine Bruestung. Was
+ *  verschieden gezeichnet wird, verschieden zu speichern erspart jeder
+ *  Stelle im Bild die Frage, was das Ding gerade ist.
+ */
+const windowsOfArea = (area, sides = 4) =>
+  (Array.isArray(area && area.windows) ? area.windows : []).filter((hole) => {
+    const side = Number(hole && hole.side);
+    return (
+      Number.isInteger(side) && side >= 0 && side < sides &&
+      Number.isFinite(Number(hole.at)) && Number(hole.width) > 0
+    );
+  });
+
+/** Alles, was die stehende Wand unterbricht. Die Wandflaeche kennt nur
+ *  "hier ist Mauer, hier nicht" -- ob wegen einer Tuer oder eines
+ *  Fensters, entscheidet erst, was darueber gezeichnet wird. */
+const openingsOf = (area, sides = 4) => [
+  ...doorsOf(area, sides),
+  ...windowsOfArea(area, sides),
+];
+
 /** Wie die vier Kanten eines Raumes heissen, aus Sicht des Betrachters.
  *
  *  Die Reihenfolge ist die von RECTANGLE, und "vorne" ist die Kante, die
@@ -577,6 +801,99 @@ const isStairs = (area) =>
       .includes(word),
   );
 
+/** Eine Treppe: Stufen, Wangen, Laufrichtung.
+ *
+ *  Vorher nur die Stufen -- quer liegende Striche in einem leeren
+ *  Rechteck, die genauso gut eine Schraffur sein konnten. Was eine Treppe
+ *  daraus macht, sind die beiden Wangen daneben und der Pfeil, der sagt,
+ *  wohin es hinaufgeht. Beides steht in jeder Bauzeichnung und kostet
+ *  drei Linien.
+ *
+ *  `lift` hebt alles auf Hoehe der Mauerkrone: die vordere Wandflaeche
+ *  eines Raumes ist undurchsichtig und deckt sonst zu, was auf der
+ *  Bodenplatte liegt -- die Stufen waren gezeichnet und trotzdem nicht zu
+ *  sehen.
+ */
+const stairsOf = ({ project, x0, y0, width, height, lift = 0 }, treads = 9) => {
+  const alongX = width >= height;
+  const at = (x, y) => {
+    const point = project(x, y);
+    return { x: point.x, y: point.y - lift };
+  };
+  const point = (x, y) => {
+    const spot = at(x, y);
+    return `${spot.x.toFixed(2)},${spot.y.toFixed(2)}`;
+  };
+  // Ein Rand ringsum: eine Treppe fuellt ihren Raum nicht bis an die
+  // Wand, sie steht darin.
+  const inset = 0.08;
+  const left = x0 + width * inset;
+  const right = x0 + width * (1 - inset);
+  const top = y0 + height * inset;
+  const bottom = y0 + height * (1 - inset);
+  let out = `<polygon class="stair-run" points="${point(left, top)} ` +
+    `${point(right, top)} ${point(right, bottom)} ${point(left, bottom)}"/>`;
+  for (let step = 1; step < treads; step += 1) {
+    const along_ = step / treads;
+    const [from, to] = alongX
+      ? [point(left + (right - left) * along_, top),
+         point(left + (right - left) * along_, bottom)]
+      : [point(left, top + (bottom - top) * along_),
+         point(right, top + (bottom - top) * along_)];
+    out += `<polyline class="tread" points="${from} ${to}"/>`;
+  }
+  // Die Laufrichtung: eine Linie mitten durch den Lauf, mit einer Spitze
+  // am oberen Ende. Ohne sie sagt die Zeichnung nicht, ob man hinauf oder
+  // hinunter geht -- und das ist bei einer Treppe die einzige Frage.
+  const midA = alongX
+    ? { x: left, y: (top + bottom) / 2 }
+    : { x: (left + right) / 2, y: bottom };
+  const midB = alongX
+    ? { x: right, y: (top + bottom) / 2 }
+    : { x: (left + right) / 2, y: top };
+  const head = at(midB.x, midB.y);
+  const tail = at(midA.x, midA.y);
+  const back = { x: head.x - tail.x, y: head.y - tail.y };
+  const reach = Math.hypot(back.x, back.y) || 1;
+  const barb = 9;
+  const wing = { x: (-back.y / reach) * barb * 0.6, y: (back.x / reach) * barb * 0.6 };
+  const foot = {
+    x: head.x - (back.x / reach) * barb,
+    y: head.y - (back.y / reach) * barb,
+  };
+  out += `<line class="stair-way" x1="${tail.x.toFixed(2)}" y1="${tail.y.toFixed(2)}" ` +
+    `x2="${head.x.toFixed(2)}" y2="${head.y.toFixed(2)}"/>` +
+    `<polyline class="stair-way" points="${(foot.x + wing.x).toFixed(2)},` +
+    `${(foot.y + wing.y).toFixed(2)} ${head.x.toFixed(2)},${head.y.toFixed(2)} ` +
+    `${(foot.x - wing.x).toFixed(2)},${(foot.y - wing.y).toFixed(2)}"/>`;
+  return out;
+};
+
+/** Der Belag eines Balkons: ein Raster aus Fugen.
+ *
+ *  Ein Balkon ist sonst eine leere Flaeche mit einem Gelaender darum, und
+ *  eine leere Flaeche sieht aus wie ein Loch im Bild. Der Belag sagt, dass
+ *  man darauf steht. Die Fugen laufen im Grundriss und werden projiziert,
+ *  also stehen sie in der Flucht wie alles andere auch.
+ */
+const deckingOf = ({ project, x0, y0, width, height }, spacing = 0.055) => {
+  const step = Math.max(spacing, 0.02);
+  const lines = [];
+  const point = (x, y) => {
+    const spot = project(x, y);
+    return `${spot.x.toFixed(2)},${spot.y.toFixed(2)}`;
+  };
+  for (let at = step; at < width; at += step) {
+    lines.push(`<polyline class="deck-seam" points="${point(x0 + at, y0)} ` +
+      `${point(x0 + at, y0 + height)}"/>`);
+  }
+  for (let at = step; at < height; at += step) {
+    lines.push(`<polyline class="deck-seam" points="${point(x0, y0 + at)} ` +
+      `${point(x0 + width, y0 + at)}"/>`);
+  }
+  return lines.join("");
+};
+
 // ── Der Stapel: wo eine Etage im Bild landet ──────────────
 //
 // Bisher steckte das in der Panel-Klasse, und `tools/shots.mjs` musste
@@ -590,11 +907,13 @@ const isStairs = (area) =>
  *  a storey's own depth, or a cloud plane reads as an attic with weather
  *  painted on the ceiling.
  */
-const planeLift = (floor) => (floor && floor.virtual ? STACK.depth * 0.5 + 130 : 0);
+const planeLift = (floor, depth = STACK.depth) =>
+  (floor && floor.virtual ? depth * 0.5 + 130 : 0);
 
 /** Headroom for the sky, added to everything so the lift pushes the
  *  clouds up *within* the drawing instead of off the top of it. */
-const skyOf = (floors) => Math.max(0, ...(floors || []).map(planeLift));
+const skyOf = (floors, depth = STACK.depth) =>
+  Math.max(0, ...(floors || []).map((floor) => planeLift(floor, depth)));
 
 /** Where a point on a given floor lands in the stacked drawing.
  *
@@ -607,15 +926,45 @@ const skyOf = (floors) => Math.max(0, ...(floors || []).map(planeLift));
  *  Aussenwand von aussen und die andere von innen -- was kein Standpunkt
  *  ist, den ein Betrachter einnehmen kann.
  */
-const projectOnto = ({ frame, gutter, floors, index }, x, y) => {
+/** Wie tief die Zeichnung wird -- aus dem Haus, nicht aus einer Konstante.
+ *
+ *  Vorher stand hier eine feste Zahl, und damit war jedes Haus im Bild
+ *  gleich tief: ein langgestrecktes Reihenhaus wurde zum Quadrat gestaucht,
+ *  ein tiefer Bungalow in die Breite gezogen. Ein Zimmer, das im Grundriss
+ *  quadratisch ist, kam als Rechteck heraus -- und das ist keine
+ *  Ansichtssache, das ist falsch.
+ *
+ *  Die Rechnung: das Haus ist in x eine Einheit breit und `aspect` mal so
+ *  breit wie tief, also ist eine Einheit y um `aspect` kuerzer als eine
+ *  Einheit x. Der Rahmen kann in beiden Achsen mehr zeigen als das Haus
+ *  (Garten), deshalb stehen `span` und `spanY` mit darin.
+ */
+/** Der Abstand zwischen zwei Etagen -- aus der Tiefe, nicht aus einer
+ *  Konstante. Bei einem flachen, breiten Haus schwebten die Stockwerke
+ *  sonst weit auseinander: die Luft dazwischen war fast doppelt so hoch
+ *  wie eine Etage tief, und der Stapel las sich als drei Zeichnungen
+ *  untereinander statt als ein Haus. Das Verhaeltnis ist das alte (340 zu
+ *  250), damit ein Haus im Standardverhaeltnis aussieht wie bisher. */
+const gapOf = (depth) => depth * (STACK.gap / STACK.depth);
+
+const depthOf = (frame, floor) => {
+  const aspect = Number(floor && floor.aspect);
+  const shape = Number.isFinite(aspect) && aspect > 0 ? aspect : 1.6;
+  return (
+    (STACK.width * spanY(frame)) / (frame.span * shape) * STACK.squash
+  );
+};
+
+const projectOnto = ({ frame, gutter, floors, index, depth }, x, y) => {
   const nx = (x - frame.min) / frame.span;
   const ny = (y - minY(frame)) / spanY(frame);
   const shrink = STACK.back + (1 - STACK.back) * ny;
+  const deep = Number.isFinite(depth) && depth > 0 ? depth : STACK.depth;
   return {
     x: gutter + STACK.stagger * index +
       STACK.width / 2 + (nx - 0.5) * STACK.width * shrink,
-    y: STACK.top + skyOf(floors) + index * STACK.gap + ny * STACK.depth -
-      planeLift((floors || [])[index]),
+    y: STACK.top + skyOf(floors, deep) + index * gapOf(deep) + ny * deep -
+      planeLift((floors || [])[index], deep),
   };
 };
 
@@ -627,10 +976,10 @@ const projectOnto = ({ frame, gutter, floors, index }, x, y) => {
  *  it. Air between the storeys is what makes them storeys, so the picture
  *  grows with the house instead of the house shrinking into the picture.
  */
-const stackHeight = (floors) =>
-  STACK.top + skyOf(floors) +
-  Math.max(0, (floors || []).length - 1) * STACK.gap +
-  STACK.depth + STACK.slab + STACK.pad;
+const stackHeight = (floors, depth = STACK.depth) =>
+  STACK.top + skyOf(floors, depth) +
+  Math.max(0, (floors || []).length - 1) * gapOf(depth) +
+  depth + STACK.slab + STACK.pad;
 
 /** How wide the drawing has to be. Every storey is offset a little
  *  further right than the one above it, so the bottom one decides. */
@@ -740,6 +1089,11 @@ export {
   wallRuns,
   capsOf,
   wallsOf,
+  swingsOf,
+  windowsOf,
+  sillsOf,
+  stairsOf,
+  deckingOf,
   FRONT_WALL,
   BACK_WALL,
   houseMetres,
@@ -764,18 +1118,24 @@ export {
   SNAP_REACH,
   joinable,
   unjoined,
+  edgeOf,
+  mapOpening,
   joinsOf,
   drawsTheWall,
   AREA_KIND,
   kindOf,
   fold,
   doorsOf,
+  windowsOfArea,
+  openingsOf,
   SIDE_NAMES,
   sideName,
   STAIR_WORDS,
   isStairs,
   planeLift,
   skyOf,
+  depthOf,
+  gapOf,
   projectOnto,
   stackHeight,
   stackWidth,

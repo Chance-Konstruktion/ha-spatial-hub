@@ -157,6 +157,12 @@ _DOOR_SCHEMA = {
 }
 # A room has walls, not a hundred of them -- and each wall a door or two.
 _DOORS_SCHEMA = vol.All([_DOOR_SCHEMA], vol.Length(max=64))
+# A window is measured exactly like a door -- which edge, where along it,
+# how wide -- and differs only in how it is drawn: a sill underneath
+# instead of a swing arc over it. Same schema, own list, because a room
+# with four windows and one door should not have to say which is which
+# item by item.
+_WINDOWS_SCHEMA = vol.All([_DOOR_SCHEMA], vol.Length(max=64))
 
 _POSITION_SCHEMA = {
     vol.Required("x"): vol.All(vol.Coerce(float), vol.Range(min=-1, max=2)),
@@ -254,6 +260,7 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
             vol.Optional("shape"): vol.Any(None, _SHAPE_SCHEMA),
             # Openings in this room's walls.
             vol.Optional("doors"): vol.Any(None, _DOORS_SCHEMA),
+            vol.Optional("windows"): vol.Any(None, _WINDOWS_SCHEMA),
             # Rooms this one is *not* sharing a wall with, however much
             # the geometry says otherwise. A party wall between two flats
             # really is two walls.

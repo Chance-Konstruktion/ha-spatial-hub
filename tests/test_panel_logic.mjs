@@ -59,7 +59,8 @@ const { SpatialHubPanel, HA_COLOURS, joinsOf, drawsTheWall } = await import(
 /** Die reinen Bausteine direkt, ohne Panel drumherum. Genau dafuer sind
  *  sie ausgelagert: eine Kurve zu pruefen soll kein Custom Element
  *  brauchen. */
-const { sparklineHtml, doorsHtml, cornerHandlesHtml } = await import(
+const { sparklineHtml, doorsHtml, cornerHandlesHtml, roomLabelLines,
+        labelFit } = await import(
   pathToFileURL(
     join(here, "..", "custom_components", "spatial_hub", "www",
          "panel-markup.js"),
@@ -419,10 +420,15 @@ test("a constant series does not divide by zero", () => {
 // ── The empty house ────────────────────────────────────────
 
 test("the house is drawn before any provider exists", () => {
-  const view = panel(model({ providers: [], nodes: [], edges: [] }));
-  const html = view._stageHtml();
-  assert.match(html, /class="area/, "the areas alone are already your home");
-  assert.match(html, /erscheint sie hier von selbst/, "and it says what comes next");
+  const data = model({ providers: [], nodes: [], edges: [] });
+  // Ansehen ist die Bauzeichnung, Bearbeiten die flache Buehne -- die
+  // Raeume allein sind in beiden schon das Zuhause.
+  assert.match(panel(data)._stageHtml(), /class="room/,
+               "the areas alone are already your home");
+  assert.match(panel(data, { edit: true })._stageHtml(), /class="area/,
+               "and the same rooms are there to be dragged");
+  assert.match(panel(data)._stageHtml(), /erscheint sie hier von selbst/,
+               "and it says what comes next");
 });
 
 test("nothing at all says so instead of showing a blank rectangle", () => {
@@ -680,9 +686,10 @@ test("the theme's node size multiplies the user's own scale", () => {
 });
 
 test("shape, label and room choices reach the stage", () => {
+  // Die Klassen haengen an der Buehne, und die Buehne ist der Editor.
   const view = panel(model({
     theme: theme({ node_shape: "square", labels: "hover", room_style: "filled" }),
-  }));
+  }), { edit: true });
   const html = view._stageHtml();
   assert.match(html, /shape-square/);
   assert.match(html, /labels-hover/);
@@ -1274,7 +1281,7 @@ test("a lopsided plot leaves the rooms square", () => {
                plot: [{ x: -0.28, y: -0.28 }, { x: 1.28, y: -0.28 },
                       { x: 1.28, y: 3 }, { x: -0.28, y: 3 }] }],
   });
-  const view = panel(data);
+  const view = panel(data, { edit: true });
   const frame = view._frame;
   const stage = view._stageHtml();
 
@@ -1888,7 +1895,7 @@ test("rooms are drawn back to front, or the storey turns inside out", () => {
   const html = panel(data, { floor: null })._stackHtml();
 
   assert.ok(
-    html.indexOf("Hinten") < html.indexOf("Vorne"),
+    html.indexOf("HINTEN") < html.indexOf("VORNE"),
     "the room at the back is painted first",
   );
 });
@@ -1953,7 +1960,7 @@ test("only the ground floor gets grass, a balcony upstairs just gets a room", ()
 
   assert.match(eg, /class="apron"/, "the ground floor gets the field");
   assert.doesNotMatch(og, /class="apron"/, "the storey above does not");
-  assert.match(og, /Balkon/, "the balcony is still drawn as a room");
+  assert.match(og, /BALKON/, "the balcony is still drawn as a room");
 });
 
 test("a balcony gets a railing to see over, not a wall to hide behind", () => {
@@ -2177,7 +2184,7 @@ test("the lawn is not a balcony: no railing around the garden", () => {
 
   assert.doesNotMatch(html, /class="deck-rail"/, "no railing round the lawn");
   assert.doesNotMatch(html, /class="room deck"/, "and it is not a deck either");
-  assert.match(html, /Garten/, "the garden is still drawn");
+  assert.match(html, /GARTEN/, "the garden is still drawn");
 });
 
 test("the cloud gets no walls", () => {
@@ -3378,8 +3385,12 @@ test("every storey says its name, in the margin and out of the plan", () => {
   // links als der linkeste Punkt der Platte. Vorher wurde er am Bildrand
   // abgeschnitten, weil es dort keinen Rand gab.
   const leftmost = view._project(0, 0, 1).x;
+  // Die *letzte* Verschiebung vor dem Etagennamen ist seine eigene.
+  // Davor stehen inzwischen die Raumnamen, und ein Fenster von 300
+  // Zeichen erwischte deren Verschiebung statt dieser.
+  const before = html.slice(0, html.indexOf("storey-name"));
   const name = /translate\((-?[\d.]+),/.exec(
-    html.slice(html.indexOf("storey-name") - 300),
+    before.slice(before.lastIndexOf("<g ")),
   );
   assert.ok(Number(name[1]) < leftmost, "der Name klebt an der Platte");
   assert.ok(Number(name[1]) > 0, "der Name faellt aus dem Bild");
@@ -3998,4 +4009,187 @@ test("ein Provider ist so deutlich wie seine klarste sichtbare Ebene", () => {
   assert.equal(colour.providerOpacity(layers, "a:eins"), 0.8);
   // Kein Wort dazu heisst voll da, nicht unsichtbar.
   assert.equal(colour.providerOpacity(layers, "c:eins"), 1);
+});
+
+
+// ── Die Bauzeichnung: was einen Grundriss lesbar macht ─────
+
+/** Eine Etage mit einem Raum, der Oeffnungen hat. */
+const withOpenings = (extra = {}) =>
+  model({
+    floors: [{ id: "eg", name: "EG", level: 0, icon: "", aspect: 1.6 }],
+    areas: [
+      {
+        id: "wohnzimmer", name: "Wohnzimmer", floor_id: "eg", kind: "indoor",
+        position: at(0.5, 0.5), size: { width: 0.6, height: 0.6 },
+        ...extra,
+      },
+    ],
+  });
+
+test("a door is a swing, not just a gap", () => {
+  // Eine Luecke allein sagt nur, dass die Wand aufhoert -- ein Durchgang
+  // und eine Tuer saehen gleich aus. Blatt und Bogen sagen, wo sie
+  // haengt und wohin sie aufgeht.
+  const view = panel(withOpenings({
+    doors: [{ side: 2, at: 0.5, width: 0.2 }],
+  }), { floor: "eg" });
+  const html = view._stageHtml();
+
+  assert.match(html, /class="door-arc"/, "no swing");
+  assert.match(html, /class="door-leaf"/, "no leaf");
+  // Der Bogen ist abgetastet und keine SVG-Ellipse: die Projektion
+  // schert das Bild, und eine gescherte Ellipse braucht Halbachsen und
+  // Drehwinkel, die hier niemand hat.
+  const arc = /class="door-arc" points="([^"]+)"/.exec(html);
+  assert.ok(arc[1].split(" ").length > 6, "the arc is a corner, not a curve");
+});
+
+test("a window keeps its sill, or it is a doorway", () => {
+  const view = panel(withOpenings({
+    windows: [{ side: 2, at: 0.5, width: 0.25 }],
+  }), { floor: "eg" });
+  const html = view._stageHtml();
+
+  assert.match(html, /class="window-frame"/, "no masonry beside the glass");
+  assert.match(html, /class="window-glass"/, "no glass");
+  assert.match(html, /class="window-sill"/, "a window without a sill is a hole");
+  assert.doesNotMatch(html, /class="door-arc"/, "and it does not swing");
+});
+
+test("a door in a shared wall belongs to the wall, not to the room", () => {
+  // Von zwei Raeumen an derselben Wand zeichnet nur einer sie. Die Tuer
+  // des anderen war damit unsichtbar: eingetragen in einer Wand, die
+  // niemand malt.
+  const data = model({
+    floors: [{ id: "eg", name: "EG", level: 0, icon: "", aspect: 1.6 }],
+    areas: [
+      { id: "hinten", name: "Hinten", floor_id: "eg", kind: "indoor",
+        position: at(0.5, 0.25), size: { width: 0.5, height: 0.5 },
+        // Die Vorderkante des hinteren Raumes ist die Hinterkante des
+        // vorderen -- und der vordere zeichnet sie.
+        doors: [{ side: 2, at: 0.5, width: 0.2 }] },
+      { id: "vorne", name: "Vorne", floor_id: "eg", kind: "indoor",
+        position: at(0.5, 0.75), size: { width: 0.5, height: 0.5 } },
+    ],
+  });
+  const html = panel(data, { floor: "eg" })._stageHtml();
+
+  assert.match(html, /class="door-arc"/, "the neighbour's door vanished");
+});
+
+test("stairs are a run with a direction, not a hatch", () => {
+  const data = model({
+    floors: [{ id: "eg", name: "EG", level: 0, icon: "", aspect: 1.6 }],
+    areas: [
+      { id: "treppe", name: "Treppe", floor_id: "eg", kind: "indoor",
+        position: at(0.5, 0.5), size: { width: 0.2, height: 0.5 } },
+    ],
+  });
+  const html = panel(data, { floor: "eg" })._stageHtml();
+
+  assert.match(html, /class="stair-run"/, "no run");
+  assert.match(html, /class="tread"/, "no steps");
+  assert.match(html, /class="stair-way"/, "which way is up?");
+});
+
+test("a balcony is something you stand on", () => {
+  const data = model({
+    floors: [{ id: "og", name: "OG", level: 1, icon: "", aspect: 1.6,
+               has_outdoor: true }],
+    areas: [
+      { id: "balkon", name: "Balkon", floor_id: "og", kind: "outdoor",
+        position: at(1.2, 0.5), size: { width: 0.3, height: 0.4 } },
+    ],
+  });
+  const html = panel(data, { floor: "og" })._stageHtml();
+
+  assert.match(html, /class="deck-seam"/, "an empty deck is a hole in the picture");
+  assert.match(html, /class="deck-rail"/, "and it still has a railing");
+});
+
+test("a room name that is wider than its room is broken and shrunk", () => {
+  assert.deepEqual(roomLabelLines("Bad"), ["BAD"]);
+  assert.deepEqual(
+    roomLabelLines("Wohnzimmer / Esszimmer"),
+    ["WOHNZIMMER /", "ESSZIMMER"],
+    "broken at the slash, where a person would break it",
+  );
+  // Und wenn es immer noch nicht passt, wird der Name kleiner statt
+  // breiter als sein Zimmer: "TREPPE" lag sonst quer ueber dem WC.
+  assert.equal(labelFit("Bad", 400), 1, "a name that fits is not shrunk");
+  assert.ok(labelFit("Wohnzimmer / Esszimmer", 40) < 1, "and one that does not, is");
+  assert.ok(labelFit("Wohnzimmer / Esszimmer", 1) >= 0.34, "but never to nothing");
+});
+
+test("the drawing is as deep as the house is deep", () => {
+  // Vorher eine feste Tiefe fuer jedes Haus: ein langgestrecktes
+  // Reihenhaus wurde zum Quadrat gestaucht. Ein Zimmer, das im Grundriss
+  // quadratisch ist, kam als Rechteck heraus.
+  const flat = panel(model({
+    floors: [{ id: "eg", name: "EG", level: 0, icon: "", aspect: 3 }],
+  }), { floor: "eg" });
+  const deep = panel(model({
+    floors: [{ id: "eg", name: "EG", level: 0, icon: "", aspect: 1 }],
+  }), { floor: "eg" });
+
+  const depthOf_ = (view) => view._project(0, 0, 1).y - view._project(0, 0, 0).y;
+  assert.ok(depthOf_(flat) < depthOf_(deep), "both houses are drawn alike");
+  // Die Breite bleibt: das Haus fuellt die Zeichnung, die Tiefe folgt.
+  assert.equal(
+    Math.round(flat._project(0, 1, 0).x - flat._project(0, 0, 0).x),
+    Math.round(deep._project(0, 1, 0).x - deep._project(0, 0, 0).x),
+  );
+});
+
+test("one storey is drawn like the house, and edited flat", () => {
+  const data = model();
+  const looking = panel(data, { floor: "eg" });
+  assert.equal(looking._solo, true);
+  assert.match(looking._stageHtml(), /class="stack"/,
+               "a single floor is a drawing, not a board of boxes");
+
+  const editing = panel(data, { floor: "eg", edit: true });
+  assert.equal(editing._solo, false);
+  assert.match(editing._stageHtml(), /class="stage/,
+               "and dragging happens where a pixel is a plan point");
+});
+
+test("windows are added, moved and removed like doors", () => {
+  const view = panel(withOpenings(), { floor: "eg", edit: true });
+  view._areaDialog = "wohnzimmer";
+  const area = view._model.areas[0];
+
+  view._onClick({ composedPath: () => [element({ "data-window-add": "2" })] });
+  const [section, id, values] = view._written[view._written.length - 1];
+  assert.equal(section, "areas");
+  assert.equal(id, "wohnzimmer");
+  assert.deepEqual(values.windows, [{ side: 2, at: 0.5, width: 0.2 }]);
+
+  area.windows = values.windows;
+  view._onInput(
+    { composedPath: () => [element({ "data-window": "0",
+                                     "data-window-field": "width" })],
+      target: { getAttribute: (name) => (
+        { "data-window": "0", "data-window-field": "width" }[name] ?? null),
+        value: "0.4" } },
+    true,
+  );
+  assert.equal(
+    view._written[view._written.length - 1][2].windows[0].width, 0.4,
+    "the slider writes the whole list back",
+  );
+
+  view._onClick({ composedPath: () => [element({ "data-window-remove": "0" })] });
+  assert.deepEqual(view._written[view._written.length - 1][2].windows, []);
+});
+
+test("the editor offers windows as well as doors", () => {
+  const html = doorsHtml({
+    id: "x", name: "X", kind: "indoor",
+    position: { x: 0.5, y: 0.5 }, size: { width: 0.4, height: 0.4 },
+  });
+  assert.match(html, /<h3>Türen<\/h3>/);
+  assert.match(html, /<h3>Fenster<\/h3>/);
+  assert.match(html, /data-window-add="0"/);
 });

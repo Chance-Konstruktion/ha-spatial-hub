@@ -21,9 +21,16 @@ import {
   CLOUD_PATH,
   wallsOf,
   capsOf,
+  swingsOf,
+  windowsOf,
+  sillsOf,
+  stairsOf,
+  deckingOf,
   AREA_KIND,
   kindOf,
   doorsOf,
+  windowsOfArea,
+  openingsOf,
   isStairs,
   sideName,
 } from "./panel-geometry.js";
@@ -37,6 +44,102 @@ const escapeHtml = (value) =>
       ],
   );
 
+/** Der Name eines Raumes, wie er in einer Bauzeichnung steht.
+ *
+ *  Versalien -- und in JavaScript, nicht in CSS: "text-transform" gilt
+ *  fuer SVG-Text erst seit kurzem und nicht ueberall.
+ *
+ *  Umgebrochen, wenn er lang ist. "Wohnzimmer / Esszimmer" in einer Zeile
+ *  ist breiter als das Zimmer, das er benennt -- er lag quer ueber der
+ *  Wand und im Nachbarraum. Gebrochen wird am Schraegstrich, sonst in der
+ *  Mitte der Wortfolge: beides sind Stellen, an denen ein Mensch auch
+ *  umbrechen wuerde, und keine Silbentrennung, die raten muesste.
+ */
+/** `size` steht hier und nicht im Stylesheet, weil hier gerechnet wird:
+ *  ob ein Name in sein Zimmer passt, haengt an seiner Groesse. Zwei
+ *  Zahlen, die zueinander stimmen muessen, sind eine Zahl zu viel.
+ *  `glyph` ist die mittlere Zeichenbreite in Versalien samt Sperrung --
+ *  gemessen an Roboto, und grosszuegig genug, dass ein Name lieber etwas
+ *  zu klein als einen Buchstaben zu breit gerechnet wird. */
+const LABEL = { wrap: 13, line: 1.15, size: 11, glyph: 0.72, room: 0.86 };
+
+/** Wie stark ein Name schrumpfen muss, damit er in sein Zimmer passt.
+ *
+ *  Ohne das stand "TREPPE" quer ueber dem WC nebenan: ein Name, der
+ *  breiter ist als sein Raum, benennt zwei Raeume und keinen davon. Nach
+ *  unten begrenzt, denn unter einem Drittel ist es kein Text mehr,
+ *  sondern eine Struktur -- so kleine Zimmer bleiben lieber unbeschriftet
+ *  lesbar als beschriftet unleserlich.
+ */
+const labelFit = (name, width) => {
+  if (!(width > 0)) return 1;
+  const longest = Math.max(
+    ...roomLabelLines(String(name || "")).map((line) => line.length),
+    1,
+  );
+  const needed = longest * LABEL.size * LABEL.glyph;
+  return Math.min(1, Math.max(0.34, (width * LABEL.room) / needed));
+};
+
+const roomLabelLines = (name) => {
+  const text = String(name || "").toLocaleUpperCase("de");
+  if (text.length <= LABEL.wrap) return [text];
+  const slash = text.indexOf("/");
+  const words = text.split(/\s+/).filter(Boolean);
+  let lines;
+  if (slash > 0) {
+    lines = [text.slice(0, slash + 1).trim(), text.slice(slash + 1).trim()];
+  } else if (words.length > 1) {
+    // Dort trennen, wo die beiden Haelften am gleichmaessigsten werden.
+    let best = 1;
+    let evenness = Infinity;
+    for (let cut = 1; cut < words.length; cut += 1) {
+      const left = words.slice(0, cut).join(" ").length;
+      const right = words.slice(cut).join(" ").length;
+      if (Math.abs(left - right) < evenness) {
+        evenness = Math.abs(left - right);
+        best = cut;
+      }
+    }
+    lines = [words.slice(0, best).join(" "), words.slice(best).join(" ")];
+  } else {
+    lines = [text];
+  }
+  return lines;
+};
+
+const roomLabel = (name) => {
+  const lines = roomLabelLines(name);
+  // Um eine halbe Zeile nach oben gerueckt, damit der Block als Ganzes
+  // dort steht, wo vorher die eine Zeile stand.
+  return lines
+    .map(
+      (line, index) =>
+        `<text class="room-label" font-size="${LABEL.size}" y="${(
+          (index - (lines.length - 1) / 2) * LABEL.line
+        ).toFixed(2)}em">${escapeHtml(line)}</text>`,
+    )
+    .join("");
+};
+
+/** Wo der Name steht und wie gross er sein darf.
+ *
+ *  Die Breite des Raumes wird an seiner projizierten Kontur gemessen, an
+ *  der schmalsten Stelle: die Flucht macht die Hinterkante schmaler, und
+ *  ein Name, der vorne passt, laege hinten schon in der Wand.
+ */
+const labelSpot = (corners, area) => {
+  const middle = centreOf(corners);
+  const back = Math.min(...corners.map((corner) => corner.y));
+  const xs = corners.map((corner) => corner.x);
+  const width = Math.max(...xs) - Math.min(...xs);
+  return {
+    x: middle.x,
+    y: middle.y - (middle.y - back) * 0.55,
+    fit: labelFit(area && area.name, width),
+  };
+};
+
 /** Ein Raum als Zeichnung: Boden, Waende, Mauerkrone, Stufen, Name.
  *
  *  `project` bildet einen Punkt des Grundrisses auf das Bild ab -- flach
@@ -45,7 +148,26 @@ const escapeHtml = (value) =>
  *  oder Balkon ist), `counterScale` haelt die Beschriftung lesbar,
  *  waehrend die Kamera zoomt.
  */
-const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) => {
+/** Fenster und Tuerbogen einer Raumkontur.
+ *
+ *  Das Fenster sitzt in der Luecke, die es selbst geschlagen hat: die
+ *  Mauer laeuft duenner weiter, in ihrer Mitte die Scheibe. Der Bogen
+ *  liegt auf der Mauerkrone, damit ihn nicht das naechste Stueck Wand
+ *  verschluckt.
+ */
+const fittingsOf = ({ corners, crown, doors, windows }, keep = () => true) =>
+  // Erst die Bruestung -- sie steht in der Wandebene und muss unter der
+  // Mauerkrone liegen, sonst haette das Fenster keinen Unterbau.
+  sillsOf(corners, windows, STACK.rise * 0.45, "window-sill", keep) +
+  windowsOf(crown, windows, STACK.wall, "window", keep) +
+  swingsOf(crown, doors, "door", keep);
+
+const roomPolygon = (
+  { project, floor, counterScale, borrowed, withLabel = true,
+    withFittings = true },
+  area,
+  keep = () => true,
+) => {
   const width = (area.size && area.size.width) || 0.3;
   const height = (area.size && area.size.height) || 0.3;
   const x0 = area.position.x - width / 2;
@@ -73,9 +195,7 @@ const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) 
   // Rechteck. Die hintere Kante ist im Bild waagerecht -- die Schraege
   // des Sandwiches verschiebt nur x --, also liegt alles zwischen Mitte
   // und dieser Kante sicher noch im Raum.
-  const middle = centreOf(corners);
-  const back = Math.min(...corners.map((corner) => corner.y));
-  const label = { x: middle.x, y: middle.y - (middle.y - back) * 0.55 };
+  const label = labelSpot(corners, area);
 
   // A virtual area is a cloud here too. It was a cloud on its own tab
   // and a rectangle in the house view, so the two views disagreed about
@@ -98,18 +218,32 @@ const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) 
   const deck = outdoor && !(floor && floor.ground);
   let shape = `<polygon class="room ${deck ? "deck" : ""}" points="${points}"/>`;
   if (kindOf(area) === AREA_KIND.INDOOR) {
-    // Tueren sind Luecken, keine eigenen Formen: die Wand hoert davor
-    // auf und faengt dahinter wieder an. Deshalb wissen Wand und
-    // Mauerkrone davon, und sonst nichts im Bild.
-    const doors = doorsOf(area, corners.length);
-    shape += wallsOf(corners, STACK.rise, "room-wall", keep, doors) +
-      capsOf(
-        corners.map((corner) => ({ x: corner.x, y: corner.y - STACK.rise })),
-        STACK.wall,
-        "room-cap",
-        keep,
-        doors,
-      );
+    // Tueren und Fenster sind Luecken, keine eigenen Formen: die Wand
+    // hoert davor auf und faengt dahinter wieder an. Deshalb wissen Wand
+    // und Mauerkrone davon, und sonst nichts im Bild.
+    // Eigene Oeffnungen -- und die des Nachbarn, dessen gemeinsame Wand
+    // dieser Raum zeichnet. Eine Tuer gehoert der Wand, nicht dem Raum,
+    // der sie eingetragen hat: wer die Wand malt, malt auch ihre Loecher.
+    const lent = borrowed || {};
+    const doors = [...doorsOf(area, corners.length), ...(lent.doors || [])];
+    const windows = [
+      ...windowsOfArea(area, corners.length),
+      ...(lent.windows || []),
+    ];
+    const openings = [...openingsOf(area, corners.length), ...doors, ...windows]
+      .filter((opening, index, all) => all.indexOf(opening) === index);
+    const crown = corners.map((corner) => ({
+      x: corner.x,
+      y: corner.y - STACK.rise,
+    }));
+    shape += wallsOf(corners, STACK.rise, "room-wall", keep, openings) +
+      capsOf(crown, STACK.wall, "room-cap", keep, openings);
+    // Fenster und Tuerbogen koennen auch getrennt kommen: im Bild werden
+    // sie zuletzt gezeichnet, sonst deckt die Aussenwand des Hauses sie
+    // zu -- und die sitzt genau dort, wo die Fenster sind.
+    if (withFittings) {
+      shape += fittingsOf({ corners, crown, doors, windows }, keep);
+    }
   }
   // Stufen. In der Referenzzeichnung ist die Treppe das, was einen
   // Grundriss auf den ersten Blick als Grundriss lesbar macht.
@@ -120,24 +254,20 @@ const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) 
   // Bodenplatte liegt -- die Stufen waren gezeichnet und trotzdem nicht
   // zu sehen. Quer zur langen Seite, denn dorthin laeuft eine Treppe.
   if (isStairs(area)) {
-    const alongX = width >= height;
-    const tread = (x, y) => {
-      const point = project(x, y);
-      return `${point.x},${point.y - STACK.rise}`;
-    };
-    for (let step = 1; step < STACK.treads; step += 1) {
-      const at = step / STACK.treads;
-      const [from, to] = alongX
-        ? [tread(x0 + at * width, y0), tread(x0 + at * width, y0 + height)]
-        : [tread(x0, y0 + at * height), tread(x0 + width, y0 + at * height)];
-      shape += `<polyline class="tread" points="${from} ${to}"/>`;
-    }
+    shape += stairsOf(
+      { project, x0, y0, width, height, lift: STACK.rise },
+      STACK.treads,
+    );
   }
   // A balcony stands on the house, it does not stand inside it: a
   // railing you can see over instead of a wall you can't is the one
   // thing that says "outside" in a drawing made of nothing but lines.
+  //
+  // Und ein Belag darunter: eine leere Flaeche mit einem Gelaender darum
+  // sieht aus wie ein Loch im Bild, kein Balkon.
   if (deck) {
-    shape += wallsOf(corners, STACK.rise * 0.35, "deck-rail", keep);
+    shape += deckingOf({ project, x0, y0, width, height }) +
+      wallsOf(corners, STACK.rise * 0.35, "deck-rail", keep);
   }
   if (kindOf(area) === AREA_KIND.VIRTUAL) {
     // Der Grundriss steht in der Flucht, also steht die Wolke mit
@@ -158,11 +288,73 @@ const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) 
       d="${CLOUD_PATH}"/>`;
   }
 
-  return `${shape}
-    <g data-at-x="${label.x}" data-at-y="${label.y}"
+  // Die Beschriftung kann auch getrennt kommen: im Bild wird sie zuletzt
+  // gezeichnet, sonst malt die Vorderwand des Hauses sie zu.
+  return withLabel ? `${shape}${roomLabelHtml(
+    { counterScale },
+    area,
+    label,
+  )}` : shape;
+};
+
+/** Die Einbauten eines Raumes, ohne den Raum: Fenster und Tuerbogen.
+ *
+ *  Getrennt aus demselben Grund wie der Name: die Aussenwand des Hauses
+ *  wird nach den Raeumen gezeichnet, und ein Fenster sitzt genau in ihr.
+ *  Beim Raum gezeichnet lag jedes Fenster einer Aussenwand hinter der
+ *  Wand, in der es steckt.
+ */
+const roomFittingsHtml = ({ project, borrowed }, area, keep = () => true) => {
+  if (kindOf(area) !== AREA_KIND.INDOOR) return "";
+  const width = (area.size && area.size.width) || 0.3;
+  const height = (area.size && area.size.height) || 0.3;
+  const x0 = area.position.x - width / 2;
+  const y0 = area.position.y - height / 2;
+  const corners = shapeOf(area)
+    .map((point) => [x0 + point.x * width, y0 + point.y * height])
+    .map(([x, y]) => project(x, y));
+  const lent = borrowed || {};
+  return fittingsOf(
+    {
+      corners,
+      crown: corners.map((corner) => ({
+        x: corner.x,
+        y: corner.y - STACK.rise,
+      })),
+      doors: [...doorsOf(area, corners.length), ...(lent.doors || [])],
+      windows: [
+        ...windowsOfArea(area, corners.length),
+        ...(lent.windows || []),
+      ],
+    },
+    keep,
+  );
+};
+
+/** Wo der Name eines Raumes steht -- als eigenes Stueck Zeichnung.
+ *
+ *  Getrennt, weil die Reihenfolge im Bild eine andere ist als die
+ *  Reihenfolge im Raum: erst alle Raeume, dann die Vorderwand des Hauses,
+ *  und ganz zuletzt die Namen. Stand der Name beim Raum, verschwand er
+ *  hinter der Wand davor -- ausgerechnet in den vorderen Zimmern, die dem
+ *  Betrachter am naechsten sind.
+ */
+const roomLabelHtml = ({ counterScale }, area, label) =>
+  `<g data-at-x="${label.x}" data-at-y="${label.y}"
        transform="translate(${label.x},${label.y}) scale(${
-         counterScale
-       })"><text class="room-label">${escapeHtml(area.name)}</text></g>`;
+         (counterScale * (label.fit === undefined ? 1 : label.fit)).toFixed(3)
+       })">${roomLabel(area.name)}</g>`;
+
+/** Wo die Beschriftung eines Raumes sitzt, ohne ihn zu zeichnen. */
+const roomLabelAt = ({ project }, area) => {
+  const width = (area.size && area.size.width) || 0.3;
+  const height = (area.size && area.size.height) || 0.3;
+  const x0 = area.position.x - width / 2;
+  const y0 = area.position.y - height / 2;
+  const corners = shapeOf(area)
+    .map((point) => [x0 + point.x * width, y0 + point.y * height])
+    .map(([x, y]) => project(x, y));
+  return labelSpot(corners, area);
 };
 
 /** Die Ecken einer Raumkontur zum Anfassen: ziehen, entfernen, eine
@@ -197,30 +389,53 @@ const cornerHandlesHtml = (area) => {
 };
 
 
-/** Die Tuerliste eines Raumes als Bedienelemente. */
-const doorsHtml = (area) => {
-  if (kindOf(area) !== AREA_KIND.INDOOR) return "";
+/** Die Oeffnungen eines Raumes als Bedienelemente.
+ *
+ *  Tueren und Fenster teilen sich diese Liste, weil sie sich dieselben
+ *  drei Angaben teilen: welche Kante, wo darauf, wie breit. Was sie
+ *  unterscheidet, entscheidet die Zeichnung -- ein Bogen oder eine
+ *  Bruestung -- und nicht das Formular.
+ */
+const OPENINGS = {
+  door: {
+    title: "Türen",
+    one: "Tür",
+    note: `Eine Tür ist eine Lücke in der Wand — sie hört davor auf und
+           fängt dahinter wieder an. Angaben als Anteil der Wand, damit die
+           Tür bleibt, wo sie ist, wenn der Raum größer wird.`,
+    empty: "Noch keine Tür.",
+  },
+  window: {
+    title: "Fenster",
+    one: "Fenster",
+    note: `Ein Fenster ist eine Lücke mit Brüstung: die Mauer läuft
+           darunter weiter. Gemessen wie eine Tür, als Anteil der Wand.`,
+    empty: "Noch kein Fenster.",
+  },
+};
+
+const openingsHtml = (area, kind, openings) => {
+  const words = OPENINGS[kind];
   const sides = shapeOf(area).length;
-  const doors = doorsOf(area, sides);
-  const rows = doors
+  const rows = openings
     .map(
-      (door, index) => `
+      (opening, index) => `
       <div class="door">
-        <span class="door-side">${escapeHtml(sideName(Number(door.side)))}</span>
+        <span class="door-side">${escapeHtml(sideName(Number(opening.side)))}</span>
         <label class="door-slide">
           <span class="muted">Mitte</span>
           <input type="range" min="0" max="1" step="0.01"
-                 value="${Number(door.at)}"
-                 data-door="${index}" data-door-field="at">
+                 value="${Number(opening.at)}"
+                 data-${kind}="${index}" data-${kind}-field="at">
         </label>
         <label class="door-slide">
           <span class="muted">Breite</span>
           <input type="range" min="0.05" max="0.9" step="0.01"
-                 value="${Number(door.width)}"
-                 data-door="${index}" data-door-field="width">
+                 value="${Number(opening.width)}"
+                 data-${kind}="${index}" data-${kind}-field="width">
         </label>
-        <button class="icon-btn" data-door-remove="${index}"
-                title="Tür entfernen">
+        <button class="icon-btn" data-${kind}-remove="${index}"
+                title="${escapeHtml(words.one)} entfernen">
           <ha-icon icon="mdi:close"></ha-icon>
         </button>
       </div>`,
@@ -228,19 +443,31 @@ const doorsHtml = (area) => {
     .join("");
   const add = Array.from({ length: sides }, (_unused, side) => side)
     .map(
-      (side) => `<button class="chip" data-door-add="${side}">
+      (side) => `<button class="chip" data-${kind}-add="${side}">
         + ${escapeHtml(sideName(side))}
       </button>`,
     )
     .join("");
   return `
-    <h3>Türen</h3>
-    <p class="note">Eine Tür ist eine Lücke in der Wand — sie hört davor
-    auf und fängt dahinter wieder an. Angaben als Anteil der Wand, damit
-    die Tür bleibt, wo sie ist, wenn der Raum größer wird.</p>
+    <h3>${escapeHtml(words.title)}</h3>
+    <p class="note">${words.note}</p>
     ${rows ? `<div class="doors">${rows}</div>`
-           : '<p class="note">Noch keine Tür.</p>'}
+           : `<p class="note">${escapeHtml(words.empty)}</p>`}
     <div class="chips">${add}</div>`;
+};
+
+/** Die Tuer- und Fensterliste eines Raumes als Bedienelemente.
+ *
+ *  Nur fuer Raeume: ein Garten hat keine Waende, in die eine Luecke
+ *  passen koennte, und die Wolke erst recht nicht.
+ */
+const doorsHtml = (area) => {
+  if (kindOf(area) !== AREA_KIND.INDOOR) return "";
+  const sides = shapeOf(area).length;
+  return (
+    openingsHtml(area, "door", doorsOf(area, sides)) +
+    openingsHtml(area, "window", windowsOfArea(area, sides))
+  );
 };
 
 
@@ -275,6 +502,13 @@ const sparklineHtml = (series) => {
 
 
 export {
+  openingsHtml,
+  roomFittingsHtml,
+  roomLabel,
+  roomLabelLines,
+  labelFit,
+  roomLabelHtml,
+  roomLabelAt,
   roomPolygon,
   cornerHandlesHtml,
   doorsHtml,
