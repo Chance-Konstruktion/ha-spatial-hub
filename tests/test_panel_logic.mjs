@@ -59,6 +59,13 @@ const { SpatialHubPanel, HA_COLOURS, joinsOf, drawsTheWall } = await import(
 /** Die reinen Bausteine direkt, ohne Panel drumherum. Genau dafuer sind
  *  sie ausgelagert: eine Kurve zu pruefen soll kein Custom Element
  *  brauchen. */
+const { metresAcross, metresDeep } = await import(
+  pathToFileURL(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "panel-geometry.js"),
+  ).href
+);
+
 const { sparklineHtml, doorsHtml, cornerHandlesHtml, roomLabelLines,
         labelFit } = await import(
   pathToFileURL(
@@ -4192,4 +4199,147 @@ test("the editor offers windows as well as doors", () => {
   assert.match(html, /<h3>Türen<\/h3>/);
   assert.match(html, /<h3>Fenster<\/h3>/);
   assert.match(html, /data-window-add="0"/);
+});
+
+
+// ── Der Maßstab: was dransteht, muss stimmen ───────────────
+
+const measured = (aspect) =>
+  model({
+    floors: [{ id: "eg", name: "EG", level: 0, icon: "", aspect,
+               metres: 12 }],
+    areas: [
+      { id: "kueche", name: "Küche", floor_id: "eg", kind: "indoor",
+        position: at(0.5, 0.5), size: { width: 0.4, height: 0.5 } },
+    ],
+  });
+
+test("a room's depth is measured against the depth of the house", () => {
+  // Der Fehler, der lange im Bild stand: die Tiefe wurde mit der
+  // *Breite* des Hauses multipliziert, als waere es quadratisch. Bei
+  // einem Haus im Standardverhaeltnis war jede Tiefenangabe damit um
+  // sechzig Prozent zu gross.
+  const view = panel(measured(2), { edit: true });
+  view._meters = true;
+
+  // 12 m breit, halb so tief: 6 m. Der Raum nimmt 0,4 der Breite und
+  // 0,5 der Tiefe ein -- 4,8 m auf 3,0 m.
+  assert.match(view._areasHtml(), /class="area-dim">4,8 × 3,0 m</);
+});
+
+test("the same room, in a house of another shape, is another room", () => {
+  const view = panel(measured(1), { edit: true });
+  view._meters = true;
+  // Quadratisches Haus: 12 m tief, also 0,5 davon = 6,0 m.
+  assert.match(view._areasHtml(), /class="area-dim">4,8 × 6,0 m</);
+});
+
+test("the plot is measured the same way as the rooms", () => {
+  const data = measured(2);
+  data.floors[0].plot = [
+    { x: -0.25, y: -0.5 }, { x: 1.25, y: -0.5 },
+    { x: 1.25, y: 1.5 }, { x: -0.25, y: 1.5 },
+  ];
+  const view = panel(data, { edit: true });
+  view._meters = true;
+
+  // 1,5 Hausbreiten quer = 18 m, 2 Haustiefen tief = 12 m.
+  assert.match(view._metersHtml(), /Grundstück 18,0 × 12,0 m/);
+});
+
+test("the depth is typed in metres, and stored as the ratio", () => {
+  // Vorher gab es die Tiefe nur als Regler "Seitenverhaeltnis" von 0,5
+  // bis 3 -- eine Zahl, die niemand an seinem Haus nachmessen kann.
+  const view = panel(measured(2), { edit: true });
+  view._meters = true;
+  assert.match(view._metersHtml(), /value="6"[^>]*data-house-depth/,
+               "twelve metres wide at 2:1 is six metres deep");
+
+  view._onInput(
+    { composedPath: () => [element({ "data-house-depth": "1" })],
+      target: { getAttribute: (name) =>
+        (name === "data-house-depth" ? "1" : null), value: "8" } },
+    true,
+  );
+  const [section, id, values] = view._written[view._written.length - 1];
+  assert.equal(section, "floors");
+  assert.equal(id, "eg");
+  assert.ok(Math.abs(values.aspect - 12 / 8) < 1e-9,
+            "twelve wide and eight deep is three to two");
+});
+
+test("the flat plan is a true plan: one scale for both axes", () => {
+  // Die Buehne bekommt das Seitenverhaeltnis von Haus mal Rahmen. Genau
+  // das macht sie massstaeblich: ein Meter quer ist so lang wie ein
+  // Meter in die Tiefe. Stimmte das nicht, waere jede Bemassung daneben,
+  // egal wie richtig sie gerechnet ist.
+  const view = panel(measured(2.5), { edit: true });
+  const frame = view._frame;
+  const ratio = Number(
+    /aspect-ratio:([0-9.]+)/.exec(view._stageHtml())[1],
+  );
+  // Pixel je Meter, quer und in die Tiefe, an einer Buehne von 1000px.
+  const wide = 1000;
+  const high = wide / ratio;
+  const perMetreX = (wide / frame.span) / metresAcross(1, view._floor);
+  const perMetreY = (high / (frame.spanY ?? frame.span)) /
+    metresDeep(1, view._floor);
+  assert.ok(Math.abs(perMetreX / perMetreY - 1) < 1e-9,
+            "the plan is stretched in one direction");
+});
+
+
+// ── Was jemand gezeichnet hat, bleibt gezeichnet ───────────
+
+const drawnOn = () => {
+  const data = model({
+    floors: [{ id: "eg", name: "EG", level: 0, icon: "", aspect: 1.6,
+               has_outdoor: true, outdoor_margin: 0.2,
+               plot: [{ x: -0.2, y: -0.2 }, { x: 1.2, y: -0.2 },
+                      { x: 1.2, y: 1.2 }, { x: -0.2, y: 1.2 }] }],
+    areas: [
+      { id: "wohnzimmer", name: "Wohnzimmer", floor_id: "eg", kind: "indoor",
+        position: at(0.5, 0.5), size: { width: 0.5, height: 0.5 } },
+    ],
+  });
+  data.shapes = [{
+    id: "einfahrt", floor_id: "eg", name: "Einfahrt", color: "",
+    points: [{ x: -0.15, y: 1.0 }, { x: 0.4, y: 1.0 },
+             { x: 0.4, y: 1.15 }, { x: -0.15, y: 1.15 }],
+  }];
+  return data;
+};
+
+test("a drawn plot survives the move to the drawing", () => {
+  // Gezogen wird im flachen Editor, angesehen in der Bauzeichnung. Bis
+  // hierher war das Grundstueck nur im Werkzeug zu sehen, mit dem es
+  // entstanden ist -- also fast nie.
+  const html = panel(drawnOn(), { floor: "eg" })._stageHtml();
+  assert.match(html, /class="plane-plot"/, "the plot vanished");
+});
+
+test("a shape somebody drew is in the picture, with its name", () => {
+  const html = panel(drawnOn(), { floor: "eg" })._stageHtml();
+  assert.match(html, /class="plane-shape"/);
+  assert.match(html, /class="plane-shape-name">\s*Einfahrt/);
+});
+
+test("a room in the drawing can still be pointed at", () => {
+  // Die gezeichnete Kontur ist eine Linie, und eine Linie trifft man
+  // nicht: ohne eine eigene Trefferflaeche liess sich in der
+  // Bauzeichnung kein Raum mehr auswaehlen und kein Raummenue oeffnen.
+  const view = panel(drawnOn(), { floor: "eg" });
+  const html = view._stageHtml();
+  assert.match(html, /class="room-hit"[^>]*data-area="wohnzimmer"/s);
+
+  const target = element({ "data-area": "wohnzimmer" });
+  assert.deepEqual(view._menuFor([target]), { kind: "area", id: "wohnzimmer" });
+});
+
+test("a device on top of a room still means the device", () => {
+  // Die Trefferflaeche darf nicht das schlucken, was auf ihr steht.
+  const view = panel(drawnOn(), { floor: "eg" });
+  const node = element({ "data-node": "a:x" });
+  const room = element({ "data-area": "wohnzimmer" });
+  assert.deepEqual(view._menuFor([node, room]), { kind: "node", id: "a:x" });
 });

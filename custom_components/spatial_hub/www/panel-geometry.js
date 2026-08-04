@@ -354,6 +354,37 @@ const BACK_WALL = (index) => !FRONT_WALL(index);
  */
 /** How wide the house itself is, in metres. The one number everything
  *  else is measured against -- and the only one anybody has to know. */
+/** Das Seitenverhaeltnis einer Etage: wie viel breiter das Haus ist als
+ *  tief. Eine Zahl, an der zwei Rechnungen haengen -- die Tiefe der
+ *  Zeichnung und jede Laengenangabe in y --, also steht sie an einer
+ *  Stelle. */
+const ASPECT = 1.6;
+
+const aspectOf = (floor) => {
+  const value = Number(floor && floor.aspect);
+  return Number.isFinite(value) && value > 0 ? value : ASPECT;
+};
+
+/** Eine Strecke quer zum Haus, in Metern. */
+const metresAcross = (units, floor) => units * houseMetres(floor);
+
+/** Eine Strecke in die Tiefe, in Metern.
+ *
+ *  Und *nicht* dieselbe Rechnung wie quer. Das Haus ist in beiden Achsen
+ *  eine Einheit gross, aber nur in x ist eine Einheit die ganze
+ *  Hausbreite -- in y ist sie die Tiefe, und die ist um das
+ *  Seitenverhaeltnis kuerzer.
+ *
+ *  Genau das stand lange falsch im Bild: die Tiefe eines Zimmers wurde
+ *  mit der Hausbreite multipliziert, als waere das Haus quadratisch. Bei
+ *  einem Haus im Standardverhaeltnis war damit jede Tiefenangabe um
+ *  sechzig Prozent zu gross -- ein Zimmer, an dem "4,0 x 3,0 m" stand,
+ *  war in Wirklichkeit 4,0 x 1,9 m. Die Zeichnung selbst war immer
+ *  richtig; nur die Zahlen daneben logen.
+ */
+const metresDeep = (units, floor) =>
+  (units * houseMetres(floor)) / aspectOf(floor);
+
 const houseMetres = (floor) => {
   const value = Number((floor || {}).metres);
   if (!Number.isFinite(value) || value <= 0) return 12;
@@ -947,13 +978,9 @@ const skyOf = (floors, depth = STACK.depth) =>
  *  250), damit ein Haus im Standardverhaeltnis aussieht wie bisher. */
 const gapOf = (depth) => depth * (STACK.gap / STACK.depth);
 
-const depthOf = (frame, floor) => {
-  const aspect = Number(floor && floor.aspect);
-  const shape = Number.isFinite(aspect) && aspect > 0 ? aspect : 1.6;
-  return (
-    (STACK.width * spanY(frame)) / (frame.span * shape) * STACK.squash
-  );
-};
+const depthOf = (frame, floor) =>
+  ((STACK.width * spanY(frame)) / (frame.span * aspectOf(floor))) *
+  STACK.squash;
 
 const projectOnto = ({ frame, gutter, floors, index, depth }, x, y) => {
   const nx = (x - frame.min) / frame.span;
@@ -1097,6 +1124,10 @@ export {
   FRONT_WALL,
   BACK_WALL,
   houseMetres,
+  ASPECT,
+  aspectOf,
+  metresAcross,
+  metresDeep,
   metre,
   houseWeight,
   snapReach,

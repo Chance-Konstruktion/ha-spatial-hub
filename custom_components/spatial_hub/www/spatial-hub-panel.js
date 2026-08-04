@@ -23,6 +23,9 @@ import {
   FRONT_WALL,
   BACK_WALL,
   houseMetres,
+  aspectOf,
+  metresAcross,
+  metresDeep,
   metre,
   houseWeight,
   snapReach,
@@ -1636,7 +1639,10 @@ class SpatialHubPanel extends HTMLElement {
       const names = ordered
         .map((area) => this._roomLabelHtml(at, area))
         .join("");
-      const onTop = `${fittings}${names}`;
+      const onTop = `${fittings}${names}${this._roomHitsHtml(at, ordered)}`;
+      const ground = `${this._planePlotHtml(at, floor)}${
+        this._planeShapesHtml(at, floor)
+      }`;
       // Sky is not a storey. It got a floor slab and an outline like
       // every other plane, which is exactly what made the cloud level
       // read as an attic with clouds painted on it. Up there the clouds
@@ -1674,6 +1680,7 @@ class SpatialHubPanel extends HTMLElement {
            <polygon class="storey" points="${outline(at, 0, 1)}"/>`;
       return `<g class="plane">
         ${apron}
+        ${ground}
         ${slab}
         ${wallsOf(house, STACK.rise, "shell-face", BACK_WALL)}
         ${rooms}
@@ -1808,6 +1815,82 @@ class SpatialHubPanel extends HTMLElement {
       area,
       keep,
     );
+  }
+
+  /** Das Grundstueck einer Etage, in der Flucht.
+   *
+   *  Dieselben Ecken wie im Editor, nur projiziert. Ein Grundstueck, das
+   *  jemand gezogen hat, ist eine Aussage ueber sein Zuhause -- es gehoert
+   *  ins Bild und nicht nur in das Werkzeug, mit dem es entstand.
+   */
+  _planePlotHtml(plane, floor) {
+    const plot = this._plotOf(floor);
+    if (!plot) return "";
+    const points = plot
+      .map((point) => this._project(plane, point.x, point.y))
+      .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+      .join(" ");
+    return `<polygon class="plane-plot" points="${points}"/>`;
+  }
+
+  /** Die eigenen Formen einer Etage, in der Flucht. */
+  _planeShapesHtml(plane, floor) {
+    return this._shapesOf(floor)
+      .map((shape) => {
+        const corners = (shape.points || []).map((point) =>
+          this._project(plane, point.x, point.y),
+        );
+        if (corners.length < 3) return "";
+        const points = corners
+          .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+          .join(" ");
+        const middle = centreOf(corners);
+        return `<polygon class="plane-shape" points="${points}"${
+          shape.color ? ` style="fill:${escapeHtml(shape.color)}"` : ""
+        }/>
+        <g data-at-x="${middle.x}" data-at-y="${middle.y}"
+           transform="translate(${middle.x},${middle.y}) scale(${
+             this._counterScale
+           })"><text class="plane-shape-name">${escapeHtml(
+             shape.name || "",
+           )}</text></g>`;
+      })
+      .join("");
+  }
+
+  /** Die Raeume zum Anfassen: eine durchsichtige Flaeche je Raum.
+   *
+   *  Die gezeichnete Kontur selbst traegt keine Fuellung -- sie ist eine
+   *  Linie, und eine Linie trifft man nicht. Ohne diese Flaeche liess
+   *  sich in der Bauzeichnung kein Raum mehr auswaehlen und kein
+   *  Raummenue mehr oeffnen; auf der flachen Buehne ging beides immer.
+   *
+   *  Vor den Geraeten gezeichnet, damit ein Geraet im Raum weiterhin das
+   *  Geraet meint und nicht den Raum darunter.
+   */
+  _roomHitsHtml(plane, areas) {
+    return areas
+      .map((area) => {
+        const points = this._roomCorners(plane, area)
+          .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+          .join(" ");
+        return `<polygon class="room-hit" points="${points}"
+          data-area="${escapeHtml(area.id)}"><title>${escapeHtml(
+            area.name || "",
+          )}</title></polygon>`;
+      })
+      .join("");
+  }
+
+  /** Die projizierte Kontur eines Raumes. */
+  _roomCorners(plane, area) {
+    const width = (area.size && area.size.width) || 0.3;
+    const height = (area.size && area.size.height) || 0.3;
+    const x0 = area.position.x - width / 2;
+    const y0 = area.position.y - height / 2;
+    return shapeOf(area)
+      .map((point) => [x0 + point.x * width, y0 + point.y * height])
+      .map(([x, y]) => this._project(plane, x, y));
   }
 
   /** Fenster und Tuerbogen eines Raumes, getrennt vom Raum. */
@@ -2018,15 +2101,27 @@ class SpatialHubPanel extends HTMLElement {
           const xs = plot.map((point) => point.x);
           const ys = plot.map((point) => point.y);
           return {
-            width: (Math.max(...xs) - Math.min(...xs)) * across,
-            height: (Math.max(...ys) - Math.min(...ys)) * across,
+            width: metresAcross(Math.max(...xs) - Math.min(...xs), floor),
+            // Und nicht mit derselben Zahl: in die Tiefe ist eine
+            // Einheit um das Seitenverhaeltnis kuerzer als quer.
+            height: metresDeep(Math.max(...ys) - Math.min(...ys), floor),
           };
         })()
       : null;
+    // Breite *und* Tiefe in Metern. Die Tiefe stand bisher nur als
+    // "Seitenverhaeltnis" im Etagendialog, als Regler von 0,5 bis 3 --
+    // eine Zahl, die niemand an seinem Haus nachmessen kann. Wer sein
+    // Haus kennt, kennt zwei Laengen; das Verhaeltnis ist ihr Quotient
+    // und nichts, was jemand eingeben sollte.
+    const deep = metresDeep(1, floor);
     return `<p class="hint meters">
       <label>Haus breit
         <input type="number" min="1" max="200" step="0.1" value="${across}"
                data-house-metres="1"> m
+      </label>
+      <label>tief
+        <input type="number" min="0.5" max="200" step="0.1"
+               value="${Number(deep.toFixed(2))}" data-house-depth="1"> m
       </label>
       <span class="muted">Alles andere rechnet sich daraus.</span>
       ${
@@ -2152,7 +2247,19 @@ class SpatialHubPanel extends HTMLElement {
    *  one outline with nothing around it to be relative to.
    */
   get _plot() {
-    const floor = this._floor;
+    return this._plotOf(this._floor);
+  }
+
+  /** Das Grundstueck einer bestimmten Etage.
+   *
+   *  Mit Etage als Argument, weil die Zeichnung sie nennen muss: in der
+   *  Hausansicht gibt es kein "das Grundstueck", sondern das der Etage,
+   *  die gerade gemalt wird. Ohne das verschwand ein gezogenes
+   *  Grundstueck, sobald die Einzelansicht eine Bauzeichnung wurde --
+   *  gezeichnet hatte es der flache Editor, und den sieht jetzt nur
+   *  noch, wer bearbeitet.
+   */
+  _plotOf(floor) {
     const plot = floor && floor.plot;
     if (!Array.isArray(plot) || plot.length < 3) return null;
     const points = plot
@@ -2389,7 +2496,11 @@ class SpatialHubPanel extends HTMLElement {
 
   /** Every shape drawn on the floor currently open. */
   get _shapes() {
-    const floor = this._floor;
+    return this._shapesOf(this._floor);
+  }
+
+  /** Die eigenen Formen einer bestimmten Etage -- siehe `_plotOf`. */
+  _shapesOf(floor) {
     if (!floor) return [];
     return (this._model.shapes || []).filter(
       (shape) => shape.floor_id === floor.id,
@@ -2712,9 +2823,9 @@ class SpatialHubPanel extends HTMLElement {
           ${
             this._meters && this._editRooms && area.size
               ? `<span class="area-dim">${metre(
-                  area.size.width * houseMetres(this._floor),
+                  metresAcross(area.size.width, this._floor),
                 )} × ${metre(
-                  area.size.height * houseMetres(this._floor),
+                  metresDeep(area.size.height, this._floor),
                 )} m</span>`
               : ""
           }
@@ -4807,6 +4918,26 @@ class SpatialHubPanel extends HTMLElement {
           floor.id,
           { metres: Number(input.value) || null },
           { metres: floor.metres ?? null },
+        );
+      }
+      return;
+    }
+
+    // Die Tiefe wird als Verhaeltnis gespeichert und nicht als Laenge:
+    // sonst gaebe es zwei Zahlen fuer dieselbe Sache, und wer die Breite
+    // aendert, muesste die Tiefe hinterherpflegen.
+    if (attribute("data-house-depth") !== null) {
+      const floor = this._floor;
+      const depth = Number(input.value);
+      if (committed && floor && depth > 0) {
+        const aspect = houseMetres(floor) / depth;
+        this._setLayout(
+          "floors",
+          floor.id,
+          // Derselbe Bereich, den der Regler im Etagendialog kennt: was
+          // ausserhalb liegt, nimmt der Hub ohnehin nicht an.
+          { aspect: Math.min(3, Math.max(0.5, aspect)) },
+          { aspect: floor.aspect ?? null },
         );
       }
       return;
