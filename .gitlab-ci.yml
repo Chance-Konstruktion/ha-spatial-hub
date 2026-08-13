@@ -1,10 +1,17 @@
 # CI fuer Spatial Hub
 #
-# Ersetzt .github/workflows/tests.yml. Ein Unterschied zur GitHub-Fassung ist
-# Absicht: Node wird hier ausdruecklich installiert. tests/test_check_renderer.py
-# ueberspringt sich selbst, wenn Node fehlt -- die Pipeline waere also gruen,
-# ohne dass die Renderer-Pruefungen je gelaufen waeren. Das faellt niemandem
-# auf, und deshalb steht unten ein Job, der genau das meldet.
+# Ersetzt .github/workflows/tests.yml. Zwei Unterschiede zur GitHub-Fassung
+# sind Absicht:
+#
+# 1. Node wird ausdruecklich installiert. tests/test_check_renderer.py
+#    ueberspringt sich selbst, wenn Node fehlt -- die Pipeline waere gruen,
+#    ohne dass die Renderer-Pruefungen je gelaufen waeren. Mit -rs steht
+#    ausserdem im Log, was uebersprungen wurde und warum.
+#
+# 2. Die Abhaengigkeiten werden aus requirements_test.txt gelesen, wenn es
+#    die Datei gibt. Auf main gibt es sie (noch) nicht, auf dem
+#    Renderer-Branch schon. Ein fester Satz als Rueckfall haelt beide
+#    Zweige gruen, ohne dass jemand die Datei nachpflegen muss.
 
 stages:
   - test
@@ -23,16 +30,18 @@ pytest:
     - apt-get update -qq && apt-get install -y -qq nodejs
     - node --version
     - python --version
-    - pip install -q -r requirements_test.txt
+    - |
+      if [ -f requirements_test.txt ]; then
+        echo "Abhaengigkeiten aus requirements_test.txt"
+        pip install -q -r requirements_test.txt
+      else
+        echo "requirements_test.txt fehlt -- fester Satz"
+        pip install -q pytest pytest-asyncio voluptuous pyyaml jsonschema
+      fi
   script:
-    # -rs listet uebersprungene Tests samt Grund auf, statt sie zu verschweigen.
     - python -m pytest -q -rs --junitxml=report.xml
   artifacts:
     when: always
     expire_in: 30 days
     reports:
       junit: report.xml
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - if: $CI_COMMIT_BRANCH
