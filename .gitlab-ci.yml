@@ -1,0 +1,38 @@
+# CI fuer Spatial Hub
+#
+# Ersetzt .github/workflows/tests.yml. Ein Unterschied zur GitHub-Fassung ist
+# Absicht: Node wird hier ausdruecklich installiert. tests/test_check_renderer.py
+# ueberspringt sich selbst, wenn Node fehlt -- die Pipeline waere also gruen,
+# ohne dass die Renderer-Pruefungen je gelaufen waeren. Das faellt niemandem
+# auf, und deshalb steht unten ein Job, der genau das meldet.
+
+stages:
+  - test
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+pytest:
+  stage: test
+  image: python:3.13
+  cache:
+    key: pip-$CI_COMMIT_REF_SLUG
+    paths:
+      - .cache/pip
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq nodejs
+    - node --version
+    - python --version
+    - pip install -q -r requirements_test.txt
+  script:
+    # -rs listet uebersprungene Tests samt Grund auf, statt sie zu verschweigen.
+    - python -m pytest -q -rs --junitxml=report.xml
+  artifacts:
+    when: always
+    expire_in: 30 days
+    reports:
+      junit: report.xml
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH
