@@ -82,6 +82,54 @@ pytest-ha:
         echo "Frontend-Paket fuer diesen Kern: $paket"
         pip install -q "$paket"
       fi
+    # Integrationen, die ein Test wirklich importieren muss.
+    #
+    # Der Adapter holt sie zur Laufzeit und faengt ImportError ab, damit
+    # er auch ohne sie laeuft. Ein Test, der den Weg MIT ihnen prueft,
+    # braucht ihre Python-Pakete aber tatsaechlich -- und die bringt
+    # pytest-homeassistant-custom-component nicht mit.
+    #
+    # In requirements_test_ha_components.txt stehen nur die Namen der
+    # Integrationen. Die Pakete kommen aus Home Assistants eigenen
+    # Manifesten, samt denen ihrer Abhaengigkeiten (bluetooth zieht usb
+    # nach, thread zieht zeroconf). Eingetragene Versionen waeren beim
+    # naechsten Update still falsch: pip nimmt sie klaglos.
+    - |
+      if [ -f requirements_test_ha_components.txt ]; then
+        pakete=$(python - <<'PY'
+      import json, pathlib
+      import homeassistant.components as komponenten
+
+      wurzel = pathlib.Path(komponenten.__file__).parent
+      offen = [
+          zeile.strip()
+          for zeile in pathlib.Path(
+              "requirements_test_ha_components.txt"
+          ).read_text(encoding="utf-8").splitlines()
+          if zeile.strip() and not zeile.lstrip().startswith("#")
+      ]
+
+      gesehen, pakete = set(), []
+      while offen:
+          name = offen.pop()
+          if name in gesehen:
+              continue
+          gesehen.add(name)
+          manifest = wurzel / name / "manifest.json"
+          if not manifest.is_file():
+              continue
+          daten = json.loads(manifest.read_text(encoding="utf-8"))
+          pakete.extend(daten.get("requirements") or [])
+          offen.extend(daten.get("dependencies") or [])
+
+      print(" ".join(sorted(set(pakete))))
+      PY
+      )
+        if [ -n "$pakete" ]; then
+          echo "Pakete fuer die genannten Integrationen: $pakete"
+          pip install -q $pakete
+        fi
+      fi
   script:
     - python -m pytest -c pytest-ha.ini -q -rs --junitxml=report-ha.xml
   artifacts:
