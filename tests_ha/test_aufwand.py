@@ -131,12 +131,17 @@ async def test_ausgeblendete_knoten_kosten_keine_registerabfrage(
     anbieter_anmelden(hass, "demo", lambda: [haus["lampe"]])
     hub = hass.data[DATA_HUB]
 
-    sichtbar = await hub.async_model()
-    assert sichtbar["nodes"][0]["entities"], "sichtbar: Entitaeten erwartet"
+    knoten_id = f"demo:{haus['lampe']}"
 
-    hass.data[DATA_STORE].update(
-        "nodes", f"demo:{haus['lampe']}", {"hidden": True}
-    )
+    sichtbar = await hub.async_model()
+    meiner = next(k for k in sichtbar["nodes"] if k["id"] == knoten_id)
+    assert meiner["entities"], "sichtbar: Entitaeten erwartet"
+
+    hass.data[DATA_STORE].update("nodes", knoten_id, {"hidden": True})
     versteckt = await hub.async_model()
-    assert versteckt["nodes"] == []
-    assert versteckt["hidden"]["nodes"], "der Knoten muss auffindbar bleiben"
+
+    # Die Standard-Ebenen des Hubs zeichnen dieselbe Lampe weiter -- das
+    # ist richtig so, ausgeblendet wurde ja nur dieser eine Knoten.
+    assert knoten_id not in {k["id"] for k in versteckt["nodes"]}
+    assert knoten_id in {k["id"] for k in versteckt["hidden"]["nodes"]}, (
+        "der Knoten muss auffindbar bleiben")
