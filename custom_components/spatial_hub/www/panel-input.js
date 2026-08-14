@@ -120,7 +120,11 @@ export const EINGABEN = {
       const { clientX, clientY } = event.touches[0];
       if (
         Math.hypot(clientX - this._press.from.x, clientY - this._press.from.y) >
-        SpatialHubPanel.PRESS.slack
+        // Ueber `this.constructor` und nicht ueber den Klassennamen: die
+        // Methode steht jetzt in einer eigenen Datei, in der es den Namen
+        // nicht gibt. Ihn zu importieren waere ein Ring -- das Panel
+        // importiert diese Datei bereits.
+        this.constructor.PRESS.slack
       ) {
         this._cancelLongPress();
       }
