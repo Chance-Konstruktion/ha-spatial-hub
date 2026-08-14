@@ -12,6 +12,7 @@
  */
 
 import { STYLES } from "./panel-styles.js";
+import { haTransport } from "./panel-transport.js";
 import {
   STACK,
   centreOf,
@@ -217,12 +218,42 @@ class SpatialHubPanel extends HTMLElement {
     // undo needs, and it makes redo the same operation the other way round.
     this._undo = [];
     this._redo = [];
+    // Die einzige Verbindung nach draussen. Austauschbar ueber den
+    // Setter unten -- siehe den Vertrag in panel-transport.js.
+    this._io = haTransport(this);
+  }
+
+  /** Womit dieser Renderer nach draussen spricht.
+   *
+   *  Ab Werk Home Assistant. Wer ihn woanders einsetzt, setzt hier ein
+   *  eigenes Objekt mit denselben fuenf Methoden ein -- danach kommt in
+   *  dieser Datei kein `hass` mehr vor.
+   */
+  set transport(io) {
+    this._io = io;
+    // Ohne Home Assistant faellt der `hass`-Setter aus, der sonst den
+    // ersten Abruf ausloest. Wer einen eigenen Transport einsetzt, hat
+    // damit alles gesagt, was zum Anfangen noetig ist.
+    if (!this._unsubscribe && !this._model) this._connect();
+  }
+
+  get transport() {
+    return this._io;
   }
 
   get _canEdit() {
-    return Boolean(this._hass && this._hass.user && this._hass.user.is_admin);
+    return this._io.canEdit();
   }
 
+  /** Home Assistants Eingang -- die letzte Stelle, die seinen Namen kennt.
+   *
+   *  Home Assistant setzt diese Eigenschaft von aussen und tauscht das
+   *  Objekt bei jeder Zustandsaenderung aus. Sie kann deshalb nicht in den
+   *  Transport wandern; sie ist die Tuer, durch die er sein `hass`
+   *  ueberhaupt bekommt. Gelesen wird es nur dort -- siehe
+   *  panel-transport.js. Wer den Renderer anderswo einsetzt, ruehrt diese
+   *  Eigenschaft nicht an und setzt stattdessen `transport`.
+   */
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
@@ -274,9 +305,9 @@ class SpatialHubPanel extends HTMLElement {
     try {
       // The hub pushes a reason, never the model: a renderer that does not
       // care about the changed layer simply ignores the hint.
-      this._unsubscribe = await this._hass.connection.subscribeMessage(
-        () => this._refresh(),
+      this._unsubscribe = await this._io.subscribe(
         { type: `${DOMAIN}/subscribe` },
+        () => this._refresh(),
       );
     } catch (err) {
       // Losing live updates is not worth losing the floor plan over.
@@ -288,7 +319,7 @@ class SpatialHubPanel extends HTMLElement {
     if (this._pending) return;
     this._pending = true;
     try {
-      this._model = await this._hass.callWS({ type: `${DOMAIN}/model` });
+      this._model = await this._io.call({ type: `${DOMAIN}/model` });
       this._error = null;
     } catch (err) {
       this._error = err && err.message ? err.message : String(err);
@@ -301,7 +332,7 @@ class SpatialHubPanel extends HTMLElement {
 
   async _loadDiagnostics() {
     try {
-      this._diagnostics = await this._hass.callWS({
+      this._diagnostics = await this._io.call({
         type: `${DOMAIN}/diagnostics`,
       });
     } catch (err) {
@@ -324,7 +355,7 @@ class SpatialHubPanel extends HTMLElement {
       if (this._undo.length > 50) this._undo.shift();
     }
     try {
-      await this._hass.callWS({
+      await this._io.call({
         type: `${DOMAIN}/layout/set`,
         section,
         key,
@@ -375,7 +406,7 @@ class SpatialHubPanel extends HTMLElement {
     if (to === from || (!room && !from)) return;
 
     try {
-      const done = await this._hass.callWS({
+      const done = await this._io.call({
         type: `${DOMAIN}/area/assign`,
         entity_id: node.entity_id,
         area_id: to,
@@ -401,7 +432,7 @@ class SpatialHubPanel extends HTMLElement {
       return;
     }
     try {
-      await this._hass.callWS({
+      await this._io.call({
         type: `${DOMAIN}/area/assign`,
         entity_id: move.entity_id,
         area_id: move.before,
@@ -3237,8 +3268,8 @@ class SpatialHubPanel extends HTMLElement {
 
   /** Eine einzelne Anordnung vergessen und neu holen. */
   _resetItem(section, key) {
-    this._hass
-      .callWS({ type: `${DOMAIN}/layout/reset`, section, key })
+    this._io
+      .call({ type: `${DOMAIN}/layout/reset`, section, key })
       .then(() => this._refresh())
       .catch(() => this._refresh());
   }
@@ -3384,7 +3415,7 @@ class SpatialHubPanel extends HTMLElement {
         };
     if (!this._facets) {
       try {
-        this._facets = await this._hass.callWS({
+        this._facets = await this._io.call({
           type: `${DOMAIN}/entities/facets`,
         });
       } catch (err) {
@@ -3678,7 +3709,7 @@ class SpatialHubPanel extends HTMLElement {
       )
       .join("");
 
-    const canAct = this._hass.user && this._hass.user.is_admin;
+    const canAct = this._io.canEdit();
     const custom = kind === "node" ? this._customIcon(item) : null;
     const badge = kind === "node"
       ? `<span class="popup-icon" style="--node-color:${escapeHtml(
@@ -4698,7 +4729,7 @@ class SpatialHubPanel extends HTMLElement {
     const nodes = this._visibleNodes.map((node) => ["nodes", node.id]);
     for (const [section, key] of [...areas, ...nodes, ["floors", floor.id]]) {
       try {
-        await this._hass.callWS({
+        await this._io.call({
           type: `${DOMAIN}/layout/reset`,
           section,
           key,
@@ -4973,34 +5004,13 @@ class SpatialHubPanel extends HTMLElement {
 
     const navigate = hit("data-navigate");
     if (navigate) {
-      // Home Assistant's own navigation event: it keeps the app state, so
-      // the user's way back to the floor plan is the browser's back button.
-      this.dispatchEvent(
-        new CustomEvent("hass-navigate", {
-          detail: { path: navigate.getAttribute("data-navigate") },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-      if (window.history && window.history.pushState) {
-        window.history.pushState(null, "", navigate.getAttribute("data-navigate"));
-        window.dispatchEvent(new CustomEvent("location-changed"));
-      }
+      this._io.navigate(navigate.getAttribute("data-navigate"));
       return;
     }
 
     const settings = hit("data-settings");
     if (settings) {
-      // The more-info dialog is the door to an entity's settings, and it
-      // opens over the floor plan instead of navigating away from it.
-      this.dispatchEvent(
-        new CustomEvent("hass-more-info", {
-          detail: { entityId: settings.getAttribute("data-settings"),
-                    view: "settings" },
-          bubbles: true,
-          composed: true,
-        }),
-      );
+      this._io.moreInfo(settings.getAttribute("data-settings"), "settings");
       return;
     }
 
@@ -5099,8 +5109,8 @@ class SpatialHubPanel extends HTMLElement {
 
     if (hit("data-reset-theme")) {
       this._themeDialog = false;
-      this._hass
-        .callWS({ type: `${DOMAIN}/layout/reset`, section: "settings", key: "view" })
+      this._io
+        .call({ type: `${DOMAIN}/layout/reset`, section: "settings", key: "view" })
         .then(() => this._refresh())
         .catch(() => this._refresh());
       return;
@@ -5275,13 +5285,7 @@ class SpatialHubPanel extends HTMLElement {
 
     const moreInfo = hit("data-more-info");
     if (moreInfo) {
-      this.dispatchEvent(
-        new CustomEvent("hass-more-info", {
-          detail: { entityId: moreInfo.getAttribute("data-more-info") },
-          bubbles: true,
-          composed: true,
-        }),
-      );
+      this._io.moreInfo(moreInfo.getAttribute("data-more-info"));
       return;
     }
 
@@ -5342,7 +5346,7 @@ class SpatialHubPanel extends HTMLElement {
   async _loadHistory() {
     if (!this._selected) return;
     try {
-      const response = await this._hass.callWS({
+      const response = await this._io.call({
         type: `${DOMAIN}/history`,
         kind: this._selected.kind,
         item_id: this._selected.id,
@@ -5360,7 +5364,7 @@ class SpatialHubPanel extends HTMLElement {
     if (!this._selected) return;
     if (confirm && !window.confirm(`„${actionId}“ wirklich ausführen?`)) return;
     try {
-      await this._hass.callWS({
+      await this._io.call({
         type: `${DOMAIN}/action`,
         kind: this._selected.kind,
         item_id: this._selected.id,
