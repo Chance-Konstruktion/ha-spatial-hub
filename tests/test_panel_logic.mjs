@@ -11,7 +11,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,18 +23,26 @@ import { fileURLToPath } from "node:url";
  *  vorher die eine Panel-Datei gelesen, und genau das ist beim Zerlegen
  *  kaputtgegangen: Die Regeln waren noch da, nur eine Datei weiter.
  *
- *  Deshalb hier alle drei zusammen. Ein Test soll pruefen, *dass* der
- *  Renderer etwas tut, nicht, in welcher Datei es steht -- sonst kostet
- *  jedes Verschieben eine Runde roter Tests, die nichts gefunden haben.
+ *  Deshalb der ganze Ordner. Ein Test soll pruefen, *dass* der Renderer
+ *  etwas tut, nicht, in welcher Datei es steht -- sonst kostet jedes
+ *  Verschieben eine Runde roter Tests, die nichts gefunden haben.
+ *
+ *  Gelesen wird das Verzeichnis und keine eingetragene Liste. Genau die
+ *  stand hier vorher, samt dieser Erklaerung darueber -- und ist beim
+ *  naechsten Aufteilen prompt wieder zurueckgeblieben: `_stackIconHtml`
+ *  zog nach panel-view.js um, die Liste kannte die Datei nicht, und ein
+ *  Test suchte eine Regel in einem Text, in dem sie nicht mehr stand.
+ *  Eine Erklaerung, die neben einer Liste steht, haelt die Liste nicht
+ *  aktuell.
  */
-const rendererSource = () =>
-  ["spatial-hub-panel.js", "panel-styles.js", "panel-geometry.js",
-   "panel-colour.js", "panel-markup.js"]
-    .map((file) => readFileSync(
-      join(here, "..", "custom_components", "spatial_hub", "www", file),
-      "utf8",
-    ))
+const rendererSource = () => {
+  const ordner = join(here, "..", "custom_components", "spatial_hub", "www");
+  return readdirSync(ordner)
+    .filter((datei) => datei.endsWith(".js"))
+    .sort()
+    .map((datei) => readFileSync(join(ordner, datei), "utf8"))
     .join("\n");
+};
 
 // The module defines a custom element at import time; give it the two
 // browser globals it touches and nothing more.
