@@ -64,6 +64,24 @@ pytest-ha:
   before_script:
     - pip install -q -r requirements_test_ha.txt
     - python -c "from homeassistant.const import __version__; print('Home Assistant', __version__)"
+    # Eine Integration, die "frontend" als Abhaengigkeit fuehrt -- also ein
+    # eigenes Panel oder eine eigene Karte mitbringt -- laedt ohne das
+    # gebaute Frontend-Paket gar nicht erst: Home Assistant bricht das
+    # Einrichten mit "No module named 'hass_frontend'" ab, bevor ein
+    # einziger Test etwas geprueft hat. Das Paket kommt nicht mit
+    # pytest-homeassistant-custom-component mit, weil Home Assistant es im
+    # Betrieb selbst nachzieht.
+    #
+    # Die Version wird aus Home Assistants eigenem Manifest gelesen statt
+    # hier eingetragen: eine feste Nummer waere beim naechsten Update
+    # falsch, und zwar auf die stille Art -- pip nimmt sie klaglos und die
+    # Tests laufen gegen ein Frontend, das nicht zu diesem Kern gehoert.
+    - |
+      if grep -qs '"frontend"' custom_components/*/manifest.json; then
+        paket=$(python -c "import json, pathlib, homeassistant.components.frontend as f; print(json.loads((pathlib.Path(f.__file__).parent / 'manifest.json').read_text())['requirements'][0])")
+        echo "Frontend-Paket fuer diesen Kern: $paket"
+        pip install -q "$paket"
+      fi
   script:
     - python -m pytest -c pytest-ha.ini -q -rs --junitxml=report-ha.xml
   artifacts:
