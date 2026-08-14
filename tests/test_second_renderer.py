@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SECOND = ROOT / "examples" / "second_renderer" / "index.html"
 PANEL = ROOT / "custom_components" / "spatial_hub" / "www" / "spatial-hub-panel.js"
+WWW = PANEL.parent
 
 # Everything a renderer is allowed to send, from docs/PROVIDER_API.md.
 DOCUMENTED = {
@@ -104,9 +105,18 @@ def test_it_draws_the_unassigned_storey_like_any_other():
 
 
 def test_the_two_renderers_were_written_separately():
-    """Copied code would make this a mirror, not a second opinion."""
+    """Copied code would make this a mirror, not a second opinion.
+
+    Gelesen wird der **ganze** eingebaute Renderer, nicht nur seine
+    Einstiegsdatei. Als das Panel auf mehrere Dateien aufgeteilt wurde,
+    haette ein Vergleich gegen `spatial-hub-panel.js` allein weiter
+    gegruent -- waehrend die eigentliche Auszeichnung, die einer
+    Abschrift am naechsten kaeme, gar nicht mehr darin steht.
+    """
     panel_lines = {
-        line.strip() for line in PANEL.read_text().splitlines()
+        line.strip()
+        for pfad in sorted(WWW.glob("*.js"))
+        for line in pfad.read_text().splitlines()
         if len(line.strip()) > 60
     }
     second_lines = {
