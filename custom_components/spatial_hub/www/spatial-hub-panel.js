@@ -4774,23 +4774,49 @@ class SpatialHubPanel extends HTMLElement {
       (element) => element.classList && element.classList.contains("stage"),
     );
 
+    // Ab hier entscheidet die Reihenfolge, und nur sie: der erste
+    // Abschnitt, der sich zustaendig fuehlt, meldet das mit `true` und
+    // die Kette endet. Genau so lief es vorher als eine einzige Folge
+    // von `return`s -- nur dass man die Abschnitte jetzt benennen und
+    // einzeln lesen kann.
+    const abschnitte = [
+      this._clickView,
+      this._clickCorners,
+      this._clickBars,
+      this._clickAreaDialog,
+      this._clickOutward,
+      this._clickLayers,
+      this._clickThemeAndFloor,
+      this._clickArrange,
+      this._clickSelection,
+    ];
+    for (const abschnitt of abschnitte) {
+      if (abschnitt.call(this, hit, event, stage)) return;
+    }
+  }
+
+  /** Ansicht und Werkzeugwahl: Zoom, Anfasser, Grundriss, Masse.
+   *
+   *  Gibt `true` zurueck, wenn der Klick hier verbraucht wurde.
+   */
+  _clickView(hit, event, stage) {
     const zoom = hit("data-zoom");
     if (zoom) {
       const how = zoom.getAttribute("data-zoom");
       if (how === "fit") this._fitToScreen();
       else this._zoomBy(how === "in" ? ZOOM.step : 1 / ZOOM.step);
-      return;
+      return true;
     }
 
     if (hit("data-toggle-corners")) {
       this._corners = !this._corners;
       this._render();
-      return;
+      return true;
     }
 
     if (hit("data-toggle-plot")) {
       this._togglePlot();
-      return;
+      return true;
     }
 
     const editWhat = hit("data-edit-what");
@@ -4801,37 +4827,47 @@ class SpatialHubPanel extends HTMLElement {
       if (this._editWhat !== "rooms") this._corners = false;
       this._selected = null;
       this._render();
-      return;
+      return true;
     }
 
     const plotScale = hit("data-plot-scale");
     if (plotScale) {
       this._scalePlot(Number(plotScale.getAttribute("data-plot-scale")));
-      return;
+      return true;
     }
 
     if (hit("data-toggle-meters")) {
       this._meters = !this._meters;
       this._render();
-      return;
+      return true;
     }
+    return false;
+  }
 
+  /** Ecken -- die des Grundstuecks und die freier Raumformen.
+   *
+   *  Setzen, verschieben, einfuegen, loeschen. Der Alt-Klick auf eine
+   *  bestehende Ecke ist das Loeschen ohne eigenen Knopf.
+   *
+   *  Gibt `true` zurueck, wenn der Klick hier verbraucht wurde.
+   */
+  _clickCorners(hit, event, stage) {
     const plotDrop = hit("data-plot-drop");
     if (plotDrop) {
       this._dropPlotCorner(Number(plotDrop.getAttribute("data-plot-drop")));
-      return;
+      return true;
     }
 
     const plotCorner = hit("data-plot-index");
     if (plotCorner && (event.altKey || event.metaKey)) {
       this._dropPlotCorner(Number(plotCorner.getAttribute("data-plot-index")));
-      return;
+      return true;
     }
 
     const plotAdder = hit("data-plot-add");
     if (plotAdder) {
       this._addPlotCorner(Number(plotAdder.getAttribute("data-plot-add")));
-      return;
+      return true;
     }
 
     const shapeDrop = hit("data-shape-drop");
@@ -4840,7 +4876,7 @@ class SpatialHubPanel extends HTMLElement {
         shapeDrop.getAttribute("data-shape-owner"),
         Number(shapeDrop.getAttribute("data-shape-drop")),
       );
-      return;
+      return true;
     }
 
     const shapeCorner = hit("data-shape-index");
@@ -4849,7 +4885,7 @@ class SpatialHubPanel extends HTMLElement {
         shapeCorner.getAttribute("data-shape-owner"),
         Number(shapeCorner.getAttribute("data-shape-index")),
       );
-      return;
+      return true;
     }
 
     const shapeAdder = hit("data-shape-add");
@@ -4858,20 +4894,20 @@ class SpatialHubPanel extends HTMLElement {
         shapeAdder.getAttribute("data-shape-owner"),
         Number(shapeAdder.getAttribute("data-shape-add")),
       );
-      return;
+      return true;
     }
 
     const shapeDialog = hit("data-shape-dialog");
     if (shapeDialog) {
       this._shapeDialog = shapeDialog.getAttribute("data-shape-dialog");
       this._render();
-      return;
+      return true;
     }
 
     if (hit("data-close-shape")) {
       this._shapeDialog = null;
       this._render();
-      return;
+      return true;
     }
 
     const shapeReshape = hit("data-shape-reshape");
@@ -4881,7 +4917,7 @@ class SpatialHubPanel extends HTMLElement {
       this._corners = true;
       this._shapeDialog = null;
       this._render();
-      return;
+      return true;
     }
 
     const shapeDelete = hit("data-shape-delete");
@@ -4895,7 +4931,7 @@ class SpatialHubPanel extends HTMLElement {
         this._deleteShape(id);
       }
       this._render();
-      return;
+      return true;
     }
 
     const cornerDrop = hit("data-corner-drop");
@@ -4904,7 +4940,7 @@ class SpatialHubPanel extends HTMLElement {
         cornerDrop.getAttribute("data-corner-drop"),
         Number(cornerDrop.getAttribute("data-corner-index")),
       );
-      return;
+      return true;
     }
 
     const corner = hit("data-corner-area");
@@ -4913,7 +4949,7 @@ class SpatialHubPanel extends HTMLElement {
         corner.getAttribute("data-corner-area"),
         Number(corner.getAttribute("data-corner-index")),
       );
-      return;
+      return true;
     }
 
     const adder = hit("data-corner-add");
@@ -4922,46 +4958,60 @@ class SpatialHubPanel extends HTMLElement {
         adder.getAttribute("data-corner-add"),
         Number(adder.getAttribute("data-corner-index")),
       );
-      return;
+      return true;
     }
+    return false;
+  }
 
+  /** Leisten, Legende und die Schritte zurueck.
+   *
+   *  Gibt `true` zurueck, wenn der Klick hier verbraucht wurde.
+   */
+  _clickBars(hit, event, stage) {
     if (hit("data-toggle-ghosts")) {
       this._ghosts = !this._ghosts;
       this._render();
-      return;
+      return true;
     }
 
     if (hit("data-legend")) {
       this._legendOpen = !this._legendOpen;
       this._render();
-      return;
+      return true;
     }
 
     if (hit("data-bars")) {
       this._toggleBars();
-      return;
+      return true;
     }
 
     if (hit("data-undo")) {
       this._undoStep();
-      return;
+      return true;
     }
     if (hit("data-redo")) {
       this._redoStep();
-      return;
+      return true;
     }
+    return false;
+  }
 
+  /** Der Bereichsdialog: Art des Raums und seine Tueren.
+   *
+   *  Gibt `true` zurueck, wenn der Klick hier verbraucht wurde.
+   */
+  _clickAreaDialog(hit, event, stage) {
     const areaDialog = hit("data-area-dialog");
     if (areaDialog) {
       this._areaDialog = areaDialog.getAttribute("data-area-dialog");
       this._render();
-      return;
+      return true;
     }
 
     if (hit("data-close-area")) {
       this._areaDialog = null;
       this._render();
-      return;
+      return true;
     }
 
     const areaKind = hit("data-area-kind");
@@ -4972,7 +5022,7 @@ class SpatialHubPanel extends HTMLElement {
         ),
         areaKind.getAttribute("data-area-kind"),
       );
-      return;
+      return true;
     }
 
     const doorAdd = hit("data-door-add");
@@ -4986,7 +5036,7 @@ class SpatialHubPanel extends HTMLElement {
       if (area) {
         this._setDoors(area, (doors) => [...doors, { side, at: 0.5, width: 0.2 }]);
       }
-      return;
+      return true;
     }
 
     const doorRemove = hit("data-door-remove");
@@ -4999,25 +5049,42 @@ class SpatialHubPanel extends HTMLElement {
         this._setDoors(area, (doors) =>
           doors.filter((_door, at) => at !== index));
       }
-      return;
+      return true;
     }
+    return false;
+  }
 
+  /** Die zwei Wege aus dem Grundriss heraus.
+   *
+   *  Beide gehen ueber den Transport, weil sie das Einzige sind, was
+   *  dieser Renderer von der umgebenden Anwendung verlangt.
+   *
+   *  Gibt `true` zurueck, wenn der Klick hier verbraucht wurde.
+   */
+  _clickOutward(hit, event, stage) {
     const navigate = hit("data-navigate");
     if (navigate) {
       this._io.navigate(navigate.getAttribute("data-navigate"));
-      return;
+      return true;
     }
 
     const settings = hit("data-settings");
     if (settings) {
       this._io.moreInfo(settings.getAttribute("data-settings"), "settings");
-      return;
+      return true;
     }
+    return false;
+  }
 
+  /** Ebenen, Anbieter und die Etagenwahl -- was gezeigt wird.
+   *
+   *  Gibt `true` zurueck, wenn der Klick hier verbraucht wurde.
+   */
+  _clickLayers(hit, event, stage) {
     if (hit("data-toggle-entities")) {
       this._showEntities = !this._showEntities;
       this._render();
-      return;
+      return true;
     }
 
     const toggleProvider = hit("data-toggle-provider");
@@ -5029,7 +5096,7 @@ class SpatialHubPanel extends HTMLElement {
           this._setLayout("layers", layer.id, { visible: off });
         }
       }
-      return;
+      return true;
     }
 
     const floorButton = hit("data-floor");
@@ -5037,7 +5104,7 @@ class SpatialHubPanel extends HTMLElement {
       this._floorId = floorButton.getAttribute("data-floor");
       this._selected = null;
       this._render();
-      return;
+      return true;
     }
 
     if (hit("data-toggle-edit")) {
@@ -5046,7 +5113,7 @@ class SpatialHubPanel extends HTMLElement {
       this._selected = null;
       this._floorDialog = false;
       this._render();
-      return;
+      return true;
     }
 
     const newLayer = hit("data-new-layer");
@@ -5055,13 +5122,13 @@ class SpatialHubPanel extends HTMLElement {
       this._openLayerDialog(
         editLayer ? editLayer.getAttribute("data-edit-layer") : null,
       );
-      return;
+      return true;
     }
 
     if (hit("data-close-layer")) {
       this._layerDialog = null;
       this._render();
-      return;
+      return true;
     }
 
     const facet = hit("data-facet");
@@ -5073,29 +5140,36 @@ class SpatialHubPanel extends HTMLElement {
         ? current.filter((item) => item !== value)
         : [...current, value];
       this._render();
-      return;
+      return true;
     }
 
     if (hit("data-save-layer")) {
       this._saveLayer();
-      return;
+      return true;
     }
 
     if (hit("data-delete-layer")) {
       this._deleteLayer();
-      return;
+      return true;
     }
+    return false;
+  }
 
+  /** Die Dialoge fuer Thema und Etage, samt Hintergrundbildern.
+   *
+   *  Gibt `true` zurueck, wenn der Klick hier verbraucht wurde.
+   */
+  _clickThemeAndFloor(hit, event, stage) {
     if (hit("data-theme-dialog")) {
       this._themeDialog = true;
       this._render();
-      return;
+      return true;
     }
 
     if (hit("data-close-theme")) {
       this._themeDialog = false;
       this._render();
-      return;
+      return true;
     }
 
     const preset = hit("data-preset");
@@ -5104,7 +5178,7 @@ class SpatialHubPanel extends HTMLElement {
       this._setLayout("settings", "view", {
         theme: { preset: preset.getAttribute("data-preset") },
       });
-      return;
+      return true;
     }
 
     if (hit("data-reset-theme")) {
@@ -5113,37 +5187,37 @@ class SpatialHubPanel extends HTMLElement {
         .call({ type: `${DOMAIN}/layout/reset`, section: "settings", key: "view" })
         .then(() => this._refresh())
         .catch(() => this._refresh());
-      return;
+      return true;
     }
 
     if (hit("data-floor-dialog")) {
       this._floorDialog = true;
       this._render();
-      return;
+      return true;
     }
 
     if (hit("data-close-floor")) {
       this._floorDialog = false;
       this._render();
-      return;
+      return true;
     }
 
     if (hit("data-clear-background")) {
       if (this._floor) this._setLayout("floors", this._floor.id, { background: null });
       this._floorDialog = false;
-      return;
+      return true;
     }
 
     if (hit("data-clear-area-background")) {
       if (this._areaDialog) {
         this._setLayout("areas", this._areaDialog, { background: null });
       }
-      return;
+      return true;
     }
 
     if (hit("data-reset-floor")) {
       this._resetFloor();
-      return;
+      return true;
     }
 
     const layerUp = hit("data-layer-up");
@@ -5158,12 +5232,19 @@ class SpatialHubPanel extends HTMLElement {
           z_index: (layer.z_index || 10) + (layerUp ? 5 : -5),
         });
       }
-      return;
+      return true;
     }
+    return false;
+  }
 
+  /** Anordnen: verstecken, zeigen, sortieren, zuruecksetzen, platzieren.
+   *
+   *  Gibt `true` zurueck, wenn der Klick hier verbraucht wurde.
+   */
+  _clickArrange(hit, event, stage) {
     if (hit("data-undo-move")) {
       this._undoMove();
-      return;
+      return true;
     }
 
     const joinMark = hit("data-join-area");
@@ -5172,7 +5253,7 @@ class SpatialHubPanel extends HTMLElement {
         joinMark.getAttribute("data-join-area"),
         joinMark.getAttribute("data-join-other"),
       );
-      return;
+      return true;
     }
 
     const hideArea = hit("data-hide-area");
@@ -5180,7 +5261,7 @@ class SpatialHubPanel extends HTMLElement {
       this._setLayout("areas", hideArea.getAttribute("data-hide-area"), {
         hidden: true,
       });
-      return;
+      return true;
     }
 
     const showArea = hit("data-show-area");
@@ -5188,7 +5269,7 @@ class SpatialHubPanel extends HTMLElement {
       this._setLayout("areas", showArea.getAttribute("data-show-area"), {
         hidden: null,
       });
-      return;
+      return true;
     }
 
     const hideNode = hit("data-hide-node");
@@ -5197,7 +5278,7 @@ class SpatialHubPanel extends HTMLElement {
       this._setLayout("nodes", hideNode.getAttribute("data-hide-node"), {
         hidden: true,
       });
-      return;
+      return true;
     }
 
     const showNode = hit("data-show-node");
@@ -5205,14 +5286,14 @@ class SpatialHubPanel extends HTMLElement {
       this._setLayout("nodes", showNode.getAttribute("data-show-node"), {
         hidden: null,
       });
-      return;
+      return true;
     }
 
     const resetItem = hit("data-reset-item");
     if (resetItem) {
       this._selected = null;
       this._resetItem("nodes", resetItem.getAttribute("data-reset-item"));
-      return;
+      return true;
     }
 
     const toggle = hit("data-toggle");
@@ -5223,7 +5304,7 @@ class SpatialHubPanel extends HTMLElement {
       } else {
         this._render();
       }
-      return;
+      return true;
     }
 
     const layerButton = hit("data-layer");
@@ -5237,7 +5318,7 @@ class SpatialHubPanel extends HTMLElement {
           visible: layer.visible === false,
         });
       }
-      return;
+      return true;
     }
 
     const placeArea = hit("data-place-area");
@@ -5248,15 +5329,26 @@ class SpatialHubPanel extends HTMLElement {
           ? null
           : { section: "areas", key };
       this._render();
-      return;
+      return true;
     }
 
     if (hit("data-cancel-place")) {
       this._placing = null;
       this._render();
-      return;
+      return true;
     }
+    return false;
+  }
 
+  /** Was ein Klick auf den Grundriss selbst auswaehlt.
+   *
+   *  Zuletzt, und das ist Absicht: jeder Knopf oben drueber hat
+   *  Vorrang, sonst waehlte ein Klick auf eine Schaltflaeche den
+   *  Raum aus, der zufaellig darunter liegt.
+   *
+   *  Gibt `true` zurueck, wenn der Klick hier verbraucht wurde.
+   */
+  _clickSelection(hit, event, stage) {
     // Placement wins over selection: the user asked to put something down.
     if (this._placing && stage) {
       const box = stage.getBoundingClientRect();
@@ -5273,25 +5365,25 @@ class SpatialHubPanel extends HTMLElement {
       this._setLayout(section, key, {
         position: { x: Number(x.toFixed(4)), y: Number(y.toFixed(4)) },
       });
-      return;
+      return true;
     }
 
     if (hit("data-close")) {
       this._selected = null;
       this._history = null;
       this._render();
-      return;
+      return true;
     }
 
     const moreInfo = hit("data-more-info");
     if (moreInfo) {
       this._io.moreInfo(moreInfo.getAttribute("data-more-info"));
-      return;
+      return true;
     }
 
     if (hit("data-history")) {
       this._loadHistory();
-      return;
+      return true;
     }
 
     const actionButton = hit("data-action");
@@ -5300,7 +5392,7 @@ class SpatialHubPanel extends HTMLElement {
         actionButton.getAttribute("data-action"),
         actionButton.getAttribute("data-confirm") === "1",
       );
-      return;
+      return true;
     }
 
     const clusterButton = hit("data-cluster");
@@ -5308,32 +5400,34 @@ class SpatialHubPanel extends HTMLElement {
       const areaId = clusterButton.getAttribute("data-cluster");
       this._clusterOpen = this._clusterOpen === areaId ? null : areaId;
       this._render();
-      return;
+      return true;
     }
 
     if (hit("data-close-cluster")) {
       this._clusterOpen = null;
       this._render();
-      return;
+      return true;
     }
 
     const clusterNode = hit("data-cluster-node");
     if (clusterNode) {
       this._clusterOpen = null;
       this._select("node", clusterNode.getAttribute("data-cluster-node"));
-      return;
+      return true;
     }
 
     const nodeButton = hit("data-node");
     if (nodeButton) {
       this._select("node", nodeButton.getAttribute("data-node"));
-      return;
+      return true;
     }
 
     const edgeLine = hit("data-edge");
     if (edgeLine) {
       this._select("edge", edgeLine.getAttribute("data-edge"));
+      return true;
     }
+    return false;
   }
 
   _select(kind, id) {
