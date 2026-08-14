@@ -8,6 +8,7 @@ over. A second renderer (3D, AR, print) needs no hub change at all.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Callable
 
@@ -200,8 +201,20 @@ class SpatialHub:
         layers: list[dict[str, Any]] = []
         icon_sets: dict[str, Any] = {}
 
-        for provider in providers.values():
-            result = await provider.async_fetch()
+        # Gleichzeitig, nicht nacheinander. Jeder Abruf hat sein eigenes
+        # 10-Sekunden-Limit; hintereinander addieren die sich, und bei
+        # sechs Anbietern steht der Aufbau im schlechtesten Fall eine
+        # Minute. Nebeneinander ist es eine Minute geteilt durch sechs --
+        # und im Normalfall wartet ohnehin jeder auf sein eigenes Register
+        # statt auf die anderen.
+        #
+        # `async_fetch` faengt bereits jeden Fehler eines Anbieters ab und
+        # gibt ihn als FetchResult zurueck, deshalb braucht es hier kein
+        # return_exceptions: es kommt nichts an, was werfen koennte.
+        ergebnisse = await asyncio.gather(
+            *(provider.async_fetch() for provider in providers.values())
+        )
+        for provider, result in zip(providers.values(), ergebnisse):
             self._enrich_from_entities(result.nodes)
             nodes.extend(result.nodes)
             edges.extend(result.edges)
@@ -227,8 +240,12 @@ class SpatialHub:
         # What the device behind a node is made of. A popup that can only
         # show one entity of a ten-entity device sends the user off to
         # Home Assistant to find the other nine.
+        # Nur fuer die Knoten, die gezeichnet werden. Jeder Aufruf geht ins
+        # Entitaetsregister und holt fuer jeden Treffer einen Zustand --
+        # das fuer einen ausgeblendeten Knoten zu tun, dessen Aufklapper
+        # niemand oeffnen kann, ist reine Arbeit ohne Ergebnis.
         for data in laid_out:
-            if data.get("device_id"):
+            if data.get("device_id") and not data["_hidden"]:
                 data["entities"] = discovery.async_device_entities(
                     self.hass, data["device_id"]
                 )
@@ -247,6 +264,11 @@ class SpatialHub:
         }
 
         visible_areas, hidden_areas = self._apply_area_layout(areas)
+
+        # Einmal statt zweimal: die Auswertung geht durch alle
+        # gespeicherten Regeln des Nutzers, und sie zweimal pro
+        # Aufbau zu rechnen bringt garantiert dasselbe Ergebnis.
+        eigene_ebenen, sind_vorgabe = effective_layers(self.store)
 
         return {
             "api_version": API_VERSION,
@@ -270,13 +292,11 @@ class SpatialHub:
             # The user's own layer rules, for whatever edits them. A plain
             # renderer ignores this and just draws the nodes they produced.
             "custom_layers": [
-                layer
-                for layer in effective_layers(self.store)[0]
-                if isinstance(layer, dict)
+                layer for layer in eigene_ebenen if isinstance(layer, dict)
             ],
             # So an editor can say "these are ours, not yours" and offer to
             # put them back after the user has taken them apart.
-            "custom_layers_are_default": effective_layers(self.store)[1],
+            "custom_layers_are_default": sind_vorgabe,
             "icon_sets": icon_sets,
             # Shapes drawn for their own sake -- a hallway, a decorative
             # outline -- with no area behind them at all. Never derived,
