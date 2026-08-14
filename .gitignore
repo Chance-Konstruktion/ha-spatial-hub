@@ -2,3 +2,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+
+# Enthaelt ein Zugriffstoken -- gehoert nicht ins Repository.
+.mcp.json
+
