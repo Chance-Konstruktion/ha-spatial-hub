@@ -191,7 +191,7 @@ export const ANSICHT = {
             : ""
         }
       </header>`;
-  }
+  },
 
   _stackHtml() {
     const floors = this._stackFloors;
@@ -388,7 +388,7 @@ export const ANSICHT = {
     <p class="hint">Alle Etagen auf einmal — die einzige Ansicht, in der eine
     Verbindung zwischen zwei Stockwerken überhaupt zu sehen ist. Zum
     Anordnen und für Details eine einzelne Etage wählen.</p>`;
-  }
+  },
 
   /** The icon in the stack, in the same shape as on a single floor.
    *
@@ -412,12 +412,12 @@ export const ANSICHT = {
         )}"></ha-icon>`;
     return `<foreignObject x="-11" y="-11" width="22" height="22"
               class="stack-icon">${inner}</foreignObject>`;
-  }
+  },
 
   /** The camera lives here: one wrapper, both views, identical behaviour. */
   _viewportHtml(inner) {
     return `<div class="viewport"><div class="canvas">${inner}</div></div>`;
-  }
+  },
 
   _stageHtml() {
     const model = this._model;
@@ -514,7 +514,7 @@ export const ANSICHT = {
             )}“. <button class="link" data-cancel-place="1">Abbrechen</button></p>`
           : ""
       }`;
-  }
+  },
 
   /** One sentence that says what this mode does with a drag.
    *
@@ -539,7 +539,7 @@ export const ANSICHT = {
     return `<p class="hint">Räume-Modus: ziehen ordnet an, an Wänden und
       Ecken eines Bereichs ändert sich seine Größe. <b>Shift</b> hält
       gedrückt das Raster aus.</p>`;
-  }
+  },
 
   /** The expert's answer, and only when asked for.
    *
@@ -577,7 +577,7 @@ export const ANSICHT = {
           : `<span class="muted">Kein Grundstück gezeichnet.</span>`
       }
     </p>`;
-  }
+  },
 
   /** Where the building stops and the garden starts.
    *
@@ -602,7 +602,7 @@ export const ANSICHT = {
       top:${inFrameY(box.y, frame)}%;
       width:${(box.width / frame.span) * 100}%;
       height:${(box.height / spanY(frame)) * 100}%;"></div>`;
-  }
+  },
 
   /** The strip under the house: everything still waiting for a room.
    *
@@ -645,7 +645,7 @@ export const ANSICHT = {
             .join("")}
         </div>
       </section>`;
-  }
+  },
 
   /** The eight handles that make a room properly editable.
    *
@@ -667,7 +667,7 @@ export const ANSICHT = {
             title="Größe ändern"></span>`,
       )
       .join("");
-  }
+  },
 
   _plotHtml() {
     const plot = this._plot;
@@ -711,7 +711,7 @@ export const ANSICHT = {
         : "";
     return `<div class="plot" aria-hidden="true"
                  style="clip-path:polygon(${polygon})"></div>${grips}`;
-  }
+  },
 
   _shapesHtml() {
     const shapes = this._shapes;
@@ -753,7 +753,7 @@ export const ANSICHT = {
           ${editingThis ? this._shapeGripsHtml(shape) : ""}`;
       })
       .join("");
-  }
+  },
 
   _shapeGripsHtml(shape) {
     const frame = this._frame;
@@ -787,7 +787,7 @@ export const ANSICHT = {
         })
         .join("")
     );
-  }
+  },
 
   _shapeDialogHtml() {
     const shape = this._shape(this._shapeDialog);
@@ -818,7 +818,7 @@ export const ANSICHT = {
           Fläche löschen
         </button>
       </div>`;
-  }
+  },
 
   _ghostsHtml() {
     if (!this._ghosts) return "";
@@ -836,7 +836,7 @@ export const ANSICHT = {
         </div>`;
       })
       .join("");
-  }
+  },
 
   _areasHtml() {
     const frame = this._frame;
@@ -917,7 +917,7 @@ export const ANSICHT = {
         </div>`;
       })
       .join("");
-  }
+  },
 
   /** The × and + on a room's shared walls.
    *
@@ -954,7 +954,7 @@ export const ANSICHT = {
                 }">${together ? "×" : "+"}</button>`;
       })
       .join("");
-  }
+  },
 
   _edgeHtml(edge) {
     const colour = edge.color || this._qualityColour(edge.quality);
@@ -1003,7 +1003,7 @@ export const ANSICHT = {
     return `<line ${shared}
         x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"
       >${title}</line>`;
-  }
+  },
 
   _nodesHtml() {
     const { singles, clusters } = this._nodeGroups;
@@ -1011,7 +1011,7 @@ export const ANSICHT = {
       singles.map((node) => this._nodeHtml(node)).join("") +
       clusters.map((group) => this._clusterHtml(group)).join("")
     );
-  }
+  },
 
   /** One badge standing in for a whole room's worth of devices.
    *
@@ -1039,7 +1039,7 @@ export const ANSICHT = {
         <span class="label">${escapeHtml((area || {}).name || "")}</span>
       </button>
       ${open ? this._clusterListHtml(group, area) : ""}`;
-  }
+  },
 
   /** The devices behind one cluster, named and tappable.
    *
@@ -1069,7 +1069,7 @@ export const ANSICHT = {
         </div>
         <div class="cluster-list">${rows}</div>
       </div>`;
-  }
+  },
 
   _nodeHtml(node) {
     const custom = this._customIcon(node);
@@ -1101,7 +1101,7 @@ export const ANSICHT = {
         <span class="dot">${icon}</span>
         <span class="label">${escapeHtml(node.label)}</span>
       </button>`;
-  }
+  },
 
   /** Der einzige Knopf, der im Vollbild uebrig bleibt.
    *
@@ -1121,7 +1121,7 @@ export const ANSICHT = {
           open ? "mdi:fullscreen" : "mdi:fullscreen-exit"
         }"></ha-icon>
       </button>`;
-  }
+  },
 
   /** The legend, folded away until somebody asks for it.
    *
@@ -1156,7 +1156,7 @@ export const ANSICHT = {
         </button>
         ${open ? `<div class="dock">${this._sidebarHtml()}</div>` : ""}
       </section>`;
-  }
+  },
 
   _sidebarHtml() {
     const layers = (this._model.layers || [])
@@ -1283,7 +1283,7 @@ export const ANSICHT = {
           ? `<div class="dock-col">${tray}${this._hiddenTrayHtml()}</div>`
           : ""
       }`;
-  }
+  },
 
   /** What an area *is*, and where it may appear. */
   _areaDialogHtml() {
@@ -1343,7 +1343,7 @@ export const ANSICHT = {
         }
         ${doorsHtml(area)}
       </div>`;
-  }
+  },
 
   _menuHtml() {
     const menu = this._menu;
@@ -1379,7 +1379,7 @@ export const ANSICHT = {
     return `
       <div class="menu-scrim" data-menu-close="1"></div>
       <div class="menu" style="left:${left}px; top:${top}px;">${rows}</div>`;
-  }
+  },
 
   _customLayersHtml() {
     if (!this._edit) return "";
@@ -1398,7 +1398,7 @@ export const ANSICHT = {
       Integration dahinter spielt keine Rolle und wird nie gefragt.</p>
       <div class="rows">${layers}</div>
       <button class="chip" data-new-layer="1">+ Ebene</button>`;
-  }
+  },
 
   _layerDialogHtml() {
     const layer = this._layerDialog;
@@ -1502,7 +1502,7 @@ export const ANSICHT = {
           }
         </div>
       </div>`;
-  }
+  },
 
   _hiddenTrayHtml() {
     const hidden = (this._model && this._model.hidden) || {};
@@ -1530,7 +1530,7 @@ export const ANSICHT = {
           )
           .join("")}
       </div>`;
-  }
+  },
 
   _themeDialogHtml() {
     const theme = this._theme;
@@ -1625,7 +1625,7 @@ export const ANSICHT = {
         ${swatches("quality-color", theme.quality_colors, "Qualität")}
         <button class="link" data-reset-theme="1">Auf Standard zurücksetzen</button>
       </div>`;
-  }
+  },
 
   _floorDialogHtml() {
     const floor = this._floor;
@@ -1659,7 +1659,7 @@ export const ANSICHT = {
                  value="${floor.aspect || 1.6}" data-aspect="1">
         </label>
       </div>`;
-  }
+  },
 
   _editPanelHtml(kind, id, item) {
     if (kind !== "node") return "";
@@ -1684,7 +1684,7 @@ export const ANSICHT = {
           </button>
         </div>
       </div>`;
-  }
+  },
 
   _diagnosticsHtml() {
     const providers = (this._diagnostics && this._diagnostics.providers) || {};
@@ -1724,7 +1724,7 @@ export const ANSICHT = {
         </div>
         ${body}
       </section>`;
-  }
+  },
 
   _popupHtml() {
     if (!this._selected) return "";
@@ -1808,7 +1808,7 @@ export const ANSICHT = {
             : ""
         }
       </div>`;
-  }
+  },
 
   /** Every way out of the popup that leads somewhere useful.
    *
@@ -1873,5 +1873,5 @@ export const ANSICHT = {
       : "";
 
     return links.length ? `<div class="links">${links.join("")}</div>${list}` : "";
-  }
+  },
 };

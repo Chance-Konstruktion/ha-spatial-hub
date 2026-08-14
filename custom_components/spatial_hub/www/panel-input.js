@@ -57,7 +57,7 @@ export const EINGABEN = {
       }
     }
     event.preventDefault();
-  }
+  },
 
   _onSheetMove(event) {
     const drag = this._sheet;
@@ -68,7 +68,7 @@ export const EINGABEN = {
     const moved = Math.max(0, drag.at - drag.from);
     drag.sheet.style.transform = `translateY(${moved}px)`;
     event.preventDefault();
-  }
+  },
 
   /** Loslassen: entweder weit genug gezogen, oder schnell genug geworfen. */
   _onSheetUp() {
@@ -84,7 +84,7 @@ export const EINGABEN = {
       this._legendOpen = false;
       this._render();
     }
-  }
+  },
 
   _onWheel(event) {
     if (!event.deltaY) return;
@@ -93,7 +93,7 @@ export const EINGABEN = {
       x: event.clientX,
       y: event.clientY,
     });
-  }
+  },
 
   _onTouchStart(event) {
     if (!event.touches) return;
@@ -111,7 +111,7 @@ export const EINGABEN = {
       distance: this._touchSpan(event.touches),
       zoom: this._view.zoom,
     };
-  }
+  },
 
   _onTouchMove(event) {
     // Wer schiebt, will nicht auswaehlen. Ein bisschen Wackeln ist kein
@@ -138,12 +138,12 @@ export const EINGABEN = {
       Math.min(ZOOM.max, Math.max(ZOOM.min, target)) / this._view.zoom,
       midpoint,
     );
-  }
+  },
 
   _onTouchEnd() {
     this._pinch = null;
     this._cancelLongPress();
-  }
+  },
 
   _onContextMenu(event) {
     const target = this._menuFor(event.composedPath());
@@ -153,7 +153,7 @@ export const EINGABEN = {
     event.preventDefault();
     this._menu = { ...target, x: event.clientX, y: event.clientY };
     this._render();
-  }
+  },
 
   _onPointerDown(event) {
     if (event.button !== 0 && event.button !== 1) return;
@@ -304,7 +304,7 @@ export const EINGABEN = {
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
-  }
+  },
 
   _onPointerMove(event) {
     const drag = this._drag;
@@ -480,7 +480,7 @@ export const EINGABEN = {
     }
     drag.element.style.left = `${inFrame(drag.value.x, frame)}%`;
     drag.element.style.top = `${inFrameY(drag.value.y, frame)}%`;
-  }
+  },
 
   _onPointerUp() {
     const drag = this._drag;
@@ -509,7 +509,7 @@ export const EINGABEN = {
       this._moveIntoArea(this._node(drag.key), drag.value.x, drag.value.y);
     }
     this._flushRender();
-  }
+  },
 
   _onInput(event, committed) {
     const input = event.target;
@@ -697,7 +697,7 @@ export const EINGABEN = {
     if (attribute("data-area-background") !== null && input.files && input.files[0]) {
       this._readAreaBackground(input.files[0]);
     }
-  }
+  },
 
   _onClick(event) {
     // A drag ends in a click; that must not also open a popup.
@@ -751,7 +751,7 @@ export const EINGABEN = {
     for (const abschnitt of abschnitte) {
       if (abschnitt.call(this, hit, event, stage)) return;
     }
-  }
+  },
 
   /** Ansicht und Werkzeugwahl: Zoom, Anfasser, Grundriss, Masse.
    *
@@ -800,7 +800,7 @@ export const EINGABEN = {
       return true;
     }
     return false;
-  }
+  },
 
   /** Ecken -- die des Grundstuecks und die freier Raumformen.
    *
@@ -919,7 +919,7 @@ export const EINGABEN = {
       return true;
     }
     return false;
-  }
+  },
 
   /** Leisten, Legende und die Schritte zurueck.
    *
@@ -952,7 +952,7 @@ export const EINGABEN = {
       return true;
     }
     return false;
-  }
+  },
 
   /** Der Bereichsdialog: Art des Raums und seine Tueren.
    *
@@ -1010,7 +1010,7 @@ export const EINGABEN = {
       return true;
     }
     return false;
-  }
+  },
 
   /** Die zwei Wege aus dem Grundriss heraus.
    *
@@ -1032,7 +1032,7 @@ export const EINGABEN = {
       return true;
     }
     return false;
-  }
+  },
 
   /** Ebenen, Anbieter und die Etagenwahl -- was gezeigt wird.
    *
@@ -1111,7 +1111,7 @@ export const EINGABEN = {
       return true;
     }
     return false;
-  }
+  },
 
   /** Die Dialoge fuer Thema und Etage, samt Hintergrundbildern.
    *
@@ -1193,7 +1193,7 @@ export const EINGABEN = {
       return true;
     }
     return false;
-  }
+  },
 
   /** Anordnen: verstecken, zeigen, sortieren, zuruecksetzen, platzieren.
    *
@@ -1296,7 +1296,7 @@ export const EINGABEN = {
       return true;
     }
     return false;
-  }
+  },
 
   /** Was ein Klick auf den Grundriss selbst auswaehlt.
    *
@@ -1386,5 +1386,5 @@ export const EINGABEN = {
       return true;
     }
     return false;
-  }
+  },
 };
