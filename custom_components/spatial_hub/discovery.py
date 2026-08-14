@@ -541,11 +541,24 @@ def async_place_nodes(
     area_sizes = {area["id"]: area.get("size") or {} for area in areas}
     area_floors = {area["id"]: area["floor_id"] for area in areas}
 
+    # Ein Knoten ohne eigenen Bereich, der Anker hat, erbt den Bereich
+    # seines staerksten Ankers. Das muss vor der Platzierung geschehen,
+    # denn Bereich heisst Etage, und die Etage entscheidet, auf welchem
+    # Blatt der Punkt ueberhaupt landet.
+    _inherit_from_anchors(nodes)
+
     per_area: dict[str | None, list[Node]] = {}
+    anchored: list[Node] = []
     for node in nodes:
         if node.area_id and not node.floor_id:
             node.floor_id = area_floors.get(node.area_id)
-        if node.position is None:
+        if node.position is not None:
+            continue
+        if node.anchors:
+            # Erst platzieren, wenn die Anker liegen -- sie sind der
+            # Bezugspunkt.
+            anchored.append(node)
+        else:
             per_area.setdefault(node.area_id, []).append(node)
 
     for area_id, area_nodes in per_area.items():
@@ -581,6 +594,89 @@ def async_place_nodes(
             )
             if count > 1 or not centre:
                 node.metadata = {**node.metadata, "auto_position": True}
+
+    _place_anchored(anchored, nodes)
+
+
+def _inherit_from_anchors(nodes: list[Node]) -> None:
+    """Bereichslose Knoten in den Raum ihres staerksten Ankers setzen.
+
+    Ein BLE-Anhaenger hat keinen Bereich -- niemand traegt fuer einen
+    Schluesselbund einen Raum ein. Was es hat, ist eine Messung: der
+    Proxy in der Kueche hoert ihn mit -55 dBm, der im Keller mit -88.
+    Damit *ist* er in der Kueche, und das weiss der Anbieter besser als
+    jede Eintragung.
+
+    Nur der staerkste zaehlt, nicht ein Mittel: ein Raum ist keine Groesse,
+    ueber die sich mitteln laesst. Zwischen Kueche und Keller liegt kein
+    halber Raum.
+    """
+    nach_id = {node.id: node for node in nodes}
+    for node in nodes:
+        if node.area_id or not node.anchors:
+            continue
+        bester = max(node.anchors, key=lambda a: a["weight"])
+        ziel = nach_id.get(bester["id"])
+        if ziel is None or not ziel.area_id:
+            continue
+        node.area_id = ziel.area_id
+        node.floor_id = node.floor_id or ziel.floor_id
+        # Angeschrieben, damit ein Renderer den Unterschied zeigen kann:
+        # dieser Raum ist gemessen, kein Eintrag des Nutzers.
+        node.metadata = {**node.metadata, "area_from_anchor": ziel.id}
+
+
+def _place_anchored(anchored: list[Node], nodes: list[Node]) -> None:
+    """Knoten ins gewichtete Mittel ihrer Anker legen.
+
+    Das ist der Schritt vom Netzplan zum Grundriss. Eine Kante sagt "die
+    beiden reden miteinander"; ein Anker sagt "der eine ist beim anderen",
+    und aus mehreren Ankern mit Gewicht wird ein Ort.
+
+    Bewusst kein Mehrwege-Aufloesen: ein Anker, dessen Ziel selbst nur
+    ueber Anker liegt, wird uebersprungen. Zwei Knoten, die sich
+    gegenseitig ankern, haetten sonst keine Loesung -- und eine Kette
+    ueber fuenf Ecken traegt am Ende keine Messung mehr, sondern nur noch
+    aufaddierte Ungenauigkeit.
+    """
+    if not anchored:
+        return
+    fest = {
+        node.id: node.position
+        for node in nodes
+        if node.position is not None and not node.anchors
+    }
+    for node in anchored:
+        summe_x = summe_y = gewichte = 0.0
+        genutzt = 0
+        for anker in node.anchors:
+            ort = fest.get(anker["id"])
+            if ort is None:
+                continue
+            gewicht = anker["weight"]
+            summe_x += ort.x * gewicht
+            summe_y += ort.y * gewicht
+            gewichte += gewicht
+            genutzt += 1
+        if not gewichte:
+            # Kein Anker liegt irgendwo -- der Knoten faellt zurueck auf
+            # die Mitte, wie jeder andere ortlose auch. Nichts zu zeichnen
+            # waere schlechter: das Geraet gibt es ja.
+            node.position = Position(x=0.5, y=0.5)
+            node.metadata = {**node.metadata, "auto_position": True}
+            continue
+        node.position = Position(
+            x=_clamp(summe_x / gewichte, -OUTDOOR_MARGIN, 1.0 + OUTDOOR_MARGIN),
+            y=_clamp(summe_y / gewichte, -OUTDOOR_MARGIN, 1.0 + OUTDOOR_MARGIN),
+        )
+        node.metadata = {
+            **node.metadata,
+            "auto_position": True,
+            # Wie viele Messungen hinter dem Punkt stehen. Einer ist eine
+            # Richtung, drei sind ein Ort -- und der Nutzer soll den
+            # Unterschied sehen koennen, bevor er sich darauf verlaesst.
+            "anchored_by": genutzt,
+        }
 
 
 def _grid_offsets(count: int) -> list[tuple[float, float]]:

@@ -287,6 +287,13 @@ class Provider:
             if kind == "edge":
                 item.source = f"{self.id}:{item.source}"
                 item.target = f"{self.id}:{item.target}"
+            else:
+                # Anker zeigen wie Kantenenden auf eigene Knoten und
+                # bekommen dasselbe Praefix. Ein Anbieter kann bewusst
+                # nicht auf fremde Knoten ankern: er hat keine Zusicherung,
+                # dass die beim naechsten Aufbau noch da sind.
+                for anker in item.anchors:
+                    anker["id"] = f"{self.id}:{anker['id']}"
             layer_id = str(raw.get("layer_id") or "") or self.default_layer_id
             item.metadata = {**item.metadata, "layer_id": layer_id,
                              "provider_id": self.id}

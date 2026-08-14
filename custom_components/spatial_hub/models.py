@@ -98,6 +98,41 @@ class Action:
         }
 
 
+def _anchors(raw: Any) -> list[dict[str, Any]]:
+    """Anker aus einer Anbieter-Nutzlast, gesaeubert statt geglaubt.
+
+    Ein Gewicht von null oder darunter faellt weg: es ist fast immer eine
+    Division, die schiefging, und im gewichteten Mittel wuerde es die
+    Antwort an eine Stelle ziehen, an der niemand gemessen hat. Ein
+    negatives Gewicht koennte sie sogar aus dem Grundriss hinausschieben.
+    """
+    if not isinstance(raw, list):
+        return []
+    sauber: list[dict[str, Any]] = []
+    for eintrag in raw[:_MAX_ANKER]:
+        if not isinstance(eintrag, dict):
+            continue
+        ziel = _str(eintrag.get("id"))
+        if not ziel:
+            continue
+        try:
+            gewicht = float(eintrag.get("weight", 1.0))
+        except (TypeError, ValueError):
+            continue
+        if gewicht <= 0 or gewicht != gewicht or gewicht in (
+            float("inf"), float("-inf")
+        ):
+            continue
+        sauber.append({"id": ziel, "weight": gewicht})
+    return sauber
+
+
+# Mehr Anker als das misst niemand -- das ist ein Anbieter, der seine
+# ganze Knotenliste anhaengt, und ein Mittel ueber alles ist die Mitte
+# des Grundrisses, also keine Aussage.
+_MAX_ANKER = 16
+
+
 @dataclass(slots=True)
 class Node:
     """A thing that sits somewhere: an adapter, a lamp, a bed, a sensor."""
@@ -115,6 +150,20 @@ class Node:
     # hub fills it in from the entity; a provider that knows better may
     # state it itself. Renderers use it to open the device page.
     device_id: str | None = None
+    # Knoten, in deren Naehe dieser liegt, mit Gewicht -- je hoeher, desto
+    # naeher. Das ist der Unterschied zwischen einem Netzplan und einem
+    # Grundriss: eine Kante sagt "die beiden reden miteinander", ein Anker
+    # sagt "der eine ist beim anderen".
+    #
+    # Ein Anbieter, der eine Funkstaerke misst, weiss damit mehr ueber den
+    # Ort eines Geraets als der Nutzer, der es einmal in einen Raum
+    # eingetragen hat -- und anders als der Nutzer merkt er es, wenn das
+    # Geraet umgezogen ist. Deshalb ist das hier ein eigenes Feld und
+    # keine Metadatenzeile: der Hub rechnet damit.
+    #
+    # Die Kennungen zeigen auf Knoten **desselben** Anbieters und werden
+    # wie Kantenenden mit seinem Praefix versehen.
+    anchors: list[dict[str, Any]] = field(default_factory=list)
     actions: list[Action] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -139,6 +188,7 @@ class Node:
             color=_str(data.get("color")),
             entity_id=_str(data.get("entity_id")) or None,
             device_id=_str(data.get("device_id")) or None,
+            anchors=_anchors(data.get("anchors")),
             actions=actions,
             metadata=dict(data.get("metadata") or {}),
         )
@@ -155,6 +205,10 @@ class Node:
             "color": self.color,
             "entity_id": self.entity_id,
             "device_id": self.device_id,
+            # Mitgeliefert, damit ein Renderer zeigen kann, *warum* ein
+            # Punkt dort liegt -- "gemessen, nicht geraten" ist eine
+            # Aussage, die der Nutzer sehen koennen muss.
+            "anchors": self.anchors,
             "actions": [action.as_dict() for action in self.actions],
             "metadata": self.metadata,
         }
