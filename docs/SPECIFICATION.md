@@ -1,6 +1,6 @@
 # Spatial Provider Specification
 
-**Version 1.0** · Provider API v1 · SDK v4
+**Version 1.0** · Provider API v1 · SDK v5
 
 Dieses Dokument beschreibt das räumliche Datenmodell und die Rollenverteilung
 zwischen **Provider**, **Hub** und **Renderer**. Es ist normativ: Wo Code und
