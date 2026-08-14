@@ -52,9 +52,14 @@ async def test_zweihundert_knoten_bleiben_unter_einer_halben_sekunde(
     modell = await hub.async_model()
     dauer = time.perf_counter() - start
 
-    assert len(modell["nodes"]) == 200
+    # Der Hub bringt eigene Standard-Ebenen mit, die zusaetzlich Knoten aus
+    # dem Haus erzeugen -- deshalb nicht auf eine Gesamtzahl pruefen,
+    # sondern auf die eigenen. Gemessen wird ohnehin der ganze Aufbau,
+    # einschliesslich dieser Ebenen.
+    eigene = [k for k in modell["nodes"] if k["id"].startswith("viele:")]
+    assert len(eigene) == 200
     assert dauer < 0.5, f"Aufbau dauerte {dauer*1000:.0f} ms"
-    print(f"\n200 Knoten: {dauer*1000:.1f} ms")
+    print(f"\n{len(modell['nodes'])} Knoten gesamt: {dauer*1000:.1f} ms")
 
 
 async def test_langsame_anbieter_warten_nebeneinander(
