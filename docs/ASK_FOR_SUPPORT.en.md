@@ -40,7 +40,7 @@ Copy everything below. Replace the square brackets.
 Hi — thanks for this integration, I use it daily.
 
 There is a fairly new project called
-[Spatial Hub](https://github.com/Chance-Konstruktion/ha-spatial-hub): a
+[Spatial Hub](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub): a
 service that collects spatial data from arbitrary integrations and merges it
 into *one* floor plan, instead of every integration shipping its own
 dashboard. Floors and areas come from Home Assistant, the user arranges
@@ -86,9 +86,9 @@ Setup that does the copying for you:
 python3 sdk/install.py --into custom_components/[domain] --tests tests
 ```
 
-Everything about it: [sdk/README.md](https://github.com/Chance-Konstruktion/ha-spatial-hub/blob/main/sdk/README.md).
+Everything about it: [sdk/README.md](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub/blob/main/sdk/README.md).
 Two runnable examples live in
-[examples/](https://github.com/Chance-Konstruktion/ha-spatial-hub/tree/main/examples) —
+[examples/](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub/tree/main/examples) —
 not snippets, but whole files that run inside their own test suite. The
 shorter one is five lines and is nothing but a list of entity ids.
 

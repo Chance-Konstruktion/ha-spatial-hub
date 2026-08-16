@@ -44,7 +44,7 @@ Alles ab hier kopieren. Die eckigen Klammern ersetzen.
 
 Hi — danke für diese Integration, ich benutze sie täglich.
 
-Es gibt seit Kurzem [Spatial Hub](https://github.com/Chance-Konstruktion/ha-spatial-hub):
+Es gibt seit Kurzem [Spatial Hub](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub):
 ein Dienst, der räumliche Daten aus beliebigen Integrationen einsammelt und
 in *einem* Grundriss zusammenführt, statt dass jede Integration ihr eigenes
 Dashboard mitbringt. Etagen und Bereiche kommen aus Home Assistant, die
@@ -90,9 +90,9 @@ Setup, das die Handarbeit abnimmt:
 python3 sdk/install.py --into custom_components/[domain] --tests tests
 ```
 
-Alles dazu: [sdk/README.md](https://github.com/Chance-Konstruktion/ha-spatial-hub/blob/main/sdk/README.md).
+Alles dazu: [sdk/README.md](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub/blob/main/sdk/README.md).
 Zwei lauffähige Beispiele liegen in
-[examples/](https://github.com/Chance-Konstruktion/ha-spatial-hub/tree/main/examples) —
+[examples/](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub/tree/main/examples) —
 keine Schnipsel, sondern Dateien, die in deren Testsuite mitlaufen. Das
 kürzere ist fünf Zeilen lang und besteht nur aus einer Liste von
 Entity-IDs.

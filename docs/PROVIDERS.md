@@ -4,10 +4,21 @@ Integrationen, die einen Spatial Hub-Adapter mitbringen. Die Liste steht
 hier, damit Nutzer sehen, was es schon gibt — und Maintainer sehen, dass sie
 nicht die Ersten sind.
 
+Zwei Bauarten stehen nebeneinander: Eine Integration bringt ihren Adapter
+selbst mit (Powerline, ESPEasy), oder der Adapter ist ein eigenes Add-on zu
+einer fremden Integration, die davon nichts weiß (die sechs Funkprotokolle).
+Für den Hub ist das derselbe Vertrag — er sieht nur Provider.
+
 | Integration | Domain | Repository | Angebunden seit |
 |---|---|---|---|
-| Powerline | `powerline` | [Chance-Konstruktion/ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) | 2026-07 |
-| ESPEasy P2P | `espeasy_p2p` | [Chance-Konstruktion/ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p) | 2026-07 |
+| Powerline | `powerline` | [chance-konstruktion/ha-powerline](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-powerline) | 2026-07 |
+| ESPEasy P2P | `espeasy_p2p` | [chance-konstruktion/espeasy-p2p](https://gitlab.schanz.ipv64.net/chance-konstruktion/espeasy-p2p) | 2026-07 |
+| Z-Wave | `spatial_zwave` | [chance-konstruktion/ha-spatial-zwave](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-zwave) | 2026-08 |
+| Zigbee | `spatial_zigbee` | [chance-konstruktion/ha-spatial-zigbee](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-zigbee) | 2026-08 |
+| Thread | `spatial_thread` | [chance-konstruktion/ha-spatial-thread](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-thread) | 2026-08 |
+| Matter | `spatial_matter` | [chance-konstruktion/ha-spatial-matter](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-matter) | 2026-08 |
+| Bluetooth | `spatial_bluetooth` | [chance-konstruktion/ha-spatial-bluetooth](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-bluetooth) | 2026-08 |
+| ESPHome | `spatial_esphome` | [chance-konstruktion/ha-spatial-esphome](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-esphome) | 2026-08 |
 
 ## Diese Liste ist Dokumentation, sonst nichts
 

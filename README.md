@@ -1,7 +1,7 @@
 # Spatial Hub
 
-[![Release](https://img.shields.io/github/v/release/Chance-Konstruktion/ha-spatial-hub?include_prereleases&label=release&color=orange)](https://github.com/Chance-Konstruktion/ha-spatial-hub/releases)
-[![Status](https://img.shields.io/badge/status-early--preview-orange)](https://github.com/Chance-Konstruktion/ha-spatial-hub)
+[![Release](https://img.shields.io/badge/release-early--preview-orange)](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub/-/releases)
+[![Status](https://img.shields.io/badge/status-early--preview-orange)](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -74,7 +74,7 @@ for those who want to, a specification at 1.0, and outer walls that line up
 across every storey.
 
 <details>
-<summary><b>Connected integrations</b> — each its own repository, none of them required</summary>
+<summary><b>Connected integrations</b> — eight of them, none of them required</summary>
 
 <br>
 
@@ -83,18 +83,36 @@ for integrations without an adapter of their own it brings generic layers
 along. Anyone who wants more installs exactly the ones they need — **not
 all of them**.
 
+**Six dedicated providers** — one per radio protocol, each drawing the mesh
+its own stack already knows about:
+
+| Provider | What it puts on the floor plan |
+|---|---|
+| **[ha-spatial-zwave](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-zwave)** | Z-Wave mesh from the routing table: controller, every node in its room, edges by signal strength |
+| **[ha-spatial-zigbee](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-zigbee)** | Zigbee mesh from the ZHA neighbour tables — who actually relays for whom |
+| **[ha-spatial-thread](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-thread)** | Thread neighbourhoods: routers, children, and the border router they hang from |
+| **[ha-spatial-matter](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-matter)** | Matter fabric and bridged devices, including what a bridge hides behind itself |
+| **[ha-spatial-bluetooth](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-bluetooth)** | Bluetooth devices and the proxies receiving them — the only layer that shows *reception* rather than topology |
+| **[ha-spatial-esphome](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-esphome)** | ESPHome boards as *one* point per board instead of one per entity |
+
+**Two integrations bring their own** — the spatial layer sits inside the
+integration itself, not in a separate repository:
+
 | Integration | What it puts on the floor plan |
 |---|---|
-| **[ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline)** | Powerline adapters with their real topology, link rates and icons of their own |
-| **[ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p)** | ESPEasy P2P mesh: which unit reported last before it drops out |
-| **[ha-spatial-zwave](https://github.com/Chance-Konstruktion/ha-spatial-zwave)** | Z-Wave mesh: controller, every node in its room, edges by signal strength |
-| **[ha-spatial-esphome](https://github.com/Chance-Konstruktion/ha-spatial-esphome)** | ESPHome boards as *one* point per board instead of one per entity |
+| **[ha-powerline](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-powerline)** | Powerline adapters with their real topology, link rates and icons of their own |
+| **[espeasy-p2p](https://gitlab.schanz.ipv64.net/chance-konstruktion/espeasy-p2p)** | ESPEasy P2P mesh: which unit reported last before it drops out |
+
+All eight speak the same [Spatial Provider Specification](docs/SPECIFICATION.md)
+and carry the same vendored SDK. In the six dedicated providers a test
+compares that copy against the one here and fails if they drift apart;
+`ha-powerline` and `espeasy-p2p` do not have that test yet.
 
 Individual ESPHome entities are on the plan without an adapter too — that
 is what the generic layer is for, see
 [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
-`ha-espeasy-p2p` gets by without a `DataUpdateCoordinator`, which brought
+`espeasy-p2p` gets by without a `DataUpdateCoordinator`, which brought
 two holes in the SDK to light — exactly what these adapters are for.
 
 </details>

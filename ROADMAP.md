@@ -442,12 +442,12 @@ Also ein **Vendoring-SDK**:
 
 Zwei sind angebunden, und die zweite war der Punkt.
 
-[ha-powerline](https://github.com/Chance-Konstruktion/ha-powerline) besteht
+[ha-powerline](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-powerline) besteht
 den Conformance-Vertrag seit Phase 2 ohne Sonderbehandlung — und hat vier
 Phasen lang jede SDK-Entscheidung bestätigt, weil es genau die Form hatte,
 für die das SDK gebaut war. Ein Provider ist keine Stichprobe.
 
-[ha-espeasy-p2p](https://github.com/Chance-Konstruktion/ha-espeasy-p2p) hat
+[espeasy-p2p](https://gitlab.schanz.ipv64.net/chance-konstruktion/espeasy-p2p) hat
 in zwanzig Minuten zwei Fehler gefunden. Es hat **keinen
 `DataUpdateCoordinator`**, sondern einen UDP-Socket und eigene
 Dispatcher-Signale. Der Shim nahm sein `coordinator=` entgegen, fand kein
