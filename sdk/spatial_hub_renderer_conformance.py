@@ -63,7 +63,7 @@ API_VERSION = 1
 
 # Which revision of the kit you copied. Kept in step with the provider kit
 # so a mismatch between the two files in your repository is visible.
-SDK_VERSION = 5
+SDK_VERSION = 6
 
 # Every command a renderer may send, from docs/PROVIDER_API.md.
 #
