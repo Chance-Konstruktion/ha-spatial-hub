@@ -33,6 +33,19 @@ Usage -- one class in your test suite::
 That is it. You get eight named tests, each of which says what is wrong
 and why it will bite you later.
 
+**If your CI runs `unittest` rather than pytest, inherit from
+`unittest.TestCase` as well** -- `unittest discover` collects nothing
+else, and a class it does not collect fails silently::
+
+    class TestMyRenderer(SpatialHubRendererConformance, unittest.TestCase):
+        ...
+
+This is not a footnote. The first repository to wire up this kit did it
+without the mixin: the rules were in the file, the runner never touched
+them, the log said "Ran 35 tests ... OK", and the renderer's actual bug
+went on sitting there. A rule nobody runs is indistinguishable from a
+rule that passes.
+
 Outside pytest -- in a script, a CI step, a scratch file::
 
     from spatial_hub_renderer_conformance import check
