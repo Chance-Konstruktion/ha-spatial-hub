@@ -45,6 +45,17 @@ calls are the whole integration; [one file in
 `examples/second_renderer/`](examples/second_renderer/) does it in 198
 lines, sharing not one line of code with us.
 
+And you do not have to take our word for that independence. Renderers now
+have the same thing providers have had all along: a conformance kit
+([`sdk/spatial_hub_renderer_conformance.py`](sdk/spatial_hub_renderer_conformance.py))
+that checks your renderer speaks only documented commands, names no theme
+preset, knows no integration by name and reaches into none of our files —
+eight rules, each one a way a renderer stops being independent without
+anybody noticing. Who already draws the model is listed in
+**[docs/RENDERERS.md](docs/RENDERERS.md)**, under the same rule as the
+provider directory: no module reads it, and a test holds it that no id
+from it appears in the hub's source.
+
 That is where this becomes worth anything: not in the renderer below, but
 on the day the good floor plans stop asking their users to place every
 lamp twice.

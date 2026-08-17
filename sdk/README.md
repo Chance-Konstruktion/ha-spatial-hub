@@ -112,6 +112,22 @@ Neither is a snippet. Our own test suite sets both up, drives them through
 the real hub, and holds them to the same conformance contract as a
 stranger's code — so they cannot quietly rot.
 
+## Drawing instead of delivering?
+
+Then you want the other side of this folder.
+[`spatial_hub_renderer_conformance.py`](spatial_hub_renderer_conformance.py)
+is the conformance kit for **renderers** — the same idea, one file, pytest
+and nothing else, but it reads your source instead of a registration,
+because source is all an outsider has.
+
+There is no renderer shim to go with it, and that is deliberate: a shim
+would have to pick a language and a framework, and a renderer in a terminal
+has nothing to do with a JavaScript helper library. Two websocket commands
+and a JSON model need no help. Independence, on the other hand, cannot be
+asserted — only demonstrated.
+
+Who already draws the model: [docs/RENDERERS.md](../docs/RENDERERS.md).
+
 ## The rest
 
 [Provider API reference](../docs/PROVIDER_API.md) — nodes, edges, states,
