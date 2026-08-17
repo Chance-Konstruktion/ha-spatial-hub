@@ -6,3 +6,4 @@ __pycache__/
 # Enthaelt ein Zugriffstoken -- gehoert nicht ins Repository.
 .mcp.json
 
+public/
