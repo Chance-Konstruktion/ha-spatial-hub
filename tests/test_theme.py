@@ -176,3 +176,42 @@ def test_the_fallback_covers_the_new_words_too():
 
     assert fallback["on"].startswith("#")
     assert fallback["off"].startswith("#")
+
+
+def test_every_colour_that_can_come_out_empty_has_a_fallback():
+    """Derived, not listed -- a listed rule goes stale the moment it matters.
+
+    Found while recording a model for someone building a renderer without
+    Home Assistant. The fallback carried `accent`, the state colours and
+    the quality colours, and looked complete. It was missing `surface` and
+    `ink`: no preset has ever set those, so they are empty in *every*
+    theme, and they are the two a renderer needs before all others -- what
+    to paint on and what to write with. Three of five covered, and the
+    promise looked kept.
+
+    This test asks the theme itself which colours can be empty instead of
+    naming them, so a sixth colour word cannot slip through the same gap.
+    """
+    resolved = theme.resolve({})
+    fallback = resolved["fallback"]
+
+    leer = [
+        key for key, value in resolved.items()
+        if isinstance(value, str) and value == "" and key != "preset"
+    ]
+    assert leer, "no inherited colour at all -- has the vocabulary moved?"
+
+    for key in leer:
+        assert fallback.get(key, "").startswith("#"), (
+            f"{key!r} resolves to empty and has no fallback. Inside Home "
+            "Assistant that inherits; outside there is nothing to inherit "
+            "from, and the renderer draws with an empty string -- which a "
+            "browser accepts without a word"
+        )
+
+    for key, words in (("state_colors", resolved["state_colors"]),
+                       ("quality_colors", resolved["quality_colors"])):
+        for word in words:
+            assert fallback[key].get(word, "").startswith("#"), (
+                f"{key}[{word!r}] has no fallback colour"
+            )

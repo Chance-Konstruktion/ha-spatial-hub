@@ -1,0 +1,883 @@
+{
+  "api_version": 1,
+  "floors": [
+    {
+      "id": "keller",
+      "name": "Keller",
+      "level": -1,
+      "icon": "",
+      "outline": {
+        "x": 0.024999999999999994,
+        "y": 0.04999999999999999,
+        "width": 0.95,
+        "height": 0.8999999999999999
+      }
+    },
+    {
+      "id": "eg",
+      "name": "Erdgeschoss",
+      "level": 0,
+      "icon": "",
+      "ground": true,
+      "has_outdoor": true,
+      "outdoor_margin": 0.28,
+      "outline": {
+        "x": 0.024999999999999994,
+        "y": 0.024999999999999994,
+        "width": 0.95,
+        "height": 0.95
+      }
+    },
+    {
+      "id": "og",
+      "name": "Obergeschoss",
+      "level": 1,
+      "icon": "",
+      "outline": {
+        "x": 0.024999999999999994,
+        "y": 0.024999999999999994,
+        "width": 0.95,
+        "height": 0.95
+      }
+    },
+    {
+      "id": "_unassigned",
+      "name": "Ohne Etage",
+      "level": null,
+      "icon": "mdi:help-circle-outline",
+      "unassigned": true,
+      "outline": {
+        "x": 0.04999999999999999,
+        "y": 0.04999999999999999,
+        "width": 0.8999999999999999,
+        "height": 0.8999999999999999
+      }
+    }
+  ],
+  "areas": [
+    {
+      "id": "abstellkammer",
+      "name": "Abstellkammer",
+      "floor_id": "_unassigned",
+      "icon": "",
+      "kind": "indoor",
+      "auto": true,
+      "in_sandwich": true,
+      "single_only": false,
+      "position": {
+        "x": 0.5,
+        "y": 0.5,
+        "z": 0.0
+      },
+      "size": {
+        "width": 0.9,
+        "height": 0.9
+      }
+    },
+    {
+      "id": "bad",
+      "name": "Bad",
+      "floor_id": "og",
+      "icon": "",
+      "kind": "indoor",
+      "auto": true,
+      "in_sandwich": true,
+      "single_only": false,
+      "position": {
+        "x": 0.25,
+        "y": 0.25,
+        "z": 0.0
+      },
+      "size": {
+        "width": 0.45,
+        "height": 0.45
+      }
+    },
+    {
+      "id": "buero",
+      "name": "Büro",
+      "floor_id": "og",
+      "icon": "",
+      "kind": "indoor",
+      "auto": true,
+      "in_sandwich": true,
+      "single_only": false,
+      "position": {
+        "x": 0.75,
+        "y": 0.25,
+        "z": 0.0
+      },
+      "size": {
+        "width": 0.45,
+        "height": 0.45
+      }
+    },
+    {
+      "id": "flur",
+      "name": "Flur",
+      "floor_id": "eg",
+      "icon": "",
+      "kind": "indoor",
+      "auto": true,
+      "in_sandwich": true,
+      "single_only": false,
+      "position": {
+        "x": 0.25,
+        "y": 0.25,
+        "z": 0.0
+      },
+      "size": {
+        "width": 0.45,
+        "height": 0.45
+      }
+    },
+    {
+      "id": "garage",
+      "name": "Garage",
+      "floor_id": "eg",
+      "icon": "",
+      "kind": "outdoor",
+      "auto": true,
+      "in_sandwich": true,
+      "single_only": false,
+      "outdoor": true,
+      "position": {
+        "x": 0.5,
+        "y": -0.14,
+        "z": 0.0
+      },
+      "size": {
+        "width": 1.4040000000000001,
+        "height": 0.22400000000000003
+      }
+    },
+    {
+      "id": "gaeste_wc",
+      "name": "Gäste-WC",
+      "floor_id": "eg",
+      "icon": "",
+      "kind": "indoor",
+      "auto": true,
+      "in_sandwich": true,
+      "single_only": false,
+      "position": {
+        "x": 0.75,
+        "y": 0.25,
+        "z": 0.0
+      },
+      "size": {
+        "width": 0.45,
+        "height": 0.45
+      }
+    },
+    {
+      "id": "heizungsraum",
+      "name": "Heizungsraum",
+      "floor_id": "keller",
+      "icon": "",
+      "kind": "indoor",
+      "auto": true,
+      "in_sandwich": true,
+      "single_only": false,
+      "position": {
+        "x": 0.25,
+        "y": 0.5,
+        "z": 0.0
+      },
+      "size": {
+        "width": 0.45,
+        "height": 0.9
+      }
+    },
+    {
+      "id": "kinderzimmer",
+      "name": "Kinderzimmer",
+      "floor_id": "og",
+      "icon": "",
+      "kind": "indoor",
+      "auto": true,
+      "in_sandwich": true,
+      "single_only": false,
+      "position": {
+        "x": 0.25,
+        "y": 0.75,
+        "z": 0.0
+      },
+      "size": {
+        "width": 0.45,
+        "height": 0.45
+      }
+    },
+    {
+      "id": "kueche",
+      "name": "Küche",
+      "floor_id": "eg",
+      "icon": "",
+      "kind": "indoor",
+      "auto": true,
+      "in_sandwich": true,
+      "single_only": false,
+      "position": {
+        "x": 0.25,
+        "y": 0.75,
+        "z": 0.0
+      },
+      "size": {
+        "width": 0.45,
+        "height": 0.45
+      }
+    },
+    {
+      "id": "schlafzimmer",
+      "name": "Schlafzimmer",
+      "floor_id": "og",
+      "icon": "",
+      "kind": "indoor",
+      "auto": true,
+      "in_sandwich": true,
+      "single_only": false,
+      "position": {
+        "x": 0.75,
+        "y": 0.75,
+        "z": 0.0
+      },
+      "size": {
+        "width": 0.45,
+        "height": 0.45
+      }
+    },
+    {
+      "id": "werkstatt",
+      "name": "Werkstatt",
+      "floor_id": "keller",
+      "icon": "",
+      "kind": "indoor",
+      "auto": true,
+      "in_sandwich": true,
+      "single_only": false,
+      "position": {
+        "x": 0.75,
+        "y": 0.5,
+        "z": 0.0
+      },
+      "size": {
+        "width": 0.45,
+        "height": 0.9
+      }
+    },
+    {
+      "id": "wohnzimmer",
+      "name": "Wohnzimmer",
+      "floor_id": "eg",
+      "icon": "",
+      "kind": "indoor",
+      "auto": true,
+      "in_sandwich": true,
+      "single_only": false,
+      "position": {
+        "x": 0.75,
+        "y": 0.75,
+        "z": 0.0
+      },
+      "size": {
+        "width": 0.45,
+        "height": 0.45
+      }
+    }
+  ],
+  "hidden": {
+    "nodes": [],
+    "areas": []
+  },
+  "layers": [
+    {
+      "id": "hausnetz_layer",
+      "name": "Netzwerk",
+      "icon": "",
+      "z_index": 10,
+      "opacity": 1.0,
+      "visible": true,
+      "provider_id": "hausnetz"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "hausnetz:gw",
+      "label": "Router",
+      "area_id": "flur",
+      "floor_id": "eg",
+      "position": {
+        "x": 0.17125,
+        "y": 0.25,
+        "z": 0.0
+      },
+      "state": "on",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "link": "good",
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz",
+        "auto_position": true
+      }
+    },
+    {
+      "id": "hausnetz:rep_og",
+      "label": "Repeater OG",
+      "area_id": "flur",
+      "floor_id": "eg",
+      "position": {
+        "x": 0.32875,
+        "y": 0.25,
+        "z": 0.0
+      },
+      "state": "on",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "link": "fair",
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz",
+        "auto_position": true
+      }
+    },
+    {
+      "id": "hausnetz:rep_keller",
+      "label": "Repeater Keller",
+      "area_id": "heizungsraum",
+      "floor_id": "keller",
+      "position": {
+        "x": 0.17125,
+        "y": 0.5,
+        "z": 0.0
+      },
+      "state": "on",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "link": "poor",
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz",
+        "auto_position": true
+      }
+    },
+    {
+      "id": "hausnetz:tv",
+      "label": "Fernseher",
+      "area_id": "wohnzimmer",
+      "floor_id": "eg",
+      "position": {
+        "x": 0.75,
+        "y": 0.75,
+        "z": 0.0
+      },
+      "state": "on",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "link": "good",
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:nas",
+      "label": "NAS",
+      "area_id": "buero",
+      "floor_id": "og",
+      "position": {
+        "x": 0.67125,
+        "y": 0.25,
+        "z": 0.0
+      },
+      "state": "on",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "link": "good",
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz",
+        "auto_position": true
+      }
+    },
+    {
+      "id": "hausnetz:drucker",
+      "label": "Drucker",
+      "area_id": "buero",
+      "floor_id": "og",
+      "position": {
+        "x": 0.82875,
+        "y": 0.25,
+        "z": 0.0
+      },
+      "state": "off",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "link": "fair",
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz",
+        "auto_position": true
+      }
+    },
+    {
+      "id": "hausnetz:waschmaschine",
+      "label": "Waschmaschine",
+      "area_id": "werkstatt",
+      "floor_id": "keller",
+      "position": {
+        "x": 0.75,
+        "y": 0.5,
+        "z": 0.0
+      },
+      "state": "off",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "link": "poor",
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:kessel",
+      "label": "Heizkessel",
+      "area_id": "heizungsraum",
+      "floor_id": "keller",
+      "position": {
+        "x": 0.32875,
+        "y": 0.5,
+        "z": 0.0
+      },
+      "state": "on",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "link": "fair",
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz",
+        "auto_position": true
+      }
+    },
+    {
+      "id": "hausnetz:licht_kueche",
+      "label": "Licht Küche",
+      "area_id": "kueche",
+      "floor_id": "eg",
+      "position": {
+        "x": 0.25,
+        "y": 0.75,
+        "z": 0.0
+      },
+      "state": "on",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:licht_bad",
+      "label": "Licht Bad",
+      "area_id": "bad",
+      "floor_id": "og",
+      "position": {
+        "x": 0.25,
+        "y": 0.25,
+        "z": 0.0
+      },
+      "state": "off",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:sensor_kind",
+      "label": "Fenstersensor",
+      "area_id": "kinderzimmer",
+      "floor_id": "og",
+      "position": {
+        "x": 0.25,
+        "y": 0.75,
+        "z": 0.0
+      },
+      "state": "unavailable",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:lade",
+      "label": "Wallbox",
+      "area_id": "garage",
+      "floor_id": "eg",
+      "position": {
+        "x": 0.5,
+        "y": -0.14,
+        "z": 0.0
+      },
+      "state": "on",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "link": "fair",
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:kamera",
+      "label": "Kamera",
+      "area_id": null,
+      "floor_id": null,
+      "position": {
+        "x": 0.5,
+        "y": 0.5,
+        "z": 0.0
+      },
+      "state": "on",
+      "icon": "",
+      "color": "",
+      "entity_id": null,
+      "device_id": null,
+      "anchors": [],
+      "actions": [],
+      "metadata": {
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz",
+        "auto_position": true
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "hausnetz:gw-rep_og",
+      "source": "hausnetz:gw",
+      "target": "hausnetz:rep_og",
+      "label": "fair",
+      "value": null,
+      "quality": "fair",
+      "color": "",
+      "width": 2.0,
+      "directed": false,
+      "dashed": false,
+      "animated": false,
+      "actions": [],
+      "metadata": {
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:gw-rep_keller",
+      "source": "hausnetz:gw",
+      "target": "hausnetz:rep_keller",
+      "label": "poor",
+      "value": null,
+      "quality": "poor",
+      "color": "",
+      "width": 2.0,
+      "directed": false,
+      "dashed": false,
+      "animated": false,
+      "actions": [],
+      "metadata": {
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:rep_og-nas",
+      "source": "hausnetz:rep_og",
+      "target": "hausnetz:nas",
+      "label": "good",
+      "value": null,
+      "quality": "good",
+      "color": "",
+      "width": 2.0,
+      "directed": false,
+      "dashed": false,
+      "animated": false,
+      "actions": [],
+      "metadata": {
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:rep_og-drucker",
+      "source": "hausnetz:rep_og",
+      "target": "hausnetz:drucker",
+      "label": "fair",
+      "value": null,
+      "quality": "fair",
+      "color": "",
+      "width": 2.0,
+      "directed": false,
+      "dashed": false,
+      "animated": false,
+      "actions": [],
+      "metadata": {
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:rep_keller-waschmaschine",
+      "source": "hausnetz:rep_keller",
+      "target": "hausnetz:waschmaschine",
+      "label": "poor",
+      "value": null,
+      "quality": "poor",
+      "color": "",
+      "width": 2.0,
+      "directed": false,
+      "dashed": false,
+      "animated": false,
+      "actions": [],
+      "metadata": {
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:rep_keller-kessel",
+      "source": "hausnetz:rep_keller",
+      "target": "hausnetz:kessel",
+      "label": "fair",
+      "value": null,
+      "quality": "fair",
+      "color": "",
+      "width": 2.0,
+      "directed": false,
+      "dashed": false,
+      "animated": false,
+      "actions": [],
+      "metadata": {
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:gw-tv",
+      "source": "hausnetz:gw",
+      "target": "hausnetz:tv",
+      "label": "good",
+      "value": null,
+      "quality": "good",
+      "color": "",
+      "width": 2.0,
+      "directed": false,
+      "dashed": false,
+      "animated": false,
+      "actions": [],
+      "metadata": {
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    },
+    {
+      "id": "hausnetz:gw-lade",
+      "source": "hausnetz:gw",
+      "target": "hausnetz:lade",
+      "label": "fair",
+      "value": null,
+      "quality": "fair",
+      "color": "",
+      "width": 2.0,
+      "directed": false,
+      "dashed": false,
+      "animated": false,
+      "actions": [],
+      "metadata": {
+        "layer_id": "hausnetz_layer",
+        "provider_id": "hausnetz"
+      }
+    }
+  ],
+  "providers": [
+    {
+      "id": "hausnetz",
+      "name": "Hausnetz",
+      "icon": "mdi:lan",
+      "version": "",
+      "capabilities": {
+        "nodes": true,
+        "edges": true,
+        "history": false,
+        "animation": false,
+        "popup": false,
+        "actions": false,
+        "custom_icons": false
+      },
+      "layers": [
+        {
+          "id": "hausnetz_layer",
+          "name": "Netzwerk",
+          "icon": "",
+          "z_index": 10,
+          "opacity": 1.0,
+          "visible": true,
+          "provider_id": "hausnetz"
+        }
+      ],
+      "icon_set": {},
+      "panel_url": ""
+    }
+  ],
+  "theme": {
+    "accent": "",
+    "surface": "",
+    "ink": "",
+    "state_colors": {
+      "online": "",
+      "offline": "",
+      "unknown": "",
+      "on": "",
+      "off": ""
+    },
+    "quality_colors": {
+      "good": "",
+      "fair": "",
+      "poor": "",
+      "unknown": ""
+    },
+    "node_shape": "circle",
+    "node_size": 1.0,
+    "house_weight": 1.0,
+    "snap_reach": 1.0,
+    "labels": "always",
+    "edge_style": "straight",
+    "room_style": "outline",
+    "preset": "auto",
+    "fallback": {
+      "state_colors": {
+        "online": "#43a047",
+        "offline": "#e53935",
+        "unknown": "#9e9e9e",
+        "on": "#fbc02d",
+        "off": "#78909c"
+      },
+      "quality_colors": {
+        "good": "#43a047",
+        "fair": "#fb8c00",
+        "poor": "#e53935",
+        "unknown": "#9e9e9e"
+      },
+      "accent": "#03a9f4",
+      "surface": "#fafafa",
+      "ink": "#212121"
+    }
+  },
+  "custom_layers": [
+    {
+      "id": "licht",
+      "name": "Licht",
+      "icon": "mdi:lightbulb-outline",
+      "domains": [
+        "light"
+      ],
+      "topology": true,
+      "z_index": 12
+    },
+    {
+      "id": "klima",
+      "name": "Klima",
+      "icon": "mdi:thermostat",
+      "domains": [
+        "climate",
+        "fan",
+        "humidifier",
+        "water_heater"
+      ],
+      "z_index": 11
+    },
+    {
+      "id": "zugang",
+      "name": "Türen & Bewegung",
+      "icon": "mdi:door-open",
+      "domains": [
+        "binary_sensor",
+        "lock",
+        "cover"
+      ],
+      "device_classes": [
+        "motion",
+        "occupancy",
+        "presence",
+        "door",
+        "window",
+        "garage_door",
+        "opening"
+      ],
+      "z_index": 10
+    },
+    {
+      "id": "medien",
+      "name": "Medien",
+      "icon": "mdi:speaker",
+      "domains": [
+        "media_player"
+      ],
+      "z_index": 9
+    }
+  ],
+  "custom_layers_are_default": true,
+  "icon_sets": {},
+  "shapes": []
+}

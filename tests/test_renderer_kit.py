@@ -272,3 +272,62 @@ def test_the_hub_names_no_renderer_from_the_directory():
                 f"{renderer_id!r}. The directory is documentation; the moment "
                 "the code reads it, entering yourself stops being free"
             )
+
+
+# ── The recording ─────────────────────────────────────────
+
+
+def test_the_recorded_model_is_what_the_hub_produces_today():
+    """A stale fixture is worse than none, and it goes stale in silence.
+
+    `examples/modell.json` exists so somebody can build a renderer without
+    a Home Assistant install. The moment the model gains a field and the
+    recording does not, they build against a house that no longer exists --
+    and nothing anywhere turns red to say so. So the recording is compared
+    against a fresh run of its own recorder.
+
+        python examples/record_model.py > examples/modell.json
+    """
+    import json
+    import subprocess
+    import sys
+
+    aufnahme = ROOT / "examples" / "modell.json"
+    assert aufnahme.is_file(), "examples/modell.json is missing"
+
+    frisch = subprocess.run(
+        [sys.executable, str(ROOT / "examples" / "record_model.py")],
+        capture_output=True, text=True, encoding="utf-8", cwd=ROOT,
+    )
+    assert frisch.returncode == 0, (
+        f"the recorder itself fails:\n{frisch.stderr[-2000:]}"
+    )
+    assert json.loads(frisch.stdout) == json.loads(
+        aufnahme.read_text(encoding="utf-8")
+    ), (
+        "examples/modell.json no longer matches what the recorder produces. "
+        "Regenerate it: python examples/record_model.py > examples/modell.json"
+    )
+
+
+def test_the_recording_shows_the_cases_a_renderer_gets_wrong():
+    """A fixture of only tidy rooms teaches only the tidy case."""
+    import json
+
+    m = json.loads((ROOT / "examples" / "modell.json").read_text(encoding="utf-8"))
+
+    assert any(f.get("unassigned") for f in m["floors"]), (
+        "no unassigned storey in the recording -- then nobody meets the "
+        "areas without a floor until a real house has some"
+    )
+    assert any(n.get("state") == "unavailable" for n in m["nodes"]), (
+        "every node in the recording is reachable"
+    )
+    assert m["edges"] and len({e.get("quality") for e in m["edges"]}) > 1, (
+        "all edges have the same quality -- then the quality colours are "
+        "never actually exercised"
+    )
+    assert m["theme"]["fallback"].get("ink", "").startswith("#"), (
+        "the recording carries no ink fallback, so the grey-house trap is "
+        "not visible in it"
+    )

@@ -210,9 +210,18 @@ def resolve(stored: Any) -> dict[str, Any]:
     # second renderer duly drew the entire house in grey. So every theme
     # also carries concrete colours for the shared vocabulary: use them
     # wherever the resolved colour is empty and your host offers nothing.
+    # `surface` and `ink` are inherited by *every* preset, not just `auto` --
+    # no preset has ever set them. Inside Home Assistant that is correct: the
+    # panel sits in the user's own theme and has no business repainting the
+    # background. Outside it, that meant the two colours a renderer needs
+    # before any other -- what to paint on and what to write with -- had no
+    # fallback at all, while the three that did have one made the promise
+    # look kept. Neutral light values, in the spirit of `classic`.
     resolved["fallback"] = {
         "state_colors": dict(PRESETS["classic"]["state_colors"]),
         "quality_colors": dict(PRESETS["classic"]["quality_colors"]),
         "accent": PRESETS["classic"]["accent"],
+        "surface": "#fafafa",
+        "ink": "#212121",
     }
     return resolved
