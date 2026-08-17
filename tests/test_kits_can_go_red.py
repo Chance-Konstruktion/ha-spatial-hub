@@ -87,22 +87,64 @@ def _regeln(pfad: Path):
                 yield knoten
 
 
+def _eigene_knoten(regel: ast.AST):
+    """Alles in der Regel selbst -- ohne verschachtelte Funktionen.
+
+    Wichtig, sonst zaehlt das ``return`` einer Attrappe, die im Test
+    definiert wird, als Ausstieg aus der Pruefung. Beim ersten Durchlauf
+    ueber alle Repositories gab die grobe Fassung zwanzig Treffer, davon
+    zwanzig falsche. Eine Wache, die grundlos meckert, wird abgeschaltet
+    -- und dann bewacht sie gar nichts mehr.
+    """
+    def tief(k):
+        if isinstance(k, (ast.FunctionDef, ast.AsyncFunctionDef,
+                          ast.Lambda, ast.ClassDef)):
+            return
+        yield k
+        for kind in ast.iter_child_nodes(k):
+            yield from tief(kind)
+
+    for kind in ast.iter_child_nodes(regel):
+        yield from tief(kind)
+
+
 def _steigt_stumm_aus(regel: ast.AST) -> bool:
     """Endet die Regel irgendwo, ohne vorher etwas behauptet zu haben?
 
-    Bewusst grob und bewusst streng: Ein ``return``, vor dem in dieser
-    Regel noch kein ``assert`` steht, ist ein Weg durch die Pruefung, auf
-    dem nichts geprueft wird. Ob er im Einzelfall harmlos ist, entscheidet
-    ``ERLAUBT`` -- mit Begruendung, nicht die Heuristik.
+    Ein ``return``, vor dem in dieser Regel noch kein ``assert`` steht,
+    ist ein Weg durch die Pruefung, auf dem nichts geprueft wird. Ob er im
+    Einzelfall harmlos ist, entscheidet ``ERLAUBT`` -- mit Begruendung,
+    nicht die Heuristik.
     """
-    zeilen_mit_assert = [
-        k.lineno for k in ast.walk(regel) if isinstance(k, ast.Assert)
-    ]
-    for k in ast.walk(regel):
-        if isinstance(k, ast.Return):
-            if not any(zeile < k.lineno for zeile in zeilen_mit_assert):
-                return True
-    return False
+    knoten = list(_eigene_knoten(regel))
+    zeilen_mit_assert = [k.lineno for k in knoten if isinstance(k, ast.Assert)]
+    return any(
+        isinstance(k, ast.Return)
+        and not any(zeile < k.lineno for zeile in zeilen_mit_assert)
+        for k in knoten
+    )
+
+
+def test_die_wache_zaehlt_attrappen_nicht_als_ausstieg():
+    """Sonst meldet sie zwanzig Treffer, davon zwanzig falsche."""
+    regel = ast.parse(
+        "def test_etwas():\n"
+        "    def attrappe():\n"
+        "        return 3\n"
+        "    assert attrappe() == 3\n"
+    ).body[0]
+    assert not _steigt_stumm_aus(regel)
+
+
+def test_die_wache_findet_den_echten_ausstieg():
+    """Die Form, die heute dreimal durchgerutscht ist."""
+    regel = ast.parse(
+        "def test_etwas():\n"
+        "    if 'theme' not in code:\n"
+        "        return\n"
+        "    assert 'fallback' in code\n"
+    ).body[0]
+    assert _steigt_stumm_aus(regel)
 
 
 @pytest.mark.parametrize("name", sorted(KITS))
