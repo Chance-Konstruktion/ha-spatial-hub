@@ -192,6 +192,18 @@ KAPUTT = {
           const ink = model.theme.ink;
         </script>
     """,
+    # Not a variant of the one above but its worse form -- and the shape
+    # the kit actually let past. The first outside renderer measured with
+    # this kit had fifteen hard-coded colours and never wrote `theme` at
+    # all, so the fallback rule returned early and said nothing. The rule
+    # meant to catch a misused theme was blind to an ignored one.
+    "ignores the theme entirely": """
+        <script>
+          conn.sendMessagePromise({type: "spatial_hub/model"});
+          const farben = {online: 0x4ade80, offline: 0x8899bb};
+          mesh.material = new THREE.MeshStandardMaterial({color: 0x60a5fa});
+        </script>
+    """,
     "draws nothing at all": "<html><body>Hallo</body></html>",
 }
 
@@ -231,6 +243,58 @@ def test_the_kit_passes_a_renderer_that_is_actually_fine(tmp_path):
     """, encoding="utf-8")
 
     assert kit.check([datei]) == []
+
+
+def test_a_renderer_built_against_the_recording_can_pass(tmp_path):
+    """`offline = True`, for renderers written without a hub anywhere near.
+
+    Without this the kit was unusable in the one repository it shipped to:
+    the task there says *read the recording*, the kit demanded a websocket
+    command, and so nobody ever ran it. A rule nobody can satisfy is not
+    strict, it is ignored.
+    """
+    datei = tmp_path / "index.html"
+    datei.write_text("""
+        <script type="module">
+          const model = await (await fetch('modell.json')).json();
+          const ink = model.theme.ink || model.theme.fallback.ink;
+          zeichne(model, ink);
+        </script>
+    """, encoding="utf-8")
+
+    assert kit.check([datei], offline=True) == []
+    assert kit.check([datei]), (
+        "without offline=True this must still be rejected -- otherwise a "
+        "renderer that never speaks to the hub passes as one that does")
+
+
+def test_offline_does_not_excuse_reading_nothing(tmp_path):
+    """The flag allows another source, not the absence of one."""
+    datei = tmp_path / "index.html"
+    datei.write_text("<html><body>Hallo</body></html>", encoding="utf-8")
+    assert kit.check([datei], offline=True), (
+        "an empty page passed as an offline renderer -- the flag now "
+        "excuses drawing nothing at all")
+
+
+def test_a_renderer_without_any_colours_is_left_alone(tmp_path):
+    """Plain text for a screen reader has no palette, and needs none.
+
+    The colour rule must not turn into "add colours you do not want".
+    Whoever paints nothing has nothing to paint wrongly.
+    """
+    datei = tmp_path / "vorlesen.html"
+    datei.write_text("""
+        <script>
+          const model = await conn.sendMessagePromise({type: "spatial_hub/model"});
+          conn.subscribeMessage(sprich, {type: "spatial_hub/subscribe"});
+          for (const area of model.areas) ansage(area.name, area.floor_id);
+        </script>
+    """, encoding="utf-8")
+
+    assert kit.check([datei]) == [], (
+        "a text-only renderer was failed for having no colours -- the rule "
+        "is now demanding a palette from renderers that do not draw")
 
 
 def test_the_kit_passes_the_renderer_we_actually_ship():

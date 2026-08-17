@@ -114,12 +114,38 @@ def strip_prose(source: str) -> str:
     return re.sub(r"^\s*//[^\n]*", "", source, flags=re.M)
 
 
+def paints(code: str) -> bool:
+    """Does this renderer set colours of its own?
+
+    Only asked to spare the renderers that draw nothing: plain text for a
+    screen reader has no palette, and failing it for that would be
+    telling people to add colours they do not want.
+
+    Deliberately blunt -- hex literals in either notation, and the CSS
+    properties that carry a colour. A false positive costs someone one
+    line of explanation; a false negative is a grey house nobody
+    explains.
+    """
+    return bool(
+        re.search(r"0x[0-9a-fA-F]{6}\b", code)
+        or re.search(r"#[0-9a-fA-F]{3,8}\b", code)
+        or re.search(r"\b(?:rgb|rgba|hsl|hsla)\s*\(", code)
+        or re.search(r"\b(?:background|backgroundColor|color|fill|stroke)\s*[:=]",
+                     code)
+    )
+
+
+def _reads_a_recording(code: str) -> bool:
+    """A model written out by `examples/record_model.py`, read from disk."""
+    return bool(re.search(r"\bmodell?\.json\b", code, re.I))
+
+
 def commands(source: str) -> set[str]:
     """Every `spatial_hub/...` command mentioned in the given source."""
     return set(re.findall(r"spatial_hub/([a-z/]+)", source))
 
 
-def check(files, read_only: bool = True) -> list[str]:
+def check(files, read_only: bool = True, offline: bool = False) -> list[str]:
     """Every problem found, as plain sentences. Empty list means conformant.
 
     Use this outside pytest. Inside pytest, subclass
@@ -130,6 +156,7 @@ def check(files, read_only: bool = True) -> list[str]:
     suite = SpatialHubRendererConformance()
     suite._files = [Path(f) for f in files]
     suite.read_only = read_only
+    suite.offline = offline
     for name in sorted(dir(suite)):
         if not name.startswith("test_"):
             continue
@@ -148,6 +175,18 @@ class SpatialHubRendererConformance:
     #: Set to False if your renderer edits. The kit then allows the writing
     #: commands -- and stops claiming your renderer cannot touch a layout.
     read_only = True
+
+    # Set this where the renderer is built against a recorded model
+    # instead of a live hub -- `examples/record_model.py` writes exactly
+    # what the websocket would carry, so a renderer can be written and
+    # reviewed without a Home Assistant anywhere near it.
+    #
+    # This flag exists because its absence made the kit unusable in the
+    # one repository it was shipped to: the task there says *read the
+    # recording*, the kit demanded a websocket command, and so the kit
+    # was never run at all. A rule nobody can satisfy is not strict, it
+    # is ignored.
+    offline = False
 
     #: Override to widen the list for your own ecosystem.
     integrations = INTEGRATIONS
@@ -192,6 +231,14 @@ class SpatialHubRendererConformance:
         what keeps the kit from handing out a clean bill of health to
         nothing at all.
         """
+        if self.offline:
+            assert commands(self.code) or _reads_a_recording(self.code), (
+                "nothing is read: no websocket command, and no recorded "
+                "model either. With offline = True a renderer may read the "
+                "recording instead of the hub -- but it has to read "
+                "something"
+            )
+            return
         assert commands(self.code), (
             "no websocket command found in the source -- either this is not "
             "a renderer, or renderer_files() points at the wrong files"
@@ -282,6 +329,22 @@ class SpatialHubRendererConformance:
         """
         code = self.code
         if "theme" not in code:
+            # A renderer that never reads the theme is not exempt -- it is
+            # the worse case. The first outside renderer to be measured by
+            # this kit had fifteen hard-coded colours and no mention of
+            # `theme`, and this rule waved it through: the one shape it
+            # exists to catch was the one shape it let past.
+            #
+            # Painting without the model's colours is only fine if it
+            # paints nothing at all -- a text renderer for a screen reader
+            # has no use for a palette, and must not be failed for that.
+            assert not paints(code), (
+                "the renderer sets colours of its own but never reads "
+                "`theme`. Then the house looks the same whatever the user "
+                "chose, and the states carry whatever meaning you gave "
+                "them rather than the shared one. Read the theme, and take "
+                "`theme.fallback` where a colour comes out empty"
+            )
             return
         assert "fallback" in code, (
             "the theme is read but `theme.fallback` never is. Outside Home "
