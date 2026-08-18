@@ -40,7 +40,7 @@ oben sind nachprüfbar, und das reicht.
 
 ## Das Kit
 
-Acht Regeln, jede davon ein Weg, auf dem ein Renderer aufhört, unabhängig zu
+Neun Regeln, jede davon ein Weg, auf dem ein Renderer aufhört, unabhängig zu
 sein, ohne dass es jemandem auffällt:
 
 | Regel | Warum sie da ist |
@@ -53,6 +53,7 @@ sein, ohne dass es jemandem auffällt:
 | kennt kein Theme-Preset | sonst braucht ein sechstes Preset eine Änderung in jedem Renderer |
 | kennt keine Integration beim Namen | ein Sonderfall bricht beim nächsten Nutzer, der etwas anderes betreibt |
 | benutzt `theme.fallback` | siehe unten |
+| ordnet nach `floor_id` zu | wer die Etage selbst ausrechnet, malt Räume übereinander |
 
 Die letzte ist die interessanteste, weil sie aus einem echten Fehler stammt.
 
@@ -63,6 +64,30 @@ Außerhalb gibt es nichts zu erben — und das ganze Haus kommt grau heraus,
 eine völlig gültige Farbe. Der zweite Renderer ist da hineingelaufen, daraufhin
 bekam jedes Theme zusätzlich `theme.fallback` mit echten Farben. Wer den Fallback
 nie erwähnt, hat diesen Fehler noch vor sich.
+
+### Die Etage nehmen, nicht ausrechnen
+
+Bereiche ohne Etage verschwinden nicht. Der Hub gibt ihnen eine eigene Etage
+mit `unassigned: true`, und die steht in `model.floors` wie jede andere.
+
+Wer die Zuordnung selbst herleitet — danach, ob `floor.unassigned` falsch ist,
+nach der Reihenfolge der Liste, nach dem Namen des Raums — malt genau diese
+Räume **über eine echte Etage**. Es gibt keine Fehlermeldung. Der Grundriss
+sieht plausibel aus, und wer ihn ansieht, hat keinen Anlass zu zweifeln.
+
+```js
+// richtig: die id nehmen, die man bekommen hat
+const areas = model.areas.filter((a) => a.floor_id === floor.id);
+```
+
+Zwei Fälle in der Aufnahme (`examples/modell.json`) treffen genau hierhin, und
+sie haben **zwei verschiedene richtige Antworten**: Die Abstellkammer hat keine
+Etage und landet auf der Sammeletage. Die Garage hat auch keine, ist aber
+Außenbereich — der Hub legt sie ins Erdgeschoss. Wer selbst rechnet, bekommt
+höchstens einen der beiden Fälle richtig.
+
+Beide mitgelieferten Renderer machen das korrekt. Gesagt hat es ihnen niemand,
+und geprüft hat es auch niemand — es war zweimal Glück. Deshalb jetzt die Regel.
 
 ## Kein SDK, nur ein Kit
 

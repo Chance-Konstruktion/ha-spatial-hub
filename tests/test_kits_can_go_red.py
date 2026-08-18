@@ -71,6 +71,11 @@ ERLAUBT = {
     "test_actions_are_declared_and_runnable":
         "kein einziger Node bietet Aktionen an; dann gibt es nichts zu "
         "pruefen, und das ist am Payload ablesbar, nicht an einer Meinung",
+    "test_it_places_by_the_floor_it_was_given":
+        "der Renderer zeichnet gar keine Etagen -- ein Bereich pro "
+        "Bildschirm, oder reiner Text fuer einen Screenreader. Dann gibt "
+        "es beim Zuordnen nichts falsch zu machen, und `floor_id` von ihm "
+        "zu verlangen waere Unsinn",
     "test_a_read_only_renderer_needs_almost_nothing":
         "read_only = False -- der Renderer bearbeitet, und das Kit hoert "
         "auf zu behaupten, er koenne keine Anordnung anfassen",

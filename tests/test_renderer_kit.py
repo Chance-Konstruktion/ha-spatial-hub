@@ -204,6 +204,19 @@ KAPUTT = {
           mesh.material = new THREE.MeshStandardMaterial({color: 0x60a5fa});
         </script>
     """,
+    # Bereiche ohne Etage bekommen vom Hub eine eigene Etage mit
+    # unassigned: true. Wer die Zuordnung selbst ausrechnet statt die
+    # floor_id zu nehmen, malt genau diese Raeume ueber eine echte Etage
+    # -- ohne Fehlermeldung, und der Grundriss sieht plausibel aus.
+    "sorts areas onto floors by itself": """
+        <script>
+          conn.sendMessagePromise({type: "spatial_hub/model"});
+          for (const floor of model.floors) {
+            const areas = model.areas.filter((a) => !floor.unassigned);
+            zeichne(floor, areas);
+          }
+        </script>
+    """,
     "draws nothing at all": "<html><body>Hallo</body></html>",
 }
 
@@ -277,6 +290,24 @@ def test_offline_does_not_excuse_reading_nothing(tmp_path):
         "excuses drawing nothing at all")
 
 
+def test_a_renderer_that_draws_no_floors_is_left_alone(tmp_path):
+    """Ein Bereich pro Bildschirm, oder reiner Text -- keine Etagen.
+
+    Die floor_id-Regel darf nicht zu "bau Etagen ein" werden. Wer keine
+    Stockwerke zeichnet, kann beim Zuordnen nichts falsch machen.
+    """
+    datei = tmp_path / "eine_karte.html"
+    datei.write_text("""
+        <script>
+          const model = await conn.sendMessagePromise({type: "spatial_hub/model"});
+          conn.subscribeMessage(zeichne, {type: "spatial_hub/subscribe"});
+          const ink = model.theme.ink || model.theme.fallback.ink;
+          for (const area of model.areas) karte(area.name, ink);
+        </script>
+    """, encoding="utf-8")
+    assert kit.check([datei]) == []
+
+
 def test_a_renderer_without_any_colours_is_left_alone(tmp_path):
     """Plain text for a screen reader has no palette, and needs none.
 
@@ -300,6 +331,60 @@ def test_a_renderer_without_any_colours_is_left_alone(tmp_path):
 def test_the_kit_passes_the_renderer_we_actually_ship():
     """And on the real thing, which is the point of shipping an example."""
     assert kit.check([SECOND]) == []
+
+
+def test_the_built_in_panel_also_groups_by_floor_id():
+    """Der eingebaute Renderer ist vom Kit ausgenommen -- nicht von der Regel.
+
+    Das Kit laeuft gegen `examples/second_renderer`, nicht gegen das Panel:
+    Das Panel darf in die Hub-Dateien greifen, es *ist* der Hub, und die
+    halbe Pruefliste waere dort sinnlos. Die Etagen-Regel ist es nicht.
+
+    Es ist ausserdem der Renderer, den fast alle sehen. Waere ausgerechnet
+    der die Ausnahme, waere die Regel eine Empfehlung.
+    """
+    www = ROOT / "custom_components" / "spatial_hub" / "www"
+    dateien = sorted(www.glob("*.js"))
+    assert len(dateien) >= 5, (
+        f"nur {len(dateien)} Panel-Dateien gefunden -- der Ordner wurde "
+        "umgebaut, und diese Pruefung sieht am falschen Ort nach")
+
+    code = kit.strip_prose(
+        chr(10).join(f.read_text(encoding="utf-8") for f in dateien))
+    assert "floors" in code, "das Panel zeichnet keine Etagen mehr?"
+    assert "floor_id" in code, (
+        "das eingebaute Panel arbeitet mit Etagen, liest aber kein "
+        "`floor_id` mehr -- dann landen die Raeume der Sammeletage ueber "
+        "einer echten, genau wie in docs/RENDERERS.md beschrieben")
+
+
+def test_the_recording_still_carries_both_floorless_cases():
+    """Ohne diese zwei Faelle prueft die Etagen-Regel niemand nach.
+
+    Abstellkammer und Garage haben beide keine Etage -- und **zwei
+    verschiedene richtige Antworten**: die eine landet auf der
+    Sammeletage, die andere als Aussenbereich im Erdgeschoss. Wer die
+    Aufnahme "aufraeumt", nimmt ihr genau das weg, wofuer sie da ist.
+    """
+    import json
+
+    modell = json.loads((ROOT / "examples" / "modell.json").read_text(encoding="utf-8"))
+    bereiche = {a["id"]: a for a in modell["areas"]}
+    assert "abstellkammer" in bereiche and "garage" in bereiche, (
+        "die zwei Bereiche ohne eigene Etage fehlen in der Aufnahme")
+
+    etagen = {f["id"]: f for f in modell["floors"]}
+    sammel = [f for f in modell["floors"] if f.get("unassigned")]
+    assert sammel, "keine Sammeletage in der Aufnahme"
+
+    assert bereiche["abstellkammer"]["floor_id"] == sammel[0]["id"], (
+        "die Abstellkammer liegt nicht mehr auf der Sammeletage")
+    assert bereiche["garage"]["floor_id"] in etagen, (
+        "die Garage zeigt auf eine Etage, die es nicht gibt")
+    assert not etagen[bereiche["garage"]["floor_id"]].get("unassigned"), (
+        "die Garage ist Aussenbereich und gehoert auf eine echte Etage -- "
+        "wenn sie auf der Sammeletage landet, ist der zweite der beiden "
+        "richtigen Faelle verschwunden")
 
 
 # ── The directory ─────────────────────────────────────────

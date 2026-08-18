@@ -30,7 +30,7 @@ Usage -- one class in your test suite::
         def renderer_files(self):
             return [Path(__file__).parent.parent / "index.html"]
 
-That is it. You get eight named tests, each of which says what is wrong
+That is it. You get nine named tests, each of which says what is wrong
 and why it will bite you later.
 
 **If your CI runs `unittest` rather than pytest, inherit from
@@ -63,7 +63,7 @@ API_VERSION = 1
 
 # Which revision of the kit you copied. Kept in step with the provider kit
 # so a mismatch between the two files in your repository is visible.
-SDK_VERSION = 6
+SDK_VERSION = 7
 
 # Every command a renderer may send, from docs/PROVIDER_API.md.
 #
@@ -324,6 +324,37 @@ class SpatialHubRendererConformance:
             "speaks to providers so that renderers do not have to -- a "
             "special case here breaks for the next user, who runs something "
             "else"
+        )
+
+    def test_it_places_by_the_floor_it_was_given(self) -> None:
+        """Areas carry a `floor_id`. Take it; do not work it out again.
+
+        Areas without a floor do not vanish -- the hub gives them a floor
+        of their own, marked `unassigned: true`. It is a floor like any
+        other, and it is in `model["floors"]`.
+
+        A renderer that decides where an area belongs by any other means
+        -- by whether `floor.unassigned` is falsy, by the order of the
+        list, by guessing from the name -- draws those rooms on top of a
+        real storey. Nothing errors. The plan just quietly shows a
+        cellar room in the living room, and the person looking at it has
+        no reason to doubt it.
+
+        Both renderers shipped with the hub group by `floor_id`. Neither
+        said why, and nothing made them: it was luck, twice. So the rule.
+        """
+        code = self.code
+        if "floors" not in code:
+            # Draws no storeys at all -- one area per screen, a text
+            # renderer for a screen reader. Nothing to get wrong here,
+            # and demanding floor_id from it would be nonsense.
+            return
+        assert "floor_id" in code, (
+            "the renderer works through `floors` but never reads "
+            "`floor_id`. Then areas land on a storey by some rule of "
+            "your own, and the ones the hub put on its `unassigned` "
+            "floor get drawn over a real one. Group by the id you were "
+            "handed: `areas.filter(a => a.floor_id === floor.id)`"
         )
 
     def test_it_uses_the_theme_fallback(self) -> None:
