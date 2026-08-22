@@ -52,6 +52,7 @@ import {
   kindOf,
   fold,
   doorsOf,
+  openingKind,
   SIDE_NAMES,
   sideName,
   STAIR_WORDS,
@@ -1578,6 +1579,10 @@ class SpatialHubPanel extends HTMLElement {
         side: Number(door.side),
         at: Number(door.at),
         width: Number(door.width),
+        // Die Art muss mit durch. Ohne diese Zeile wird jedes Fenster
+        // zur Tuer, sobald jemand irgendeinen Regler im Dialog anfasst
+        // -- und zwar stumm, weil eine fehlende Art als "Tuer" gilt.
+        kind: openingKind(door),
       }));
     const next = change(doors);
     if (!next) return;
@@ -2108,6 +2113,25 @@ class SpatialHubPanel extends HTMLElement {
               x: round(point.x),
               y: round(point.y),
             })),
+          })),
+        },
+        drag.before,
+      );
+      return;
+    }
+    if (drag.mode === "opening") {
+      // Immer die ganze Liste, aus demselben Grund wie in `_setDoors`:
+      // eine Oeffnung hat keine eigene Kennung, ihre Stelle in der Liste
+      // *ist* ihre Kennung.
+      this._setLayout(
+        "areas",
+        drag.key,
+        {
+          doors: drag.value.doors.map((door) => ({
+            side: Number(door.side),
+            at: round(Number(door.at)),
+            width: round(Number(door.width)),
+            ...(door.kind ? { kind: door.kind } : {}),
           })),
         },
         drag.before,

@@ -31,6 +31,10 @@ import {
   inFrameY,
   joinsOf,
   kindOf,
+  doorsOf,
+  OPENING,
+  openingKind,
+  openingRun,
   metre,
   minY,
   shapeOf,
@@ -663,6 +667,51 @@ export const ANSICHT = {
       .join("");
   },
 
+  /** Die Oeffnungen eines Raumes im Grundriss, auf seinen Kanten.
+   *
+   *  Das hier war der eigentliche Fehler an den Tueren: sie wurden nur
+   *  in der Hausansicht gezeichnet. Angelegt werden sie aber hier, in
+   *  der Einzelansicht -- man klickte also "+ hinten", schob zwei Regler
+   *  und auf dem Bild passierte nichts. Eine Oeffnung, die man beim
+   *  Setzen nicht sieht, kann man auch nicht setzen.
+   *
+   *  Nicht im SVG, sondern als Kaesten auf dem Kasten: ein Raum ist in
+   *  dieser Ansicht ein `div` mit Rahmen, und ein SVG daneben muesste
+   *  jede Verschiebung noch einmal nachrechnen.
+   *
+   *  Nur Rechtecke. Eine freie Kontur hat Kanten, die quer im Kasten
+   *  liegen, und die traefe ein Streifen an dessen Rand nicht -- lieber
+   *  nichts zeigen als etwas Falsches an der falschen Stelle.
+   */
+  _openingsHtml(area) {
+    if (kindOf(area) !== AREA_KIND.INDOOR || hasShape(area)) return "";
+    const id = escapeHtml(area.id);
+    return doorsOf(area, 4)
+      .map((door, index) => {
+        const side = Number(door.side);
+        const [from, to] = openingRun(door);
+        const span = `${((to - from) * 100).toFixed(2)}%`;
+        const start = `${(from * 100).toFixed(2)}%`;
+        // Die Kante entscheidet, welche Achse die Laenge ist. Waagerecht
+        // fuer hinten und vorne, senkrecht fuer die Flanken.
+        const place = [
+          `top:-3px;left:${start};width:${span};height:6px;`,
+          `right:-3px;top:${start};height:${span};width:6px;`,
+          `bottom:-3px;left:${start};width:${span};height:6px;`,
+          `left:-3px;top:${start};height:${span};width:6px;`,
+        ][side];
+        const kind = openingKind(door);
+        // Waagerecht oder senkrecht: die Laibungsstriche stehen quer zur
+        // Oeffnung, und quer ist auf einer Flanke etwas anderes als auf
+        // der Vorder- oder Rueckwand.
+        const lie = side === 0 || side === 2 ? "flat" : "upright";
+        return `<span class="opening ${kind} ${lie}" style="${place}"
+          data-opening="${id}" data-opening-index="${index}"
+          title="${kind === OPENING.WINDOW ? "Fenster" : "Tür"} — ziehen zum Verschieben, Alt-Klick entfernt"></span>`;
+      })
+      .join("");
+  },
+
   _plotHtml() {
     const plot = this._plot;
     if (!plot) return "";
@@ -891,6 +940,7 @@ export const ANSICHT = {
                 )} m</span>`
               : ""
           }
+          ${this._openingsHtml(area)}
           ${this._joinMarksHtml(area)}
           ${
             this._editRooms

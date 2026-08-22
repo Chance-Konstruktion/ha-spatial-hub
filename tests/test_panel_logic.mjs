@@ -2101,15 +2101,28 @@ test("the dialog offers a door per wall, and only for rooms", () => {
 test("adding a door puts it in the middle of the wall you picked", () => {
   const view = withDialog();
   view._onClick({ composedPath: () => [element({ "data-door-add": "2" })] });
-  assert.deepEqual(written(view), [{ side: 2, at: 0.5, width: 0.2 }]);
+  assert.deepEqual(written(view),
+                   [{ side: 2, at: 0.5, width: 0.2, kind: "door" }]);
+});
+
+test("ein Fenster wird als Fenster angelegt, nicht als Tuer", () => {
+  const view = withDialog();
+  view._onClick({ composedPath: () => [
+    element({ "data-door-add": "2", "data-add-kind": "window" }),
+  ] });
+  const [fenster] = written(view);
+  assert.equal(fenster.kind, "window");
+  // Breiter als eine Tuer: ein Fenster von Tuerbreite sieht aus wie eine
+  // Tuer, der jemand eine Bruestung eingezogen hat.
+  assert.ok(fenster.width > 0.2, `nur ${fenster.width} breit`);
 });
 
 test("a second door is added, not swapped for the first", () => {
   const view = withDialog([{ side: 0, at: 0.3, width: 0.2 }]);
   view._onClick({ composedPath: () => [element({ "data-door-add": "1" })] });
   assert.deepEqual(written(view), [
-    { side: 0, at: 0.3, width: 0.2 },
-    { side: 1, at: 0.5, width: 0.2 },
+    { side: 0, at: 0.3, width: 0.2, kind: "door" },
+    { side: 1, at: 0.5, width: 0.2, kind: "door" },
   ]);
 });
 
@@ -2121,9 +2134,31 @@ test("removing a door takes out the one that was clicked", () => {
   ]);
   view._onClick({ composedPath: () => [element({ "data-door-remove": "1" })] });
   assert.deepEqual(written(view), [
-    { side: 0, at: 0.3, width: 0.2 },
-    { side: 2, at: 0.5, width: 0.2 },
+    { side: 0, at: 0.3, width: 0.2, kind: "door" },
+    { side: 2, at: 0.5, width: 0.2, kind: "door" },
   ]);
+});
+
+test("eine Tuer wird zum Fenster, ohne ihre Stelle zu verlieren", () => {
+  // Umschalten statt loeschen und neu setzen: die Stelle, die jemand
+  // ausgesucht hat, ist die Arbeit daran.
+  const view = withDialog([{ side: 1, at: 0.27, width: 0.22 }]);
+  view._onClick({ composedPath: () => [
+    element({ "data-opening-kind": "window", "data-door": "0" }),
+  ] });
+  assert.deepEqual(written(view),
+                   [{ side: 1, at: 0.27, width: 0.22, kind: "window" }]);
+});
+
+test("ein Regler macht aus einem Fenster keine Tuer", () => {
+  // Der stille Fall: die Art fehlte in `_setDoors`, also verlor jedes
+  // Fenster sie, sobald jemand irgendetwas anderes am Raum aenderte.
+  const view = withDialog([{ side: 0, at: 0.3, width: 0.3, kind: "window" }]);
+  const input = element({ "data-door-field": "at", "data-door": "0" });
+  input.value = "0.6";
+  view._onInput({ composedPath: () => [input], target: input }, true);
+
+  assert.equal(written(view)[0].kind, "window");
 });
 
 test("a slider writes when it is let go, not on every pixel", () => {
@@ -2135,8 +2170,223 @@ test("a slider writes when it is let go, not on every pixel", () => {
     return view;
   };
   assert.equal(drag(false)._written.length, 0, "still dragging, nothing saved");
-  assert.deepEqual(written(drag(true)), [{ side: 0, at: 0.75, width: 0.2 }],
+  assert.deepEqual(written(drag(true)),
+                   [{ side: 0, at: 0.75, width: 0.2, kind: "door" }],
                    "let go, and the new position is stored");
+});
+
+// ── Oeffnungen, wo man sie setzt ──────────────────────────
+//
+// Der eigentliche Fehler an den Tueren: sie wurden nur in der
+// Hausansicht gezeichnet. Angelegt werden sie in der Einzelansicht --
+// man klickte also "+ hinten", schob zwei Regler, und auf dem Bild
+// passierte nichts. Eine Oeffnung, die man beim Setzen nicht sieht,
+// kann man auch nicht setzen.
+
+/** Ein Raum mit Oeffnungen, in der Einzelansicht. */
+const withOpenings = (doors, options = {}) =>
+  panel(
+    model({
+      areas: [
+        { id: "r", name: "Raum", floor_id: "eg", position: at(0.5, 0.5),
+          size: { width: 0.4, height: 0.4 }, doors, auto: false },
+      ],
+    }),
+    { edit: true, ...options },
+  );
+
+test("eine Oeffnung ist im Grundriss zu sehen, nicht nur im Haus", () => {
+  const html = withOpenings([{ side: 0, at: 0.3, width: 0.2 }])._stageHtml();
+
+  assert.match(html, /class="opening door /, "die Tuer steht im Grundriss");
+  assert.match(html, /data-opening="r"/);
+  assert.match(html, /data-opening-index="0"/);
+});
+
+test("Tuer und Fenster sind im Grundriss zu unterscheiden", () => {
+  const html = withOpenings([
+    { side: 0, at: 0.3, width: 0.2 },
+    { side: 1, at: 0.6, width: 0.3, kind: "window" },
+  ])._stageHtml();
+
+  assert.match(html, /class="opening door /);
+  assert.match(html, /class="opening window /);
+});
+
+test("eine Oeffnung liegt auf ihrer eigenen Kante", () => {
+  // Kante 0 und 2 laufen waagerecht, 1 und 3 senkrecht. Eine Tuer an der
+  // rechten Wand, die die halbe Breite des Kastens einnimmt, sitzt an der
+  // falschen Wand -- und zwar so, dass es niemandem auffaellt, der nur
+  // die Zahlen liest.
+  const oben = withOpenings([{ side: 0, at: 0.5, width: 0.2 }])._stageHtml();
+  const rechts = withOpenings([{ side: 1, at: 0.5, width: 0.2 }])._stageHtml();
+
+  assert.match(oben, /top:-3px;left:40\.00%;width:20\.00%/);
+  assert.match(rechts, /right:-3px;top:40\.00%;height:20\.00%/);
+});
+
+test("ein Garten hat keine Oeffnungen", () => {
+  const view = panel(
+    model({
+      areas: [
+        { id: "g", name: "Garten", floor_id: "eg", kind: "outdoor",
+          position: at(1.2, 0.5), size: { width: 0.2, height: 0.4 },
+          doors: [{ side: 0, at: 0.5, width: 0.2 }] },
+      ],
+    }),
+    { edit: true },
+  );
+  assert.doesNotMatch(view._stageHtml(), /class="opening/);
+});
+
+test("ein Klick auf eine Wand setzt dort eine Tuer", () => {
+  // Der uebliche Fall ist "hier soll eine Tuer hin". Ueber den Dialog
+  // waren das Zahnrad, ans Ende scrollen, "+ hinten", schieben, schieben.
+  const view = withOpenings();
+  const box = { left: 0, top: 0, width: 1000, height: 1000 };
+  const st = stage();
+  st.getBoundingClientRect = () => box;
+  // Der Raum liegt auf 0.3..0.7 in beiden Achsen, das Fenster auf 0..1:
+  // ein Klick auf x=0.6, y=0.31 trifft die hintere Wand bei 3/4.
+  view._onClick({
+    altKey: false,
+    clientX: 600, clientY: 310,
+    composedPath: () => [element({ "data-area": "r" }), st],
+  });
+
+  const [tuer] = view._written[view._written.length - 1][2].doors;
+  assert.equal(tuer.side, 0, "die hintere Wand");
+  assert.ok(Math.abs(tuer.at - 0.75) < 0.06, `bei ${tuer.at}`);
+});
+
+test("ein Klick mitten in den Raum setzt keine Tuer", () => {
+  // Sonst bekaeme jedes Verschieben, das kein Verschieben wurde, eine
+  // Tuer geschenkt.
+  const view = withOpenings();
+  const st = stage();
+  view._onClick({
+    altKey: false,
+    clientX: 500, clientY: 500,
+    composedPath: () => [element({ "data-area": "r" }), st],
+  });
+
+  assert.equal(
+    view._written.filter((entry) => entry[2] && entry[2].doors).length, 0);
+});
+
+test("ein Griff am Rand bekommt keine Tuer geschenkt", () => {
+  // Die acht Griffe sitzen genau dort, wo auch die Waende sind. Wer
+  // einen antippt statt ihn zu ziehen, meint den Griff.
+  const view = withOpenings();
+  const st = stage();
+  // Ein Klick auf ein Geraet waehlt es aus, und Auswaehlen zeichnet neu.
+  // Ohne DOM gibt es nichts zu zeichnen -- und geprueft wird hier, was
+  // *nicht* geschrieben wird, nicht was gezeichnet wird.
+  view._render = () => {};
+  // Nur die, die wirklich bis hierher durchfallen. Das Zahnrad und das
+  // Auge verbraucht `_clickAreaDialog` weiter oben in der Kette -- sie
+  // hier zu pruefen hiesse, die Reihenfolge zu pruefen und nicht die
+  // Absicherung.
+  for (const attribute of ["data-resize-area", "data-corner-area",
+                           "data-node"]) {
+    view._onClick({
+      altKey: false,
+      clientX: 600, clientY: 310,
+      composedPath: () => [
+        element({ [attribute]: "r" }), element({ "data-area": "r" }), st,
+      ],
+    });
+  }
+
+  assert.equal(
+    view._written.filter((entry) => entry[2] && entry[2].doors).length, 0);
+});
+
+test("Alt auf einer Oeffnung entfernt sie", () => {
+  const view = withOpenings([
+    { side: 0, at: 0.3, width: 0.2 },
+    { side: 1, at: 0.6, width: 0.2 },
+  ]);
+  view._onClick({
+    altKey: true,
+    composedPath: () => [
+      element({ "data-opening": "r", "data-opening-index": "0" }),
+      stage(),
+    ],
+  });
+
+  const doors = view._written[view._written.length - 1][2].doors;
+  assert.equal(doors.length, 1);
+  assert.equal(doors[0].side, 1);
+});
+
+test("eine Oeffnung laeuft auf ihrer Wand und verlaesst sie nicht", () => {
+  const view = withOpenings([{ side: 0, at: 0.5, width: 0.2 }]);
+  const grip = element({ "data-opening": "r", "data-opening-index": "0" });
+  view._onPointerDown(pointer(500, 300, { target: [grip, stage()] }));
+  // Weit ueber die rechte Ecke hinaus gezogen.
+  view._onPointerMove(pointer(5000, 300));
+  view._onPointerUp(pointer(5000, 300));
+
+  const [tuer] = view._written[view._written.length - 1][2].doors;
+  assert.equal(tuer.side, 0, "die Wand bleibt dieselbe");
+  assert.ok(tuer.at <= 0.9 + 1e-9, `${tuer.at} ragt in die Nachbarwand`);
+  assert.ok(tuer.at >= 0.1 - 1e-9, `${tuer.at} ragt in die Nachbarwand`);
+});
+
+// ── Wie eine Oeffnung im Haus aussieht ────────────────────
+
+test("eine Tuer ist eine Luecke, ein Fenster nicht", () => {
+  // Der Unterschied, um den es geht: die Wand hoert vor einer Tuer auf
+  // und faengt dahinter wieder an. Unter einem Fenster laeuft sie durch
+  // -- eine Wand, die unter dem Fenster aufhoert, ist eine Tuer.
+  const runs = (doors) => geometry.wallRuns(doors, 0);
+
+  assert.deepEqual(runs([]), [[0, 1]], "keine Oeffnung, eine ganze Wand");
+  assert.equal(runs([{ side: 0, at: 0.5, width: 0.2 }]).length, 2,
+               "die Tuer teilt die Wand");
+  assert.deepEqual(runs([{ side: 0, at: 0.5, width: 0.2, kind: "window" }]),
+                   [[0, 1]], "das Fenster teilt sie nicht");
+});
+
+test("eine Tuer bekommt ihren Schwenk, ein Fenster seine Bruestung", () => {
+  const ecken = [
+    { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 },
+  ];
+  const marks = (kind) =>
+    geometry.openingMarksOf(ecken, 26,
+                            [{ side: 0, at: 0.5, width: 0.3, kind }]);
+
+  assert.match(marks("door"), /class="door-swing"/);
+  assert.doesNotMatch(marks("door"), /window/);
+  assert.match(marks("window"), /class="window-pane"/);
+  assert.match(marks("window"), /class="window-bar"/);
+  assert.doesNotMatch(marks("window"), /door-swing/);
+});
+
+test("der Schwenk zeigt in den Raum, nicht aus ihm heraus", () => {
+  // Nach aussen geschwenkt haengt das Tuerblatt im Nachbarraum, und bei
+  // einer Aussenwand in der Luft.
+  const ecken = [
+    { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 },
+  ];
+  // Hintere Wand: "innen" ist nach unten, also groesseres y.
+  const pfad = geometry.openingMarksOf(ecken, 0,
+                                       [{ side: 0, at: 0.5, width: 0.4 }]);
+  const [, blattY] = pfad.match(/L[\d.]+,([\d.-]+)/);
+
+  assert.ok(Number(blattY) > 0, `Blatt bei y=${blattY} liegt ausserhalb`);
+});
+
+test("eine Oeffnung ohne Breite bekommt kein Zeichen", () => {
+  // Unter einem Pixel ist der Kreis ein Punkt und der Bogen ein Fehler
+  // im SVG.
+  const ecken = [
+    { x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 2 }, { x: 0, y: 2 },
+  ];
+  assert.equal(
+    geometry.openingMarksOf(ecken, 26, [{ side: 0, at: 0.5, width: 0.05 }]),
+    "");
 });
 
 test("a staircase is drawn as steps, by whatever the user called it", () => {

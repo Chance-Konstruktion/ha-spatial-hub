@@ -569,8 +569,9 @@ angefasst, und kein Provider musste etwas nachziehen.
   dieselbe Kamera in der Hausansicht wie auf einer einzelnen Etage.
 - **Sandwich konfigurierbar.** Pro Bereich: Art (Raum, Außenbereich,
   virtuell), *in der Hausansicht zeigen*, *nur Einzelansicht*. Virtuelle
-  Bereiche — Cloud, Internet, VPN — bekommen eine Ebene über dem Dach, weil
-  sie irgendwo hin müssen, aber in keinem Stockwerk liegen.
+  Bereiche — Internet, VPN, Cloud — liegen im Erdreich um die unterste
+  Etage: Sie müssen irgendwo hin, in keinem Stockwerk liegen sie, und der
+  Anschluss kommt aus dem Boden neben dem Haus.
 
 Dazu aus der Ideenliste: Suche (blendet nicht aus, sondern stellt zurück),
 Provider-Untergruppen, Drag & Drop und Snap-to-Grid waren schon da.
@@ -672,10 +673,15 @@ Gartenhütte als Außenbereiche stehen. Das Grundstück hat dabei **vier
 Ränder statt einer Zahl** — wer hinter dem Haus dreihundert Meter Garten
 hat und vorne drei, bekommt genau das und nicht zweimal denselben Rand.
 
-**Türen** sind Lücken in der Wand: pro Wand anlegbar, mit Mitte und Breite
-als Anteil der Wand, damit sie beim Vergrößern des Raums bleiben, wo sie
-hingehören. Die Lücke geht durch die ganze Mauer, nicht nur durch ihre
-Außenseite.
+**Türen und Fenster** sitzen in der Wand: pro Wand anlegbar, mit Mitte und
+Breite als Anteil der Wand, damit sie beim Vergrößern des Raums bleiben, wo
+sie hingehören. Der Unterschied zwischen beiden ist die Wand selbst — eine
+Tür ist eine Lücke, die durch die ganze Mauer geht und nicht nur durch ihre
+Außenseite; ein Fenster sitzt darin, die Wand läuft durch, und Brüstung und
+Sturz stehen als Striche im Bild. Gesetzt werden beide direkt am Grundriss:
+auf eine Wand klicken setzt, ziehen verschiebt, Alt-Klick entfernt. Der
+Dialog bleibt für genaue Zahlen — für die ist ein Regler besser als eine
+Hand.
 
 Dazu die Hausansicht selbst, die aussehen soll wie eine Bauzeichnung und
 nicht wie vier graue Platten: flacher Blickwinkel statt Raute, sichtbare
@@ -712,11 +718,16 @@ mit „nein" beantworten würde.
 Die Wetter-Entität wird nicht als Kachel gezeigt, sondern als **Zustand des
 Himmels über dem Haus**:
 
-- Die virtuellen Wolken **regnen**, wenn es regnet — es gibt sie schon, sie
-  müssen nur wissen, was draußen los ist
-- Bei bewölktem Himmel kommen **dunkelblaue Wolken** dazu
+- **Regen** und bei bewölktem Himmel **dunkle Wolken** über dem First
 - Eine **Sonne, die zum Mond wird**, und ihren Lauf über das Haus zieht
 - **Schnee**, **Blitze** bei Gewitter
+
+Hier stand einmal „die virtuellen Wolken regnen — es gibt sie schon". Es
+gibt sie nicht mehr: Sie waren die Darstellung der virtuellen Bereiche, und
+die liegen inzwischen im Erdreich neben dem Haus, wo auch der Anschluss
+herkommt. Das Wetter braucht also eigene Wolken, und zwar solche, die nichts
+bedeuten außer Wetter — was ohnehin die bessere Trennung ist: Ein Kasten, der
+gleichzeitig „VPN" heißt und „es regnet" sagt, sagt keines von beidem.
 
 Bewusst nach dem Editor und nach dem Gebäudekörper. Es ist die Phase mit dem
 größten Verhältnis von Wirkung zu Nutzen, und ein Haus, das schneit, aber sich

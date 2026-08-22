@@ -620,6 +620,44 @@ select { font:inherit; padding:6px; border-radius:8px;
 .handle-se { bottom:-5px; right:-5px; cursor:nwse-resize; }
 .handle-ne { top:-5px; right:-5px; cursor:nesw-resize; }
 .handle-sw { bottom:-5px; left:-5px; cursor:nesw-resize; }
+/* Oeffnungen im Grundriss. Eine Tuer ist eine Luecke -- also wird die
+   Wand darunter weggewischt, in der Farbe des Blattes; ein Fenster ist
+   eine duennere Wand, also bleibt ein Strich stehen. Genau der
+   Unterschied, den auch die Hausansicht zeichnet. */
+.opening { position:absolute; pointer-events:auto; cursor:grab; }
+/* Eine Tuer wischt die Wand weg -- und setzt an beide Enden einen
+   Laibungsstrich. Ohne die ist eine Luecke im Grundriss nichts, und
+   "nichts" war genau der Zustand, aus dem hier herausgekommen werden
+   soll: die Tuer war da, man sah sie nur nicht.
+
+   Als Verlauf und nicht als zwei Pseudoelemente: der Streifen ist sechs
+   Pixel schmal, und zwei absolute Kinder darin sind mehr Bauteil als
+   Zeichnung. */
+.opening.door { background:var(--card-background-color,#fff);
+                box-shadow:0 0 0 1px var(--card-background-color,#fff); }
+.opening.door.flat {
+  background-image:linear-gradient(to right,
+    var(--fp-wall, rgba(0,0,0,.55)) 0 1px, transparent 1px calc(100% - 1px),
+    var(--fp-wall, rgba(0,0,0,.55)) calc(100% - 1px) 100%); }
+.opening.door.upright {
+  background-image:linear-gradient(to bottom,
+    var(--fp-wall, rgba(0,0,0,.55)) 0 1px, transparent 1px calc(100% - 1px),
+    var(--fp-wall, rgba(0,0,0,.55)) calc(100% - 1px) 100%); }
+/* Ein Fenster laesst die Wand stehen: der Rahmen ist die Wand, die
+   durchlaeuft, und das Weisse darin die Scheibe. */
+.opening.window { background:var(--card-background-color,#fff);
+                  border:1px solid var(--fp-wall, rgba(0,0,0,.55));
+                  box-sizing:border-box; }
+/* Der Schwenk und die Bruestung in der Hausansicht. Beides Linien, kein
+   Fuellwerk: eine ausgemalte Tuer waere ein Moebelstueck. */
+.door-swing { fill:none; stroke:var(--fp-wall, rgba(0,0,0,.45));
+              stroke-width:1; vector-effect:non-scaling-stroke;
+              stroke-dasharray:3 3; }
+.window-pane { fill:var(--card-background-color,#fff); fill-opacity:.65;
+               stroke:none; }
+.window-bar { fill:none; stroke:var(--fp-wall, rgba(0,0,0,.55));
+              stroke-width:1; vector-effect:non-scaling-stroke; }
+.door-swing, .window-pane, .window-bar { pointer-events:none; }
 .area-config { position:absolute; top:2px; right:26px; border:0; background:transparent;
                color:var(--secondary-text-color,#727272); cursor:pointer; padding:2px;
                display:flex; border-radius:50%; }

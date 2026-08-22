@@ -21,9 +21,12 @@ import {
   soilHatch,
   wallsOf,
   capsOf,
+  openingMarksOf,
   AREA_KIND,
   kindOf,
   doorsOf,
+  OPENING,
+  openingKind,
   isStairs,
   sideName,
 } from "./panel-geometry.js";
@@ -106,7 +109,12 @@ const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) 
         "room-cap",
         keep,
         doors,
-      );
+      ) +
+      // Nach den Waenden, nicht davor: der Schwenk liegt im Raum, und
+      // die vordere Wandflaeche ist undurchsichtig -- davor gezeichnet
+      // waere er gezeichnet und trotzdem nicht zu sehen. Dieselbe Falle
+      // wie bei den Treppenstufen weiter unten.
+      openingMarksOf(corners, STACK.rise, doors, keep);
   }
   // Stufen. In der Referenzzeichnung ist die Treppe das, was einen
   // Grundriss auf den ersten Blick als Grundriss lesbar macht.
@@ -200,10 +208,24 @@ const doorsHtml = (area) => {
   const sides = shapeOf(area).length;
   const doors = doorsOf(area, sides);
   const rows = doors
-    .map(
-      (door, index) => `
+    .map((door, index) => {
+      const kind = openingKind(door);
+      const label = kind === OPENING.WINDOW ? "Fenster" : "Tür";
+      return `
       <div class="door">
         <span class="door-side">${escapeHtml(sideName(Number(door.side)))}</span>
+        <div class="chips door-kind">
+          ${[[OPENING.DOOR, "Tür", "mdi:door"],
+             [OPENING.WINDOW, "Fenster", "mdi:window-closed-variant"]]
+            .map(
+              ([value, text, icon]) => `<button class="chip ${
+                kind === value ? "on" : ""
+              }" data-door="${index}" data-opening-kind="${value}">
+                <ha-icon icon="${icon}"></ha-icon> ${text}
+              </button>`,
+            )
+            .join("")}
+        </div>
         <label class="door-slide">
           <span class="muted">Mitte</span>
           <input type="range" min="0" max="1" step="0.01"
@@ -217,27 +239,41 @@ const doorsHtml = (area) => {
                  data-door="${index}" data-door-field="width">
         </label>
         <button class="icon-btn" data-door-remove="${index}"
-                title="Tür entfernen">
+                title="${label} entfernen">
           <ha-icon icon="mdi:close"></ha-icon>
         </button>
-      </div>`,
-    )
+      </div>`;
+    })
     .join("");
-  const add = Array.from({ length: sides }, (_unused, side) => side)
-    .map(
-      (side) => `<button class="chip" data-door-add="${side}">
-        + ${escapeHtml(sideName(side))}
-      </button>`,
-    )
-    .join("");
+  // Zwei Reihen Knoepfe, eine je Art. Vorher gab es nur "+ hinten" und
+  // die Art gar nicht -- und wer ein Fenster wollte, bekam eine Tuer und
+  // konnte es nirgends korrigieren.
+  const adders = (kind, text, icon) =>
+    Array.from({ length: sides }, (_unused, side) => side)
+      .map(
+        (side) => `<button class="chip" data-door-add="${side}"
+          data-add-kind="${kind}">
+          <ha-icon icon="${icon}"></ha-icon> ${escapeHtml(sideName(side))}
+        </button>`,
+      )
+      .join("");
   return `
-    <h3>Türen</h3>
+    <h3>Türen und Fenster</h3>
     <p class="note">Eine Tür ist eine Lücke in der Wand — sie hört davor
-    auf und fängt dahinter wieder an. Angaben als Anteil der Wand, damit
-    die Tür bleibt, wo sie ist, wenn der Raum größer wird.</p>
+    auf und fängt dahinter wieder an. Ein Fenster sitzt <em>in</em> der
+    Wand: die Wand läuft durch, Brüstung und Sturz stehen als Striche
+    darin. Angaben als Anteil der Wand, damit beides bleibt, wo es ist,
+    wenn der Raum größer wird.</p>
+    <p class="note">Schneller geht es im Grundriss: auf eine Wand klicken
+    setzt dort eine Öffnung, ziehen verschiebt sie, Alt-Klick entfernt
+    sie.</p>
     ${rows ? `<div class="doors">${rows}</div>`
-           : '<p class="note">Noch keine Tür.</p>'}
-    <div class="chips">${add}</div>`;
+           : '<p class="note">Noch keine Öffnung.</p>'}
+    <p class="muted">Tür hinzufügen</p>
+    <div class="chips">${adders(OPENING.DOOR, "Tür", "mdi:door")}</div>
+    <p class="muted">Fenster hinzufügen</p>
+    <div class="chips">${adders(
+      OPENING.WINDOW, "Fenster", "mdi:window-closed-variant")}</div>`;
 };
 
 

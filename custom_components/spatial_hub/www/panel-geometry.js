@@ -106,6 +106,43 @@ const along = (from, to, at) => ({
   y: from.y + (to.y - from.y) * at,
 });
 
+const OPENING = Object.freeze({ DOOR: "door", WINDOW: "window" });
+
+/** Tuer oder Fenster? Fehlt die Angabe, ist es eine Tuer.
+ *
+ *  Das Feld kam spaeter dazu. Eine Anordnung, die vorher gespeichert
+ *  wurde, hat es nicht -- und die soll weiter gelten, statt beim Laden
+ *  zu einem Raum ohne Oeffnungen zu werden.
+ */
+const openingKind = (door) =>
+  (door && door.kind) === OPENING.WINDOW ? OPENING.WINDOW : OPENING.DOOR;
+
+/** Wo eine Oeffnung auf ihrer Wand anfaengt und aufhoert, 0..1.
+ *
+ *  Eine Stelle, nicht drei: `at` ist die Mitte und `width` die Breite,
+ *  und jede Rechnung, die daraus Anfang und Ende macht, muss dieselbe
+ *  Klemmung anwenden. Zwei Fassungen davon waren der Grund, warum eine
+ *  Tuer am Rand im Bild woanders sass als im Dialog.
+ */
+const openingRun = (door) => {
+  const width = Math.min(Math.max(Number(door && door.width) || 0, 0), 1);
+  const at = Math.min(Math.max(Number(door && door.at), 0), 1);
+  return [at - width / 2, at + width / 2];
+};
+
+/** Die Oeffnungen einer Wand, in der Reihenfolge, in der sie darauf liegen.
+ *
+ *  Gespeichert werden sie in der Reihenfolge, in der jemand sie angelegt
+ *  hat, und das ist keine Reihenfolge. Wer sie zeichnet, braucht sie
+ *  sortiert.
+ */
+const openingsOn = (doors, side) =>
+  (Array.isArray(doors) ? doors : [])
+    .filter((door) => door && Number(door.side) === side)
+    .map((door) => ({ door, run: openingRun(door) }))
+    .filter(({ run }) => run[1] > run[0])
+    .sort((a, b) => a.run[0] - b.run[0]);
+
 /** What is left of one wall once the doorways are taken out of it.
  *
  *  A list of `[from, to]` stretches along the edge, 0 at one corner and 1
@@ -114,20 +151,17 @@ const along = (from, to, at) => ({
  *
  *  Overlapping doors are merged rather than drawn twice: two openings that
  *  touch are one opening, and a wall segment of negative length is not a
- *  thing a renderer should have to think about. Doors are sorted here and
- *  not trusted to arrive in order -- they are stored in the order the user
- *  added them, which is no order at all.
+ *  thing a renderer should have to think about.
+ *
+ *  Ein **Fenster** ist hier keine Luecke. Es sitzt in der Wand, es
+ *  ersetzt sie nicht -- eine Wand, die unter dem Fenster aufhoert, ist
+ *  eine Tuer. Gezeichnet wird es deshalb zusaetzlich und nicht anstelle
+ *  der Wand, und diese Funktion sieht davon nichts.
  */
 const wallRuns = (doors, side) => {
-  const holes = (Array.isArray(doors) ? doors : [])
-    .filter((door) => door && Number(door.side) === side)
-    .map((door) => {
-      const width = Math.min(Math.max(Number(door.width) || 0, 0), 1);
-      const at = Math.min(Math.max(Number(door.at), 0), 1);
-      return [at - width / 2, at + width / 2];
-    })
-    .filter(([from, to]) => to > from)
-    .sort((a, b) => a[0] - b[0]);
+  const holes = openingsOn(doors, side)
+    .filter(({ door }) => openingKind(door) === OPENING.DOOR)
+    .map(({ run }) => run);
 
   const runs = [];
   let cursor = 0;
@@ -162,6 +196,68 @@ const capsOf = (corners, thickness, className, keep = () => true,
     })
     .join("");
 };
+
+/** Fenster und Tuerschwenk: was eine Oeffnung ausser einer Luecke ist.
+ *
+ *  Eine Luecke allein sagt nicht, was sie ist. In einer Bauzeichnung
+ *  steht am Durchgang ein Viertelkreis -- der Schwenk des Tuerblatts --
+ *  und im Fenster liegt eine Bruestung. Genau daran liest man einen
+ *  Grundriss als Grundriss, und ohne das waren beide dasselbe: nichts.
+ *
+ *  `corners` ist die projizierte Kontur, `rise` die Wandhoehe. Beides
+ *  wie bei `wallsOf`, damit Wand und Oeffnung nicht aus zwei Rechnungen
+ *  kommen und sich um ein Pixel verfehlen.
+ */
+const openingMarksOf = (corners, rise, doors, keep = () => true) =>
+  corners
+    .map((corner, index) => {
+      if (!keep(index)) return "";
+      const next = corners[(index + 1) % corners.length];
+      return openingsOn(doors, index)
+        .map(({ door, run: [from, to] }) => {
+          const start = along(corner, next, from);
+          const end = along(corner, next, to);
+          if (openingKind(door) === OPENING.WINDOW) {
+            // Ein Fenster ist eine duennere Wand mit einer Bruestung
+            // darunter, keine Luecke: die Wand laeuft durch, und was
+            // sie zum Fenster macht, sind die zwei waagerechten Linien
+            // auf Bruestungs- und Sturzhoehe.
+            const band = (height) =>
+              `<polyline class="window-bar" points="${start.x},${
+                start.y - height
+              } ${end.x},${end.y - height}"/>`;
+            return `<polygon class="window-pane" points="${start.x},${start.y} ` +
+              `${end.x},${end.y} ${end.x},${end.y - rise} ` +
+              `${start.x},${start.y - rise}"/>` +
+              band(rise * 0.35) + band(rise * 0.85);
+          }
+          // Der Schwenk: Tuerblatt und Viertelkreis, das Zeichen, an dem
+          // man eine Tuer in einem Grundriss erkennt. Die Angel sitzt am
+          // vorderen Ende der Oeffnung -- welches das ist, entscheidet
+          // die Laufrichtung der Kontur, und damit schwenken alle Tueren
+          // eines Raumes gleichsinnig statt jede, wie es sich ergibt.
+          const span = Math.hypot(end.x - start.x, end.y - start.y);
+          // Unter einem Pixel ist der Kreis ein Punkt und der Bogen ein
+          // Fehler im SVG. Die Luecke bleibt, das Zeichen entfaellt.
+          if (span < 1.5) return "";
+          // Nach innen heisst: nach rechts von der Laufrichtung. Die
+          // Kontur laeuft (0,0) (1,0) (1,1) (0,1), im Bild also im
+          // Uhrzeigersinn -- eine Fallunterscheidung je Wand braucht es
+          // dafuer nicht.
+          const nx = -(end.y - start.y) / span;
+          const ny = (end.x - start.x) / span;
+          const hinge = { x: start.x, y: start.y - rise };
+          const jamb = { x: end.x, y: end.y - rise };
+          const leaf = { x: hinge.x + nx * span, y: hinge.y + ny * span };
+          return `<path class="door-swing" d="M${hinge.x.toFixed(2)},${
+            hinge.y.toFixed(2)
+          } L${leaf.x.toFixed(2)},${leaf.y.toFixed(2)} A${span.toFixed(2)},${
+            span.toFixed(2)
+          } 0 0 1 ${jamb.x.toFixed(2)},${jamb.y.toFixed(2)}"/>`;
+        })
+        .join("");
+    })
+    .join("");
 
 /** Standing walls along a projected outline.
  *
@@ -766,6 +862,7 @@ export {
   insetOf,
   along,
   wallRuns,
+  openingMarksOf,
   capsOf,
   wallsOf,
   FRONT_WALL,
@@ -799,6 +896,10 @@ export {
   kindOf,
   fold,
   doorsOf,
+  OPENING,
+  openingKind,
+  openingRun,
+  openingsOn,
   SIDE_NAMES,
   sideName,
   STAIR_WORDS,
