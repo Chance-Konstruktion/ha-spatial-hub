@@ -252,10 +252,10 @@ const snapReach = (theme) => {
  *  quadratisch bleibt.
  */
 const frameOf = (floor, areas) => {
-  // Sky gets the same room as garden. A cloud belongs *around* the house,
-  // not squeezed into its footprint -- the internet is not a room on the
-  // second floor, and a plane exactly as wide as the walls says it is.
-  const wide = floor && (floor.has_outdoor || floor.virtual);
+  // Garten und Erdreich brauchen beide das Umland: beide liegen im Ring
+  // um die Etage, nicht in ihrem Grundriss. Eine Etage, deren Fenster
+  // genau so breit ist wie ihre Waende, kann nichts davon zeigen.
+  const wide = floor && floor.has_outdoor;
   const base = wide ? floor.outdoor_margin || 0.28 : 0;
   // links, rechts, oben, unten -- das Haus liegt immer auf 0..1.
   const side = { left: base, right: base, top: base, bottom: base };
@@ -385,19 +385,50 @@ const shapeOf = (area) => {
 /** Whether an area has an outline of its own worth mentioning. */
 const hasShape = (area) => shapeOf(area) !== RECTANGLE;
 
-/** The outline every virtual area is drawn in.
+/** Der Abstand zweier Schraffurstriche, in Grundriss-Einheiten.
  *
- *  Stretched to whatever the area's box is, so a wide VPN and a small
- *  cloud are the same shape at different sizes rather than two shapes.
- *  `preserveAspectRatio="none"` is the point: it is a label for "this is
- *  not a room", not a picture of a cloud that has to stay round.
+ *  Fester Abstand statt fester Anzahl. Mit einer festen Anzahl haengt der
+ *  Winkel an der Form des Kastens: das Erdreich ist ein Band von 1.4 auf
+ *  0.22, und die Diagonale eines solchen Kastens liegt fast flach -- auf
+ *  dem Bild sah das aus wie Maserung und nicht wie Erde. Ein fester
+ *  Abstand laesst den Winkel in Ruhe und die Zahl der Striche mitwachsen,
+ *  was genau richtig herum ist: eine Schraffur ist eine Dichte.
  */
-const CLOUD_PATH = "M26 52 C12 52 5 44 5 35 C5 26 12 19 21 19 " +
-  "C24 9 33 3 43 3 C56 3 66 12 68 24 C79 24 88 30 88 39 " +
-  "C88 47 80 52 70 52 Z";
+const SOIL_HATCH_GAP = 0.075;
 
-const CLOUD_SVG = `<svg class="cloud" viewBox="0 0 100 60"
-  preserveAspectRatio="none" aria-hidden="true"><path d="${CLOUD_PATH}"/></svg>`;
+/** Wie viele Striche hoechstens. Ein Bereich ueber das ganze Grundstueck
+ *  gezogen bekaeme sonst dreistellig viele Linien, und der Renderer
+ *  zeichnet sie alle, bevor jemand merkt, dass es zu viele sind. */
+const SOIL_HATCH_MAX = 48;
+
+/** Die Schraffur eines Erdreich-Bereichs, als Striche in Bildkoordinaten.
+ *
+ *  Diagonal unter 45 Grad im Grundriss, weil senkrecht wie eine Wand
+ *  aussaehe und waagerecht wie ein Boden.
+ *
+ *  `project` bildet einen Punkt des Grundrisses ab. Die Striche werden
+ *  deshalb im Grundriss gerechnet und erst dann projiziert: eine
+ *  Schraffur, die im Bild gerechnet wird, steht auf jeder Etage anders
+ *  schraeg -- die Flucht wirkt ja auf jeder Ebene anders.
+ *
+ *  Abgeschnitten wird mit der Fallunterscheidung und nicht mit einer
+ *  Clip-Maske: ein Strich, der ueber die Kante laeuft, ist im SVG ein
+ *  Strich ueber der Kante, auch wenn ihn gerade zufaellig etwas verdeckt.
+ */
+const soilHatch = (project, x0, y0, width, height, gap = SOIL_HATCH_GAP) => {
+  const reach = width + height;
+  const step = Math.max(gap, reach / SOIL_HATCH_MAX);
+  const lines = [];
+  for (let t = step; t < reach; t += step) {
+    const from = t <= height ? [0, t] : [t - height, height];
+    const to = t <= width ? [t, 0] : [width, t - width];
+    lines.push([
+      project(x0 + from[0], y0 + from[1]),
+      project(x0 + to[0], y0 + to[1]),
+    ]);
+  }
+  return lines;
+};
 
 /** A room's four walls in floor coordinates. */
 const boxOf = (area) => {
@@ -584,17 +615,15 @@ const isStairs = (area) =>
 // Projektion, die man nur mit einem Custom Element in der Hand ausrechnen
 // kann, ist keine Geometrie mehr, sondern ein Nebeneffekt.
 
-/** How far above the storeys a plane floats.
- *
- *  Only the sky floats, and it has to clear the top storey by more than
- *  a storey's own depth, or a cloud plane reads as an attic with weather
- *  painted on the ceiling.
- */
-const planeLift = (floor) => (floor && floor.virtual ? STACK.depth * 0.5 + 130 : 0);
-
-/** Headroom for the sky, added to everything so the lift pushes the
- *  clouds up *within* the drawing instead of off the top of it. */
-const skyOf = (floors) => Math.max(0, ...(floors || []).map(planeLift));
+// Hier stand einmal `planeLift`/`skyOf`: der Abstand, den die Wolkenebene
+// ueber dem Dach brauchte, um nicht als Dachboden mit aufgemaltem Wetter
+// gelesen zu werden. Das waren STACK.depth/2 + 130 = 255 Einheiten Luft,
+// die auf *jede* Zeichnung addiert wurden, plus die 340 des eigenen
+// Etagenplatzes -- bei einem Haus mit vier Ebenen zusammen gut vier
+// Zehntel der Bildhoehe fuer eine Ebene, auf der drei Kaesten standen.
+//
+// Das Erdreich braucht davon nichts: es liegt im Ring um die unterste
+// Etage, also auf einer Ebene, die es ohnehin schon gibt.
 
 /** Where a point on a given floor lands in the stacked drawing.
  *
@@ -614,8 +643,7 @@ const projectOnto = ({ frame, gutter, floors, index }, x, y) => {
   return {
     x: gutter + STACK.stagger * index +
       STACK.width / 2 + (nx - 0.5) * STACK.width * shrink,
-    y: STACK.top + skyOf(floors) + index * STACK.gap + ny * STACK.depth -
-      planeLift((floors || [])[index]),
+    y: STACK.top + index * STACK.gap + ny * STACK.depth,
   };
 };
 
@@ -628,7 +656,7 @@ const projectOnto = ({ frame, gutter, floors, index }, x, y) => {
  *  grows with the house instead of the house shrinking into the picture.
  */
 const stackHeight = (floors) =>
-  STACK.top + skyOf(floors) +
+  STACK.top +
   Math.max(0, (floors || []).length - 1) * STACK.gap +
   STACK.depth + STACK.slab + STACK.pad;
 
@@ -755,8 +783,9 @@ export {
   RECTANGLE,
   shapeOf,
   hasShape,
-  CLOUD_PATH,
-  CLOUD_SVG,
+  SOIL_HATCH_GAP,
+  SOIL_HATCH_MAX,
+  soilHatch,
   boxOf,
   SIDE,
   SIDE_NAME,
@@ -774,8 +803,6 @@ export {
   sideName,
   STAIR_WORDS,
   isStairs,
-  planeLift,
-  skyOf,
   projectOnto,
   stackHeight,
   stackWidth,

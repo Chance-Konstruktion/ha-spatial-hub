@@ -39,8 +39,6 @@ import {
   RECTANGLE,
   shapeOf,
   hasShape,
-  CLOUD_PATH,
-  CLOUD_SVG,
   boxOf,
   SIDE,
   SIDE_NAME,
@@ -58,7 +56,6 @@ import {
   sideName,
   STAIR_WORDS,
   isStairs,
-  planeLift,
   projectOnto,
   stackHeight,
   stackWidth,
@@ -508,18 +505,10 @@ class SpatialHubPanel extends HTMLElement {
     const real = floors.filter(
       (floor) => !floor.unassigned && !floor.virtual,
     ).reverse();
-    // Sky first, whatever order Home Assistant gave it. A cloud plane
-    // that inherits its position from a floor list ends up between two
-    // storeys, and the internet is not on the first floor.
-    return [
-      ...floors.filter((floor) => floor.virtual && !floor.unassigned),
-      ...real,
-      ...floors.filter((floor) => floor.unassigned),
-    ];
-  }
-
-  _planeLift(floorIndex) {
-    return planeLift(this._stackFloors[floorIndex]);
+    // Hier stand die Wolkenebene vorneweg. Die gibt es nicht mehr: das
+    // Erdreich ist keine eigene Ebene, sondern der Ring um die unterste
+    // Etage -- und die steht im Stapel ohnehin schon unten.
+    return [...real, ...floors.filter((floor) => floor.unassigned)];
   }
 
   /** Wo ein Punkt einer Etage im Bild landet. Die Rechnung steht in

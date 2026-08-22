@@ -121,11 +121,15 @@ AREA_KINDS: Final = tuple(kind.value for kind in AreaKind)
 # renderer that ignores all of this still draws the house right.
 OUTDOOR_MARGIN: Final = 0.28
 
-# Where the virtual areas live: not a storey either, but they need a plane
-# to be drawn on, and above the roof is the one place nobody confuses with
-# a room.
-VIRTUAL_FLOOR_ID: Final = "_virtual"
-VIRTUAL_FLOOR_NAME: Final = "Virtuell"
+# Where the virtual areas live: in the soil around the lowest storey.
+#
+# They used to get a plane of their own above the roof, drawn as clouds.
+# That plane cost the drawing more than a whole storey of height -- it had
+# to clear the roof by more than a storey's own depth, or it read as an
+# attic with weather painted on the ceiling -- and it bought nothing: the
+# internet is not above the house, it comes out of the ground next to it,
+# through the same earth the garden sits on. So virtual areas join the
+# apron of the bottom storey, and the house gets the height back.
 
 # ── Internal hass.data keys ───────────────────────────────────────────
 DATA_HUB: Final = f"{DOMAIN}_hub"

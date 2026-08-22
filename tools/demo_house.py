@@ -50,6 +50,11 @@ FLOORS = [
     FakeFloor("ug", "Untergeschoss", level=-1),
     FakeFloor("eg", "Erdgeschoss", level=0),
     FakeFloor("og", "Obergeschoss", level=1),
+    # Keine Etage, sondern der Weg, auf dem ein Benutzer heute sagt "das
+    # ist nicht im Haus": eine erfundene Etage namens "Netz". Der Hub
+    # erkennt sie am Namen, loest sie auf und legt, was darauf lag, ins
+    # Erdreich um das Untergeschoss. Genau dort kommt der Anschluss an.
+    FakeFloor("netz", "Netz", level=9),
 ]
 
 AREAS = [
@@ -67,6 +72,8 @@ AREAS = [
     FakeArea("keller", "Keller", "ug"),
     FakeArea("heizraum", "Heizraum", "ug"),
     FakeArea("waschkueche", "Waschküche", "ug"),
+    FakeArea("anschluss", "Hausanschluss", "netz"),
+    FakeArea("vpn", "VPN", "netz"),
 ]
 
 # Ein Zeichensatz, wie ihn ein Provider mitliefert: fertiges SVG, das der

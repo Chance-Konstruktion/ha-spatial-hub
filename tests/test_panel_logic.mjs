@@ -2188,18 +2188,23 @@ test("the lawn is not a balcony: no railing around the garden", () => {
   assert.match(html, /Garten/, "the garden is still drawn");
 });
 
-test("the cloud gets no walls", () => {
-  // The internet has no masonry, and a homeless storey is not a storey.
+test("das Erdreich bekommt keine Waende", () => {
+  // The internet has no masonry. Und eine Etage, auf der ausser dem
+  // Anschluss nichts liegt, ist trotzdem eine Etage -- die Waende
+  // gehoeren ihr, nicht dem, was im Ring darum liegt.
   const data = model({
-    floors: [
-      { id: "eg", name: "Erdgeschoss", level: 0, icon: "" },
-      { id: "_virtual", name: "Virtuell", level: 900, virtual: true },
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "",
+               has_outdoor: true, has_soil: true }],
+    areas: [
+      { id: "lan", name: "LAN", floor_id: "eg", kind: "virtual",
+        position: at(0.5, -0.14), size: { width: 0.3, height: 0.2 } },
     ],
   });
   const html = panel(data, { floor: null })._stackHtml();
 
   assert.equal((html.match(/class="shell-face"/g) || []).length, 4,
                "one real storey, one set of walls");
+  assert.doesNotMatch(html, /class="room-wall"/, "und kein Mauerwerk im Boden");
 });
 
 test("the walls never swallow a click meant for a device", () => {
@@ -2222,9 +2227,13 @@ test("there is no roof, in the markup or in the stylesheet", () => {
 });
 
 
-test("a cloud never swallows the grip that resizes it", () => {
+test("das Erdreich schluckt den Anfasser nicht, der es groesser macht", () => {
+  // Die Schraffur ist Hintergrund, kein Element davor: ein Verlauf kann
+  // gar nichts schlucken. Vorher lag hier ein SVG im Kasten, und das
+  // musste ausdruecklich durchlaessig gestellt werden.
   const source = rendererSource();
-  assert.match(source, /\.area\.virtual \.cloud \{[^}]*pointer-events:none/);
+  assert.match(source, /\.area\.virtual \{[^}]*repeating-linear-gradient/);
+  assert.doesNotMatch(source, /\.area\.virtual \.cloud/);
 });
 
 // ── Rooms that are not rectangles ─────────────────────────
@@ -2553,66 +2562,142 @@ test("renaming and recolouring a shape keeps its points untouched", () => {
   assert.deepEqual(written.points, points);
 });
 
-// ── Clouds over the roof ──────────────────────────────────
+// ── Das Erdreich um die unterste Etage ────────────────────
+//
+// Hier standen die Wolken. Sie bekamen eine eigene Ebene ueber dem Dach,
+// und die kostete die Zeichnung mehr Hoehe als eine ganze Etage: 255
+// Einheiten Abstand plus 340 Einheiten Etagenplatz, damit drei Kaesten
+// nicht als Dachboden gelesen werden. Der Anschluss kommt aus dem Boden,
+// also liegen sie jetzt im Ring um die unterste Etage -- auf einer Ebene,
+// die es ohnehin gibt.
 
-const withSky = () =>
+const withSoil = () =>
   model({
     floors: [
-      { id: "eg", name: "Erdgeschoss", level: 0, icon: "", has_outdoor: true },
+      { id: "keller", name: "Keller", level: -1, icon: "",
+        has_outdoor: true, has_soil: true },
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "", has_outdoor: true,
+        ground: true },
       { id: "og", name: "Obergeschoss", level: 1, icon: "" },
-      { id: "sky", name: "Netz", level: 9, icon: "", virtual: true },
     ],
     areas: [
       { id: "wohnzimmer", name: "Wohnzimmer", floor_id: "eg",
         position: at(0.25, 0.5), size: { width: 0.4, height: 0.4 } },
-      { id: "lan", name: "LAN", floor_id: "sky", kind: "virtual",
-        position: at(0.5, 0.5), size: { width: 0.3, height: 0.2 } },
+      { id: "lan", name: "LAN", floor_id: "keller", kind: "virtual",
+        position: at(0.5, -0.14), size: { width: 0.3, height: 0.2 } },
     ],
   });
 
-test("the sky is drawn first, whatever order the floors arrived in", () => {
-  // A cloud plane that inherits its position from a floor list ends up
-  // between two storeys, and the internet is not on the first floor.
-  const view = panel(withSky(), { floor: null });
+test("es gibt keine schwebende Ebene mehr", () => {
+  // Der Stapel besteht aus Etagen, die es im Haus gibt. Eine erfundene
+  // vorneweg war genau das, was die Bildhoehe gefressen hat.
+  const view = panel(withSoil(), { floor: null });
 
-  assert.equal(view._stackFloors[0].id, "sky");
+  assert.deepEqual(view._stackFloors.map((floor) => floor.id),
+                   ["og", "eg", "keller"], "oben nach unten, sonst nichts");
 });
 
-test("the clouds float clear of the roof rather than sitting on it", () => {
-  const view = panel(withSky(), { floor: null });
-  const sky = view._project(0, 0.5, 0.5);
-  const top = view._project(1, 0.5, 0.5);
+test("drei Etagen brauchen jetzt weniger Hoehe als vorher vier", () => {
+  // Die Rechnung, die den Umbau ausgeloest hat: die Wolkenebene addierte
+  // ihren Etagenplatz UND einen Abstand auf jede Zeichnung.
+  const drei = geometry.stackHeight([{ id: "og" }, { id: "eg" }, { id: "keller" }]);
+  const vier = geometry.stackHeight(
+    [{ id: "sky" }, { id: "og" }, { id: "eg" }, { id: "keller" }]);
 
-  assert.ok(sky.y < top.y, "sky above the top storey");
-  // The ridge sits roughly half the plan's depth above the top storey, so
-  // clearing it takes more than one ordinary storey gap.
-  assert.ok(top.y - sky.y > 300, `only ${top.y - sky.y} apart`);
+  assert.ok(drei < vier, "eine Ebene weniger ist eine Ebene weniger");
+  assert.ok(vier - drei >= 340, `nur ${vier - drei} gespart`);
 });
 
-test("the sky stays inside the drawing it floats in", () => {
-  // Lifting the clouds without making room for them puts them off the
-  // top of the canvas, where nobody scrolls.
-  const view = panel(withSky(), { floor: null });
+test("keine Etage schwebt ueber einer anderen", () => {
+  // planeLift gab es einmal; jetzt liegen alle Ebenen im selben Raster.
+  const floors = [{ id: "og" }, { id: "eg" }, { id: "keller" }];
+  const project = (index) =>
+    geometry.projectOnto({ frame: FRAME, gutter: 150, floors, index }, 0.5, 0.5);
 
-  assert.ok(view._project(0, 0.5, 0) .y > 0, "not off the top edge");
+  const abstaende = [
+    project(1).y - project(0).y,
+    project(2).y - project(1).y,
+  ];
+  assert.equal(abstaende[0], abstaende[1], "gleicher Abstand zwischen allen");
 });
 
-test("the sky plane is sky, not a storey with clouds painted on it", () => {
-  const view = panel(withSky(), { floor: null });
-  const html = view._stackHtml();
-  const sky = html.slice(html.indexOf('class="plane virtual"'));
-  const plane = sky.slice(0, sky.indexOf("</g>"));
-
-  assert.equal(plane.includes('class="storey"'), false);
-  assert.equal(plane.includes('class="apron"'), false);
-});
-
-test("a cloud gets the same room around the house that a garden does", () => {
-  // Squeezed into the footprint, a cloud reads as a room on the top floor.
-  const view = panel(withSky(), { floor: "sky" });
+test("das Erdreich bekommt denselben Ring, den ein Garten bekommt", () => {
+  // Im Grundriss eingesperrt laese sich der Anschluss als Kellerraum.
+  const view = panel(withSoil(), { floor: "keller" });
 
   assert.ok(view._frame.min < 0);
   assert.ok(view._frame.span > 1);
+});
+
+test("die unterste Etage bekommt ein Erdband, das Erdgeschoss seinen Rasen", () => {
+  const html = panel(withSoil(), { floor: null })._stackHtml();
+
+  assert.match(html, /class="soil-plane"/, "Erde um den Keller");
+  assert.match(html, /class="apron"/, "Rasen ums Erdgeschoss");
+});
+
+test("ein virtueller Bereich ist schraffiert und hat keine Waende", () => {
+  // Erde wird in einer Bauzeichnung schraffiert. Waende haette sie nur,
+  // wenn sie ein Raum waere -- und genau das soll sie nicht sein.
+  const html = panel(withSoil(), { floor: null })._stackHtml();
+  const soil = html.slice(html.indexOf('class="soil"'));
+  const bis = soil.slice(0, soil.indexOf("LAN"));
+
+  assert.match(bis, /class="soil-hatch"/, "Schraffur");
+  assert.doesNotMatch(bis, /class="room-wall"/, "aber kein Mauerwerk");
+});
+
+test("die Schraffur bleibt im Kasten", () => {
+  // Ein Strich, der ueber die Kante laeuft, ist ein Strich ueber der
+  // Kante -- auch wenn ihn gerade zufaellig etwas verdeckt. Geprueft an
+  // dem flachen Band, das ein Erdreich-Bereich wirklich ist, und nicht
+  // am bequemen Quadrat.
+  for (const [x0, y0, w, h] of [[0, 0, 1, 1], [-0.28, -0.25, 1.4, 0.22]]) {
+    const punkte = geometry.soilHatch((x, y) => ({ x, y }), x0, y0, w, h);
+    assert.ok(punkte.length >= 3, `zu wenige Striche: ${punkte.length}`);
+    assert.ok(punkte.length <= geometry.SOIL_HATCH_MAX);
+    for (const [von, nach] of punkte) {
+      for (const p of [von, nach]) {
+        assert.ok(p.x >= x0 - 1e-9 && p.x <= x0 + w + 1e-9, `x: ${p.x}`);
+        assert.ok(p.y >= y0 - 1e-9 && p.y <= y0 + h + 1e-9, `y: ${p.y}`);
+      }
+    }
+  }
+});
+
+test("die Schraffur haengt nicht an der Form des Kastens", () => {
+  // Der Grund fuer den festen Abstand: mit fester Anzahl liegt die
+  // Diagonale eines 1.4-auf-0.22-Bandes fast flach, und das Erdreich
+  // sah aus wie Maserung.
+  const winkel = (w, h) => {
+    const [[von, nach]] = geometry.soilHatch((x, y) => ({ x, y }), 0, 0, w, h);
+    return Math.atan2(nach.y - von.y, nach.x - von.x).toFixed(6);
+  };
+  assert.equal(winkel(1, 1), winkel(1.4, 0.22), "45 Grad bleiben 45 Grad");
+});
+
+test("ein breiteres Band bekommt mehr Striche, nicht laengere", () => {
+  const schmal = geometry.soilHatch((x, y) => ({ x, y }), 0, 0, 0.4, 0.22);
+  const breit = geometry.soilHatch((x, y) => ({ x, y }), 0, 0, 1.4, 0.22);
+
+  assert.ok(breit.length > schmal.length, "eine Schraffur ist eine Dichte");
+});
+
+test("die Schraffur laeuft mit der Flucht, nicht quer dazu", () => {
+  // Im Grundriss gerechnet und dann projiziert. Im Bild gerechnet stuende
+  // sie auf jeder Etage anders schraeg.
+  const floors = [{ id: "eg" }, { id: "og" }];
+  const hatch = (index) =>
+    geometry.soilHatch(
+      (x, y) =>
+        geometry.projectOnto({ frame: FRAME, gutter: 150, floors, index }, x, y),
+      0, 0, 0.3, 0.2,
+    );
+  const winkel = ([von, nach]) =>
+    Math.atan2(nach.y - von.y, nach.x - von.x).toFixed(4);
+
+  assert.deepEqual(hatch(0).map(winkel), hatch(1).map(winkel),
+                   "auf jeder Etage derselbe Winkel");
 });
 
 // ── Ein Redraw mitten im Ziehen ────────────────────────────
@@ -3905,9 +3990,11 @@ test("die Flucht zieht beide Flanken nach innen, nicht beide nach rechts", () =>
   assert.ok(at(1, 0).x < at(1, 1).x, "die rechte Wand weicht nach links");
 });
 
-test("nur der Himmel schwebt", () => {
-  assert.equal(geometry.planeLift({ id: "eg" }), 0);
-  assert.ok(geometry.planeLift({ id: "sky", virtual: true }) > 0);
+test("es gibt nichts mehr, was schwebt", () => {
+  // planeLift/skyOf sind weg. Ein Rest davon im Quelltext waere ein
+  // Abstand, den irgendwann wieder jemand addiert.
+  assert.equal(geometry.planeLift, undefined);
+  assert.equal(geometry.skyOf, undefined);
 });
 
 test("eine Etage mehr macht die Zeichnung hoeher, nicht enger", () => {

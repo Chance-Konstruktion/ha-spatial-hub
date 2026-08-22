@@ -18,7 +18,6 @@
 import {
   AREA_KIND,
   BACK_WALL,
-  CLOUD_SVG,
   FRONT_WALL,
   SIDE_NAME,
   STACK,
@@ -232,12 +231,22 @@ export const ANSICHT = {
       // storeys may carry outdoor areas of their own -- a balcony upstairs
       // is still edited and drawn as a room (see `rooms` below), it just
       // does not turn its whole storey into a lawn.
-      const apron = floor.has_outdoor && floor.ground
-        ? `<polygon class="apron" points="${outline(
-            at, frame.min, frame.min + frame.span,
-            minY(frame), minY(frame) + spanY(frame),
-          )}"/>`
-        : "";
+      // Und dasselbe eine Etage tiefer, nur als Erde statt als Rasen:
+      // die unterste Etage liegt im Boden, und was um sie herum liegt,
+      // ist Erdreich. Dort steckt der Hausanschluss, und dort stehen
+      // seit dem Umzug die virtuellen Bereiche.
+      //
+      // Zwei Faelle, nicht einer mit einer Klasse dran: eine Etage kann
+      // beides sein -- ein Haus ohne Keller hat Garten *und* Erdreich um
+      // dasselbe Erdgeschoss. Dann liegt die Erde unter dem Rasen.
+      const ground = (className) =>
+        `<polygon class="${className}" points="${outline(
+          at, frame.min, frame.min + frame.span,
+          minY(frame), minY(frame) + spanY(frame),
+        )}"/>`;
+      const apron = `${floor.has_soil ? ground("soil-plane") : ""}${
+        floor.has_outdoor && floor.ground ? ground("apron") : ""
+      }`;
       // Der Name steht links neben der Etage, im Rand -- nicht an ihrer
       // Kante. Die x-Koordinate kommt vom linkesten Punkt der Platte,
       // die y-Koordinate aus der oberen Haelfte: so steht der Name auf
@@ -282,21 +291,6 @@ export const ANSICHT = {
           return this._roomPolygon(at, area, keep);
         })
         .join("");
-      // Sky is not a storey. It got a floor slab and an outline like
-      // every other plane, which is exactly what made the cloud level
-      // read as an attic with clouds painted on it. Up there the clouds
-      // are the whole plane -- nothing under them, nothing around them.
-      if (floor.virtual) {
-        return `<g class="plane virtual">
-          ${rooms}
-          <g data-at-x="${label.x}" data-at-y="${label.y}"
-             transform="translate(${label.x},${label.y}) scale(${
-               this._counterScale
-             })"><text class="storey-name ${this._oneStorey ? "alone" : ""}">${escapeHtml(
-               String(floor.name || "").toLocaleUpperCase("de"),
-             )}</text></g>
-        </g>`;
-      }
       // The storey is a floor slab, not a sheet of paper: a thin band of
       // edge under it is the difference between four drawings above each
       // other and four floors of one house.
@@ -849,7 +843,6 @@ export const ANSICHT = {
         // what they were, and the room simply stops being a rectangle
         // within them. Clipping the box would clip its own handles away
         // and make an L-shaped room the one room nobody can edit.
-        // A cloud has an outline of its own and ignores all of this.
         const shaped = hasShape(area) && kindOf(area) !== AREA_KIND.VIRTUAL;
         const fill = shaped
           ? `<div class="area-fill" style="clip-path:polygon(${shapeOf(area)
@@ -885,7 +878,6 @@ export const ANSICHT = {
               height:${(size.height / spanY(frame)) * 100}%;">
           ${areaBackground}
           ${fill}
-          ${kindOf(area) === AREA_KIND.VIRTUAL ? CLOUD_SVG : ""}
           <span class="area-name">
             ${area.icon ? `<ha-icon icon="${escapeHtml(area.icon)}"></ha-icon>` : ""}
             ${escapeHtml(area.name)}
@@ -1295,7 +1287,7 @@ export const ANSICHT = {
     const kinds = [
       [AREA_KIND.INDOOR, "Raum", "mdi:home-outline"],
       [AREA_KIND.OUTDOOR, "Garten / Außenbereich", "mdi:tree-outline"],
-      [AREA_KIND.VIRTUAL, "Virtuell (Cloud, Internet, VPN)", "mdi:cloud-outline"],
+      [AREA_KIND.VIRTUAL, "Virtuell (Internet, VPN, Cloud)", "mdi:transmission-tower"],
     ];
     return `
       <div class="scrim" data-close-area="1"></div>
@@ -1308,7 +1300,9 @@ export const ANSICHT = {
         </div>
         <p class="note">Ein Garten ist keine Etage. Außenbereiche legen sich
         als Ring um das Erdgeschoss — Vorgarten, Terrasse, Einfahrt und
-        Garage passen alle darauf, ohne ein Stockwerk zu erfinden.</p>
+        Garage passen alle darauf, ohne ein Stockwerk zu erfinden.
+        Virtuelle Bereiche liegen im Erdreich um die unterste Etage:
+        dort, wo der Hausanschluss herkommt.</p>
         <div class="chips">
           ${kinds
             .map(

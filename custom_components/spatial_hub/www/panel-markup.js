@@ -7,9 +7,9 @@
  * Formen zurueck. Genau deshalb steht es hier und nicht in der Klasse.
  *
  * Ein Raum wird in *beiden* Ansichten aus derselben Kontur gebaut. Dass
- * die Wolke einmal eine Wolke und einmal ein Rechteck war, kam daher,
- * dass es zwei Stellen gab, die dasselbe zeichnen wollten. Eine Funktion,
- * die die Projektion als Argument nimmt, kann es nur noch einmal geben.
+ * das Erdreich einmal so und einmal anders aussah, kam daher, dass es
+ * zwei Stellen gab, die dasselbe zeichnen wollten. Eine Funktion, die die
+ * Projektion als Argument nimmt, kann es nur noch einmal geben.
  *
  * Kein Build, kein Bundle: Der Browser laedt das als ES-Modul direkt.
  */
@@ -18,7 +18,7 @@ import {
   STACK,
   centreOf,
   shapeOf,
-  CLOUD_PATH,
+  soilHatch,
   wallsOf,
   capsOf,
   AREA_KIND,
@@ -77,11 +77,8 @@ const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) 
   const back = Math.min(...corners.map((corner) => corner.y));
   const label = { x: middle.x, y: middle.y - (middle.y - back) * 0.55 };
 
-  // A virtual area is a cloud here too. It was a cloud on its own tab
-  // and a rectangle in the house view, so the two views disagreed about
-  // what the thing *is* -- and the house view is the one people open.
-  // Walls, and only for rooms. A garden has no walls, and a cloud has
-  // neither -- standing a terrace up on 26 units of masonry would say
+  // Walls, and only for rooms. A garden has no walls, and the soil has
+  // none either -- standing a terrace up on 26 units of masonry would say
   // the exact opposite of what a terrace is.
   //
   // Three parts, in the order you would see them: the floor inside the
@@ -139,23 +136,23 @@ const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) 
   if (deck) {
     shape += wallsOf(corners, STACK.rise * 0.35, "deck-rail", keep);
   }
+  // Erdreich: eine schraffierte Flaeche, kein Kasten.
+  //
+  // Hier stand eine Wolke -- eine feste Kontur, die auf die Kastengroesse
+  // gezerrt wurde. Sie war das Zeichen fuer "kein Raum", und sie stand
+  // deshalb ueber dem Dach. Im Boden braucht es das Zeichen genauso, aber
+  // ein anderes: Erde ist in einer Bauzeichnung schraffiert. Die
+  // Schraffur wird im Grundriss gerechnet und dann projiziert, also
+  // liegt sie in derselben Flucht wie alles andere auf der Etage.
   if (kindOf(area) === AREA_KIND.VIRTUAL) {
-    // Der Grundriss steht in der Flucht, also steht die Wolke mit
-    // darin: zwei Kanten des projizierten Raumes sind die Achsen, an
-    // denen sie gezeichnet wird. Damit gilt das auch weiter, seit die
-    // Flanken nicht mehr parallel laufen.
-    const origin = project(x0, y0);
-    const alongX = project(x0 + width, y0);
-    const alongY = project(x0, y0 + height);
-    const matrix = [
-      (alongX.x - origin.x) / 100, (alongX.y - origin.y) / 100,
-      (alongY.x - origin.x) / 60, (alongY.y - origin.y) / 60,
-      origin.x, origin.y,
-    ]
-      .map((value) => value.toFixed(4))
-      .join(",");
-    shape = `<path class="stack-cloud" transform="matrix(${matrix})"
-      d="${CLOUD_PATH}"/>`;
+    const hatch = soilHatch(project, x0, y0, width, height)
+      .map(
+        ([from, to]) =>
+          `<line class="soil-hatch" x1="${from.x.toFixed(2)}" y1="${from.y.toFixed(2)}"
+             x2="${to.x.toFixed(2)}" y2="${to.y.toFixed(2)}"/>`,
+      )
+      .join("");
+    shape = `<polygon class="soil" points="${points}"/>${hatch}`;
   }
 
   return `${shape}
