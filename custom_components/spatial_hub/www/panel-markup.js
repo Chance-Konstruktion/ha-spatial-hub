@@ -48,37 +48,57 @@ const escapeHtml = (value) =>
  *  oder Balkon ist), `counterScale` haelt die Beschriftung lesbar,
  *  waehrend die Kamera zoomt.
  */
+/** Die projizierte Kontur eines Raumes.
+ *
+ *  The same outline the single-floor view clips to, projected. The two
+ *  views disagreeing about the shape of a room is the bug that made the
+ *  cloud a rectangle in the house view, and a niche visible on one tab
+ *  only would be the same bug wearing a different hat.
+ *
+ *  Steht hier fuer sich, weil nicht nur das Zeichnen sie braucht: wer
+ *  Beschriftungen entzerren will, muss wissen, wo der Raumname landet,
+ *  *bevor* der Raum gezeichnet ist. Zwei Rechnungen dafuer waeren zwei
+ *  Stellen, an denen ein Name um ein paar Einheiten danebenliegt.
+ */
+const cornersOf = (project, area) => {
+  const width = (area.size && area.size.width) || 0.3;
+  const height = (area.size && area.size.height) || 0.3;
+  const x0 = area.position.x - width / 2;
+  const y0 = area.position.y - height / 2;
+  return shapeOf(area)
+    .map((point) => [x0 + point.x * width, y0 + point.y * height])
+    .map(([x, y]) => project(x, y));
+};
+
+/** Wo der Name eines Raumes steht: im hinteren Drittel, nicht in der Mitte.
+ *
+ *  In der Mitte stand er genau dort, wo auch die Geraete stehen -- die
+ *  Automatik setzt ein Geraet ohne eigene Angabe in die Raummitte, und
+ *  dessen Beschriftung haengt darunter. Auf dem ersten Bild fuer die
+ *  README las man deshalb "Adapter Arbeitszimmer" quer durch das Wort
+ *  "Arbeitszimmer". Nach hinten geschoben teilen sich beide den Raum:
+ *  der Name des Raumes hinten, was darin steht davor.
+ *
+ *  Die Verschiebung geht nach oben statt auf einen festen Punkt im
+ *  Raumkasten, damit sie fuer jede Kontur gilt und nicht nur fuer das
+ *  Rechteck. Die hintere Kante ist im Bild waagerecht -- die Schraege
+ *  des Sandwiches verschiebt nur x --, also liegt alles zwischen Mitte
+ *  und dieser Kante sicher noch im Raum.
+ */
+const labelPointOf = (corners) => {
+  const middle = centreOf(corners);
+  const back = Math.min(...corners.map((corner) => corner.y));
+  return { x: middle.x, y: middle.y - (middle.y - back) * 0.55 };
+};
+
 const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) => {
   const width = (area.size && area.size.width) || 0.3;
   const height = (area.size && area.size.height) || 0.3;
   const x0 = area.position.x - width / 2;
   const y0 = area.position.y - height / 2;
-  // The same outline the single-floor view clips to, projected. The two
-  // views disagreeing about the shape of a room is the bug that made
-  // the cloud a rectangle in the house view, and a niche visible on one
-  // tab only would be the same bug wearing a different hat.
-  const corners = shapeOf(area)
-    .map((point) => [x0 + point.x * width, y0 + point.y * height])
-    .map(([x, y]) => project(x, y));
+  const corners = cornersOf(project, area);
   const points = corners.map((point) => `${point.x},${point.y}`).join(" ");
-  // Der Raumname im Raum, wie in jedem Grundriss -- aber nicht in
-  // seiner Mitte, sondern im hinteren Drittel.
-  //
-  // In der Mitte stand er genau dort, wo auch die Geraete stehen: die
-  // Automatik setzt ein Geraet ohne eigene Angabe in die Raummitte, und
-  // dessen Beschriftung haengt darunter. Auf dem ersten Bild fuer die
-  // README las man deshalb "Adapter Arbeitszimmer" quer durch das Wort
-  // "Arbeitszimmer". Nach hinten geschoben teilen sich beide den Raum:
-  // der Name des Raumes hinten, was darin steht davor.
-  //
-  // Die Verschiebung geht nach oben statt auf einen festen Punkt im
-  // Raumkasten, damit sie fuer jede Kontur gilt und nicht nur fuer das
-  // Rechteck. Die hintere Kante ist im Bild waagerecht -- die Schraege
-  // des Sandwiches verschiebt nur x --, also liegt alles zwischen Mitte
-  // und dieser Kante sicher noch im Raum.
-  const middle = centreOf(corners);
-  const back = Math.min(...corners.map((corner) => corner.y));
-  const label = { x: middle.x, y: middle.y - (middle.y - back) * 0.55 };
+  const label = labelPointOf(corners);
 
   // Walls, and only for rooms. A garden has no walls, and the soil has
   // none either -- standing a terrace up on 26 units of masonry would say
@@ -311,6 +331,8 @@ export {
   roomPolygon,
   cornerHandlesHtml,
   doorsHtml,
+  cornersOf,
+  labelPointOf,
   sparklineHtml,
   escapeHtml,
 };

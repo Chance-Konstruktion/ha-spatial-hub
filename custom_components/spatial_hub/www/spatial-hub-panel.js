@@ -59,6 +59,7 @@ import {
   isStairs,
   projectOnto,
   stackHeight,
+  DIM,
   stackWidth,
   snapTo,
   magnetTo,
@@ -539,7 +540,14 @@ class SpatialHubPanel extends HTMLElement {
    *  costs nothing but says which floor is which.
    */
   get _stackHeight() {
-    return stackHeight(this._stackFloors);
+    return stackHeight(this._stackFloors, this._dimensionRoom);
+  }
+
+  /** Wie viel Luft die Massketten unter der untersten Etage brauchen.
+   *  Null, solange sie ausgeschaltet sind -- ein Bild, das dauerhaft
+   *  Platz fuer etwas Unsichtbares freihaelt, ist ein leerer Rand. */
+  get _dimensionRoom() {
+    return this._meters ? DIM.drop + DIM.row + DIM.size * 2 : 0;
   }
 
   /** How wide the drawing has to be. Every storey is offset a little

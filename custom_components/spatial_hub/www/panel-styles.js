@@ -361,6 +361,18 @@ main { flex:0 0 auto; min-width:0; }
 .soil-plane { fill:var(--fp-soil, rgba(120,100,72,.14));
               stroke:var(--fp-soil-line, rgba(120,100,72,.4));
               stroke-width:2; stroke-dasharray:4 6; }
+/* Massketten. Haarlinien, damit sie den Riss nicht ueberstimmen -- eine
+   Kette ist eine Angabe ueber die Zeichnung und nicht Teil des Baus.
+   Die Hilfslinie ist die leiseste von dreien: sie sagt nur, wo gemessen
+   wurde, und das weiss man ohnehin schon, wenn man die Wand sieht. */
+.dim-line, .dim-tick, .dim-help {
+  stroke:var(--fp-ink, currentColor); fill:none;
+  vector-effect:non-scaling-stroke; pointer-events:none; }
+.dim-line { stroke-width:1; opacity:.75; }
+.dim-tick { stroke-width:1.4; opacity:.85; }
+.dim-help { stroke-width:1; opacity:.3; stroke-dasharray:3 4; }
+.dim-text { font-size:13px; fill:var(--fp-ink, currentColor); opacity:.85;
+            text-anchor:middle; letter-spacing:.02em; pointer-events:none; }
 /* Die Suche blendet nicht aus, sie stellt zurück: der Rest bleibt sichtbar. */
 .stack-node.dimmed { opacity:calc(var(--layer-opacity,1) * .25); }
 .stack-node.found circle { stroke:var(--fp-accent, var(--primary-color,#03a9f4));

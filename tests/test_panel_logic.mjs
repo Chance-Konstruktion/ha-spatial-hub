@@ -1080,7 +1080,11 @@ test("the storey for roomless areas stays at the bottom of the stack", () => {
   assert.deepEqual(view._stackFloors.map((f) => f.id), ["og", "eg", "_unassigned"]);
 });
 
-test("a crowded storey hides its labels until you point at one", () => {
+test("zwoelf Geraete auf einem Fleck koennen nicht alle beschriftet sein", () => {
+  // Frueher entschied das eine Pauschale: mehr als fuenf auf einer
+  // Ebene, und alle Namen verschwanden. Jetzt entscheidet, ob wirklich
+  // kein Platz mehr ist -- und bei zwoelf Punkten an derselben Stelle
+  // ist wirklich keiner mehr.
   const data = model({
     nodes: Array.from({ length: 12 }, (_, i) => node(`a:n${i}`)),
   });
@@ -2455,6 +2459,357 @@ test("das Erdreich bekommt keine Waende", () => {
   assert.equal((html.match(/class="shell-face"/g) || []).length, 4,
                "one real storey, one set of walls");
   assert.doesNotMatch(html, /class="room-wall"/, "und kein Mauerwerk im Boden");
+});
+
+// ── Beschriftungen, die sich nicht decken ─────────────────
+//
+// Zwei Namen an derselben Stelle sind schlechter als einer: man liest
+// keinen von beiden. Vorher gab es dagegen nur eine Pauschale -- mehr
+// als fuenf Geraete auf einer Ebene, und alle Namen verschwanden bis
+// zum Darueberfahren. Gezaehlt wurde, nicht nachgesehen.
+
+const label = (x, y, text, extra = {}) =>
+  ({ x, y, text, size: 16, scale: 1, ...extra });
+
+test("was sich nicht deckt, wird nicht angefasst", () => {
+  const [a, b] = geometry.declutter([
+    label(0, 0, "Bad"), label(500, 500, "Küche"),
+  ]);
+
+  assert.deepEqual(a, { shift: 0, hidden: false });
+  assert.deepEqual(b, { shift: 0, hidden: false });
+});
+
+test("zwei Namen an derselben Stelle weichen einander aus", () => {
+  const [a, b] = geometry.declutter([
+    label(100, 100, "Wohnzimmer"), label(100, 100, "Wohnzimmer"),
+  ]);
+
+  assert.equal(a.shift, 0, "der erste bleibt");
+  assert.notEqual(b.shift, 0, "der zweite geht aus dem Weg");
+  assert.equal(b.hidden, false);
+  // Und zwar wirklich aus dem Weg: die Kaesten duerfen sich danach
+  // nicht mehr schneiden.
+  const box = (l, shift) => geometry.labelBox(l, shift);
+  const erste = box(label(100, 100, "Wohnzimmer"), a.shift);
+  const zweite = box(label(100, 100, "Wohnzimmer"), b.shift);
+  assert.ok(erste.y1 <= zweite.y0 || zweite.y1 <= erste.y0,
+            "sie liegen immer noch uebereinander");
+});
+
+test("ein Raumname steht, wo er steht", () => {
+  // Ihn zu verschieben hiesse, ihn ueber die Wand des Nachbarn zu
+  // schieben -- und damit in einen Raum, der anders heisst.
+  const [raum, geraet] = geometry.declutter([
+    label(100, 100, "Wohnzimmer", { fixed: true }),
+    label(100, 100, "Adapter"),
+  ]);
+
+  assert.equal(raum.shift, 0);
+  assert.notEqual(geraet.shift, 0);
+});
+
+test("der feste Name gewinnt, auch wenn er hinten in der Liste steht", () => {
+  // Sonst weicht ein Geraetename einem Raumnamen aus, der erst danach
+  // dazukommt -- und landet dabei womoeglich auf einem dritten.
+  const [geraet, raum] = geometry.declutter([
+    label(100, 100, "Adapter"),
+    label(100, 100, "Wohnzimmer", { fixed: true }),
+  ]);
+
+  assert.equal(raum.shift, 0);
+  assert.notEqual(geraet.shift, 0);
+});
+
+test("ausgewichen wird nach unten und nach oben", () => {
+  // Nur nach unten waere eine Reihe von fuenf Geraeten am Ende eine
+  // Spalte, die aus dem Geschoss herauslaeuft.
+  const platz = geometry.declutter(
+    Array.from({ length: 5 }, () => label(100, 100, "Adapter")),
+  );
+  const nach = platz.map((p) => p.shift).filter((shift) => shift !== 0);
+
+  assert.ok(nach.some((shift) => shift > 0), "einer nach unten");
+  assert.ok(nach.some((shift) => shift < 0), "einer nach oben");
+});
+
+test("was keinen Platz findet, wird weggeblendet statt danebengesetzt", () => {
+  // Ein Name drei Zeilen neben seinem Punkt beschriftet nichts mehr, er
+  // behauptet nur noch etwas.
+  const platz = geometry.declutter(
+    Array.from({ length: 40 }, () => label(100, 100, "Adapter Wohnzimmer")),
+  );
+
+  assert.ok(platz.some((p) => p.hidden), "irgendwann ist Schluss");
+  assert.equal(platz[0].hidden, false, "aber nicht beim ersten");
+});
+
+test("dasselbe Bild kommt zweimal gleich heraus", () => {
+  // Die Reihenfolge im Modell ist keine Reihenfolge. Ohne eine eigene
+  // waere jedes Neuzeichnen ein anderes Bild.
+  const labels = [
+    label(100, 100, "Adapter"), label(100, 104, "Sensor"),
+    label(102, 100, "Licht"), label(100, 100, "Wohnzimmer", { fixed: true }),
+  ];
+  assert.deepEqual(geometry.declutter(labels), geometry.declutter(labels));
+});
+
+test("die Hausansicht setzt keine zwei Namen aufeinander", () => {
+  // Der Fall aus dem echten Bild: "Adapter Arbeitszimmer" lag quer ueber
+  // "Kinderzimmer", weil der Geraetename unter seinem Punkt haengt und
+  // der Raumname davor im hinteren Drittel steht.
+  const dicht = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+    areas: [
+      { id: "a", name: "Arbeitszimmer", floor_id: "eg",
+        position: at(0.4, 0.4), size: { width: 0.7, height: 0.7 } },
+    ],
+    nodes: [
+      // Drei Geraete fast aufeinander, und der Raumname darueber. Ohne
+      // Entzerren liegen alle vier Namen im selben Fleck -- genau der
+      // Fall, den das echte Bild gezeigt hat.
+      node("p:1", { area_id: "a", floor_id: "eg", label: "Adapter Arbeitszimmer",
+                    position: at(0.4, 0.4) }),
+      node("p:2", { area_id: "a", floor_id: "eg", label: "Thermostat",
+                    position: at(0.41, 0.4) }),
+      node("p:3", { area_id: "a", floor_id: "eg", label: "Deckenlicht",
+                    position: at(0.4, 0.41) }),
+    ],
+  });
+  const html = panel(dicht, { floor: null })._stackHtml();
+
+  // Die Namen samt Stelle aus dem gezeichneten SVG zurueckholen und
+  // nachrechnen -- geprueft wird das Bild, nicht die Absicht.
+  const boxes = [];
+  const g = /<g[^>]*data-at-x="([\d.eE+-]+)"[^>]*data-at-y="([\d.eE+-]+)"[^>]*>([\s\S]*?)<\/g>/g;
+  let m;
+  while ((m = g.exec(html))) {
+    const raum = m[3].match(/class="room-label">([^<]*)</);
+    const dot = m[3].match(/class="stack-label" y="([\d.-]+)">([^<]*)</);
+    if (raum) {
+      boxes.push(geometry.labelBox(
+        { x: +m[1], y: +m[2], text: raum[1], size: 16 }));
+    } else if (dot) {
+      boxes.push(geometry.labelBox(
+        { x: +m[1], y: +m[2] + Number(dot[1]), text: dot[2], size: 18 }));
+    }
+  }
+
+  assert.equal(boxes.length, 4, "ein Raum, drei Geraete");
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      const a = boxes[i], b = boxes[j];
+      assert.ok(
+        !(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1),
+        `zwei Namen liegen aufeinander: ${JSON.stringify(a)} ${JSON.stringify(b)}`,
+      );
+    }
+  }
+});
+
+test("fuenf ruhige Geraete verlieren ihre Namen nicht mehr", () => {
+  // Die alte Pauschale: mehr als fuenf auf einer Ebene, und alle Namen
+  // verschwanden -- auch die, die weit auseinanderlagen.
+  const weit = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+    areas: [],
+    nodes: Array.from({ length: 8 }, (_unused, i) =>
+      node(`p:${i}`, { floor_id: "eg", label: `G${i}`,
+                       position: at(0.1 + i * 0.1, (i % 2) * 0.8 + 0.1) })),
+  });
+  const html = panel(weit, { floor: null })._stackHtml();
+
+  assert.doesNotMatch(html, /class="stack-node [^"]*crowded/,
+                      "auseinander stehende Namen bleiben stehen");
+});
+
+// -- Massketten -------------------------------------------
+//
+// Eine Bauzeichnung sagt nicht nur, wo etwas steht, sondern wie breit es
+// ist -- als Kette unter dem Riss, nicht als Zahl im Kasten.
+
+const withMetres = (extra = {}) =>
+  model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "", metres: 12 }],
+    areas: [
+      { id: "a", name: "Küche", floor_id: "eg",
+        position: at(0.25, 0.5), size: { width: 0.5, height: 0.6 }, auto: false },
+      { id: "b", name: "Wohnzimmer", floor_id: "eg",
+        position: at(0.75, 0.5), size: { width: 0.5, height: 0.6 }, auto: false },
+    ],
+    ...extra,
+  });
+
+const withMetresOn = (data = withMetres()) => {
+  const view = panel(data, { floor: null, edit: true });
+  view._meters = true;
+  return view;
+};
+
+test("geteilt wird an jeder Wand, die vorne ankommt", () => {
+  const stops = geometry.dimensionStops([
+    { position: { x: 0.25, y: 0.5 }, size: { width: 0.5, height: 0.6 } },
+    { position: { x: 0.75, y: 0.5 }, size: { width: 0.5, height: 0.6 } },
+  ]);
+
+  assert.deepEqual(stops, [0, 0.5, 1], "die Trennwand teilt die Kette");
+});
+
+test("zwei Waende, die eine sind, sind eine Teilung", () => {
+  // Sonst bekaeme jede geteilte Wand zwei Hilfslinien im Abstand eines
+  // Tausendstels und dazwischen ein Mass von null.
+  const stops = geometry.dimensionStops([
+    { position: { x: 0.25, y: 0.5 }, size: { width: 0.5, height: 0.6 } },
+    { position: { x: 0.7501, y: 0.5 }, size: { width: 0.4998, height: 0.6 } },
+  ]);
+
+  assert.equal(stops.length, 3, `zu viele Teilungen: ${stops}`);
+});
+
+test("die Kette faengt am Haus an und hoert am Haus auf", () => {
+  assert.deepEqual(geometry.dimensionStops([]), [0, 1]);
+  // Ein Bereich ausserhalb hat keine Wand, die vorne ankommt.
+  assert.deepEqual(
+    geometry.dimensionStops([
+      { position: { x: 1.4, y: 0.5 }, size: { width: 0.2, height: 0.2 } },
+    ]),
+    [0, 1],
+  );
+});
+
+test("ein Mass steht mit dem Zentimeter da", () => {
+  // "3,0 m" liest sich als gerundet, wo "3,00 m" als gemessen gilt --
+  // und genau dieser Unterschied ist der Grund, eine Kette einzublenden.
+  assert.equal(geometry.dimension(3), "3,00 m");
+  assert.equal(geometry.dimension(5.404), "5,40 m");
+});
+
+test("ohne den Schalter keine Kette", () => {
+  const aus = panel(withMetres(), { floor: null, edit: true })._stackHtml();
+  assert.doesNotMatch(aus, /class="dims"/);
+  assert.match(withMetresOn()._stackHtml(), /class="dims"/);
+});
+
+test("die Kette rechnet mit dem Massstab ihrer eigenen Etage", () => {
+  // Ein Keller, den jemand schmaler eingetragen hat, ist schmaler. Eine
+  // Kette, die das verschweigt, ist falsch und nicht nur ungenau.
+  const html = withMetresOn()._stackHtml();
+
+  assert.match(html, /6,00 m/, "zwei Raeume auf zwoelf Metern");
+  assert.match(html, /12,00 m/, "und das Gesamtmass darunter");
+});
+
+test("ein einziger Abschnitt bekommt keine zweite Reihe", () => {
+  // Dort stuende dieselbe Zahl zweimal untereinander.
+  const einer = withMetres({
+    areas: [
+      { id: "a", name: "Halle", floor_id: "eg",
+        position: at(0.5, 0.5), size: { width: 1, height: 0.6 }, auto: false },
+    ],
+  });
+  const html = withMetresOn(einer)._stackHtml();
+  const masse = [...html.matchAll(/class="dim-text">([^<]*)</g)].map((m) => m[1]);
+
+  assert.deepEqual(masse, ["12,00 m"]);
+});
+
+test("ein Mass, das nicht unter seinen Strich passt, entfaellt", () => {
+  // Die Begrenzungsstriche bleiben: dass dort geteilt ist, sagen die
+  // auch, und die Reihe darunter sagt weiter die Summe. Der Normalfall,
+  // solange Raeume noch nicht Wand an Wand liegen.
+  const fugen = withMetres({
+    areas: [
+      { id: "a", name: "Küche", floor_id: "eg",
+        position: at(0.24, 0.5), size: { width: 0.46, height: 0.6 }, auto: false },
+      { id: "b", name: "Wohnzimmer", floor_id: "eg",
+        position: at(0.76, 0.5), size: { width: 0.46, height: 0.6 }, auto: false },
+    ],
+  });
+  const html = withMetresOn(fugen)._stackHtml();
+  const masse = [...html.matchAll(/class="dim-text">([^<]*)</g)].map((m) => m[1]);
+
+  assert.ok(!masse.some((text) => text.startsWith("0,")),
+            `eine Fuge wurde beschriftet: ${masse}`);
+  assert.ok(masse.includes("12,00 m"), "die Summe steht trotzdem da");
+  // Die Fuge ist gezeichnet, nur nicht beschriftet: vier Teilungen in
+  // der oberen Reihe heissen sechs Begrenzungsstriche und mehr.
+  assert.ok((html.match(/class="dim-tick"/g) || []).length >= 8);
+});
+
+test("die Zeichnung waechst, damit die unterste Kette darauf passt", () => {
+  // Sonst ist die Kette gezeichnet und trotzdem nicht zu sehen, und zwar
+  // nur bei der untersten Etage.
+  const ohne = geometry.stackHeight([{ id: "eg" }]);
+  const mit = geometry.stackHeight([{ id: "eg" }], 100);
+
+  assert.equal(mit - ohne, 100);
+
+  const html = withMetresOn()._stackHtml();
+  const hoehe = Number(html.match(/viewBox="0 0 \d+ (\d+)"/)[1]);
+  let tiefste = 0;
+  for (const m of html.matchAll(
+    /class="dim-[a-z]+"[^>]*y1="([\d.-]+)"[^>]*y2="([\d.-]+)"/g)) {
+    tiefste = Math.max(tiefste, Number(m[1]), Number(m[2]));
+  }
+  assert.ok(tiefste > 0, "es gibt ueberhaupt eine Kette");
+  assert.ok(tiefste <= hoehe,
+            `die Kette bei ${tiefste} liegt unter dem Blattrand ${hoehe}`);
+});
+
+test("die Massketten draengen keinen Namen unter einen anderen", () => {
+  // Sie kommen dazwischen: die Kette haengt genau dort, wo auf der Etage
+  // darunter die Geraetenamen stehen. Ohne sie im Entzerren steht
+  // "Adapter Wohnzimmer" auf "3,60 m", und beide sind weg.
+  const voll = withMetres({
+    nodes: [
+      node("p:1", { area_id: "a", floor_id: "eg", label: "Adapter Küche",
+                    position: at(0.25, 0.78) }),
+      node("p:2", { area_id: "b", floor_id: "eg", label: "Thermostat",
+                    position: at(0.75, 0.78) }),
+    ],
+  });
+  const html = withMetresOn(voll)._stackHtml();
+
+  const boxes = [];
+  const g = /<g([^>]*data-at-x="([\d.eE+-]+)"[^>]*data-at-y="([\d.eE+-]+)"[^>]*)>([\s\S]*?)<\/g>/g;
+  let m;
+  while ((m = g.exec(html))) {
+    // Weggeblendete Namen stehen nicht im Bild, also stoeren sie auch
+    // keinen -- geprueft wird, was zu sehen ist.
+    if (/crowded/.test(m[1])) continue;
+    const inner = m[4];
+    const raum = inner.match(/class="room-label">([^<]*)</);
+    const dot = inner.match(/class="stack-label" y="([\d.-]+)">([^<]*)</);
+    const mass = inner.match(/class="dim-text">([^<]*)</);
+    if (raum) {
+      boxes.push(geometry.labelBox(
+        { x: Number(m[2]), y: Number(m[3]), text: raum[1], size: 16 }));
+    } else if (dot) {
+      boxes.push(geometry.labelBox({
+        x: Number(m[2]), y: Number(m[3]) + Number(dot[1]),
+        text: dot[2], size: 18,
+      }));
+    } else if (mass) {
+      boxes.push(geometry.labelBox(
+        { x: Number(m[2]), y: Number(m[3]), text: mass[1], size: 13 }));
+    }
+  }
+
+  assert.ok(boxes.length >= 5, `zu wenig zu pruefen: ${boxes.length}`);
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      const a = boxes[i], b = boxes[j];
+      assert.ok(!(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1),
+                "zwei Beschriftungen liegen aufeinander");
+    }
+  }
+});
+
+test("der Massband-Schalter ist auch in der Hausansicht da", () => {
+  // Er stand im Block fuer die Einzelansicht und war damit genau dort
+  // nicht erreichbar, wo die Ketten etwas wert sind.
+  const stapel = panel(withMetres(), { floor: null, edit: true });
+  assert.match(stapel._headerHtml(), /data-toggle-meters/);
 });
 
 test("the walls never swallow a click meant for a device", () => {

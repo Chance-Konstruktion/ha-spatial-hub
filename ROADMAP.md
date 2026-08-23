@@ -689,6 +689,14 @@ Innenwände, **Treppen als Stufen**, und ein Balkon, der ein Geländer
 bekommt statt Zimmerwänden — während der Rasen keins bekommt, weil ein
 Garten kein Anbau ist.
 
+**Maßketten** unter jeder Etage, geteilt an den Wänden, mit dem Gesamtmaß
+in einer zweiten Reihe — das, was einen Grundriss von einem beschrifteten
+Rechteck unterscheidet. Und **Beschriftungen, die sich nicht decken**:
+Raumnamen und Maße stehen fest, Gerätenamen weichen aus, und was auch dann
+keinen Platz findet, wird weggeblendet, bis jemand darauf zeigt. Vorher galt
+dafür eine Pauschale — mehr als fünf Geräte auf einer Ebene, und alle Namen
+verschwanden.
+
 Auf dem Smartphone ist der Plan **Vollbild ohne Leisten**, und die Legende
 lässt sich nach unten wegziehen: Wer einen Raum einrichtet, braucht den
 Platz.

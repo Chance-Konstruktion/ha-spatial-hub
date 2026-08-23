@@ -751,10 +751,15 @@ const projectOnto = ({ frame, gutter, floors, index }, x, y) => {
  *  it. Air between the storeys is what makes them storeys, so the picture
  *  grows with the house instead of the house shrinking into the picture.
  */
-const stackHeight = (floors) =>
+/** `extra` ist Platz unter der untersten Etage: die Massketten haengen
+ *  unter der Vorderkante, und bei der untersten ist unter der
+ *  Vorderkante das Ende des Bildes. Ohne diesen Zuschlag ist die Kette
+ *  gezeichnet und trotzdem nicht zu sehen -- und zwar nur bei einer
+ *  einzigen Etage, was der unangenehmste Fehler von allen ist. */
+const stackHeight = (floors, extra = 0) =>
   STACK.top +
   Math.max(0, (floors || []).length - 1) * STACK.gap +
-  STACK.depth + STACK.slab + STACK.pad;
+  STACK.depth + STACK.slab + STACK.pad + Math.max(0, extra);
 
 /** How wide the drawing has to be. Every storey is offset a little
  *  further right than the one above it, so the bottom one decides. */
@@ -830,6 +835,191 @@ const flushWith = (rect, box) => {
 };
 
 // ── Kamera ────────────────────────────────────────────────
+
+// ── Maßketten ─────────────────────────────────────────────
+//
+// Eine Bauzeichnung sagt nicht nur, wo etwas steht, sondern wie breit es
+// ist -- und zwar nicht als Zahl im Kasten, sondern als Kette unter dem
+// Riss: Hilfslinien an jeder Wand, dazwischen ein Strich mit einem Maß
+// darauf. Erst damit ist ein Grundriss etwas, mit dem man zum Baumarkt
+// gehen kann.
+
+/** Wie eine Maßkette im Bild liegt, in Bildeinheiten.
+ *
+ *  Die Kette haengt unter der Vorderkante der Etage, weil dort im Bild
+ *  nichts ist -- ueber dem Riss laege sie auf der Rueckwand, und darin
+ *  liegt schon die Beschriftung der Etage.
+ */
+const DIM = Object.freeze({
+  // Abstand der ersten Kette von der Vorderkante, und der zweiten von
+  // der ersten. Die zweite traegt das Gesamtmass.
+  drop: 44,
+  row: 34,
+  // Laenge der schraegen Begrenzungsstriche und Abstand der Schrift
+  // ueber der Kette.
+  tick: 8,
+  lift: 7,
+  size: 13,
+});
+
+/** Ein Mass in Metern, wie es auf einer Kette steht.
+ *
+ *  Zwei Nachkommastellen, nicht eine wie sonst im Panel: Auf einer
+ *  Masskette steht in einer Bauzeichnung immer der Zentimeter, und
+ *  "3,0 m" liest sich als gerundet, wo "3,00 m" als gemessen gilt.
+ *  Genau dieser Unterschied ist der Grund, warum jemand eine Kette
+ *  einblendet.
+ */
+const dimension = (value) => `${value.toFixed(2).replace(".", ",")} m`;
+
+/** Wo eine Masskette geteilt wird: an jeder Wand, die vorne ankommt.
+ *
+ *  Die linke und die rechte Kante jedes Raumes, dazu die zwei Kanten des
+ *  Hauses. Zwei Waende, die dieselbe sind, sind eine Teilung -- sonst
+ *  bekaeme jede geteilte Wand zwei Hilfslinien im Abstand eines
+ *  Tausendstels und dazwischen ein Mass von null.
+ *
+ *  Alles ausserhalb des Hauses faellt weg. Ein Garten hat keine Wand,
+ *  die vorne ankommt, und ein Mass, das im Rasen anfaengt, misst nichts.
+ */
+const dimensionStops = (areas, gap = JOIN_GAP) => {
+  const edges = [0, 1];
+  for (const area of Array.isArray(areas) ? areas : []) {
+    if (!area || !area.position) continue;
+    const box = boxOf(area);
+    edges.push(box.left, box.right);
+  }
+  const sorted = edges
+    .filter((x) => Number.isFinite(x) && x > -gap && x < 1 + gap)
+    .map((x) => Math.min(1, Math.max(0, x)))
+    .sort((a, b) => a - b);
+  const stops = [];
+  for (const x of sorted) {
+    if (!stops.length || x - stops[stops.length - 1] > gap) stops.push(x);
+  }
+  return stops;
+};
+
+// ── Beschriftungen entzerren ──────────────────────────────
+//
+// Zwei Namen an derselben Stelle sind schlechter als einer: man liest
+// keinen von beiden. In der Hausansicht passiert das staendig, weil der
+// Name eines Geraetes unter seinem Punkt haengt und der Name des Raumes
+// davor in dessen hinterem Drittel steht -- bei zwei Zimmerreihen
+// uebereinander sind das ein paar Einheiten Abstand.
+//
+// Bisher gab es dagegen nur eine Pauschale: mehr als fuenf Geraete auf
+// einer Ebene, und *alle* Namen verschwanden bis zum Darueberfahren.
+// Das trifft auch die vier, die sich nie in die Quere gekommen waeren,
+// und laesst bei fuenf Geraeten zwei uebereinander stehen.
+
+/** Wie eine Beschriftung im Bild Platz braucht.
+ *
+ *  Geschaetzt, nicht gemessen: Im SVG steht kein Text, den man messen
+ *  koennte, bevor er im Dokument haengt -- und die Zeichnung wird
+ *  gebaut, bevor sie haengt. Ein Mittelwert je Zeichen ist fuer diese
+ *  Frage genau genug: Es geht darum, ob zwei Namen aufeinanderliegen,
+ *  und nicht darum, sie auf ein Pixel zu setzen.
+ */
+const LABEL = Object.freeze({
+  // Breite je Zeichen als Anteil der Schriftgroesse. 0.55 ist der grobe
+  // Mittelwert einer Grotesk -- "iii" ist schmaler, "WWW" breiter, und
+  // beides kommt in Raumnamen selten allein vor.
+  perChar: 0.55,
+  // Zeilenhoehe und Schrittweite, beides als Vielfaches der Groesse.
+  // Der Schritt ist groesser als die Zeile, damit ein verschobener Name
+  // nicht direkt an dem klebt, dem er ausgewichen ist.
+  height: 1.4,
+  step: 1.5,
+  // Wie viele Zeilen nach oben und unten versucht werden. Danach ist
+  // Wegblenden ehrlicher: ein Name drei Zeilen neben seinem Punkt
+  // beschriftet nichts mehr, er behauptet nur noch etwas.
+  tries: 3,
+});
+
+/** Der Kasten, den eine Beschriftung im Bild belegt.
+ *
+ *  `anchor` ist dasselbe wie `text-anchor` im SVG und muss dasselbe
+ *  sagen: Der Etagenname ist rechtsbuendig gesetzt, und ein Kasten, der
+ *  ihn mittig annimmt, liegt eine halbe Namenslaenge daneben -- das
+ *  Entzerren wuerde dann gegen einen Platz pruefen, an dem nichts steht.
+ */
+const labelBox = (label, shift = 0) => {
+  const size = (label.size || 16) * (label.scale || 1);
+  const width = String(label.text || "").length * size * LABEL.perChar;
+  const height = size * LABEL.height;
+  const y = label.y + shift;
+  const x0 = label.anchor === "end"
+    ? label.x - width
+    : label.anchor === "start"
+    ? label.x
+    : label.x - width / 2;
+  return { x0, x1: x0 + width, y0: y - height / 2, y1: y + height / 2 };
+};
+
+const boxesOverlap = (a, b) =>
+  a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+/** Beschriftungen so verschieben, dass sie sich nicht mehr decken.
+ *
+ *  `fixed` heisst "diese steht, wo sie steht": ein Raumname gehoert in
+ *  seinen Raum, und ihn zu verschieben hiesse, ihn ueber die Wand des
+ *  Nachbarn zu schieben. Verschoben wird also, was beweglich ist, und
+ *  das sind die Namen der Geraete -- die haengen ohnehin schon unter
+ *  ihrem Punkt und nicht darin.
+ *
+ *  Abwechselnd nach unten und nach oben, in wachsendem Abstand. Nur nach
+ *  unten waere eine Reihe von fuenf Geraeten am Ende eine Spalte, die
+ *  aus dem Geschoss herauslaeuft.
+ *
+ *  Was keinen Platz findet, bekommt `hidden` -- und der Aufrufer blendet
+ *  es weg, bis jemand darauf zeigt. Ein Name, der sich nirgendwo
+ *  hinstellen kann, ist an *jeder* Stelle unlesbar.
+ *
+ *  Die Reihenfolge der Rueckgabe ist die der Eingabe, damit der Aufrufer
+ *  sie neben seine eigene Liste legen kann.
+ */
+const declutter = (labels) => {
+  const list = Array.isArray(labels) ? labels : [];
+  const taken = [];
+  const answer = new Array(list.length);
+
+  // Die festen zuerst und vollstaendig: sonst weicht ein Geraetename
+  // einem Raumnamen aus, der erst danach dazukommt.
+  list.forEach((label, index) => {
+    if (!label || !label.fixed) return;
+    taken.push(labelBox(label));
+    answer[index] = { shift: 0, hidden: false };
+  });
+
+  // Von oben nach unten, damit dasselbe Bild zweimal dasselbe Ergebnis
+  // hat. Die Reihenfolge im Modell ist keine Reihenfolge.
+  const movable = list
+    .map((label, index) => ({ label, index }))
+    .filter(({ label }) => label && !label.fixed)
+    .sort((a, b) => a.label.y - b.label.y || a.index - b.index);
+
+  for (const { label, index } of movable) {
+    const size = (label.size || 16) * (label.scale || 1);
+    const step = size * LABEL.step;
+    let placed = null;
+    for (let ring = 0; ring <= LABEL.tries && placed === null; ring += 1) {
+      for (const shift of ring === 0 ? [0] : [ring * step, -ring * step]) {
+        const box = labelBox(label, shift);
+        if (!taken.some((other) => boxesOverlap(box, other))) {
+          taken.push(box);
+          placed = shift;
+          break;
+        }
+      }
+    }
+    answer[index] = placed === null
+      ? { shift: 0, hidden: true }
+      : { shift: placed, hidden: false };
+  }
+
+  return answer;
+};
 
 /** Wie weit die Zeichnung in einer Achse verschoben werden darf.
  *
@@ -913,4 +1103,10 @@ export {
   flushWith,
   panRange,
   touchSpan,
+  LABEL,
+  labelBox,
+  declutter,
+  DIM,
+  dimension,
+  dimensionStops,
 };

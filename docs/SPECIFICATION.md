@@ -341,6 +341,56 @@ ein gültiger Grundriss. `metres` ist die Antwort für die, die ihr Haus auf
 den Zentimeter kennen, und sonst für niemanden; fehlt es, MUSS ein Renderer
 schlicht keine Maße anzeigen statt eine erfundene Zahl.
 
+Wo ein Renderer Maße zeigt, SOLL er sie als **Maßkette** zeigen und nicht
+als Zahl im Raum: Hilfslinien an den Wänden, dazwischen ein Strich mit dem
+Maß darauf, geteilt an jeder Wand — das ist, was einen Grundriss von einem
+beschrifteten Rechteck unterscheidet.
+
+- Geteilt wird an den Wänden, die an der **Vorderkante** ankommen. Zwei
+  Wände, die dieselbe sind, sind **eine** Teilung; sonst steht zwischen
+  zwei Hilfslinien im Abstand eines Tausendstels ein Maß von null.
+- Ein Maß, das **breiter ist als sein Abschnitt**, SOLL entfallen — die
+  Begrenzungsstriche bleiben. Das ist der Normalfall und kein Sonderfall:
+  Räume, die noch nicht Wand an Wand liegen, haben Fugen von wenigen
+  Zentimetern, und die sind echt. Sie werden nicht verschwiegen, nur nicht
+  beschriftet. Eine zweite Reihe mit dem **Gesamtmaß** hält die Summe
+  trotzdem lesbar.
+- Der Maßstab ist der **dieser Etage**. Ein Keller, den jemand schmaler
+  eingetragen hat, ist schmaler; eine Kette, die das verschweigt, ist eine
+  falsche Angabe und nicht nur eine ungenaue.
+- Die Zeichnung MUSS für die unterste Kette **wachsen**. Sonst ist sie
+  gezeichnet und trotzdem nicht zu sehen — und zwar nur bei der untersten
+  Etage, was der unangenehmste Fehler von allen ist.
+
+### Beschriftungen, die sich nicht decken
+
+Zwei Namen an derselben Stelle sind schlechter als einer: Man liest keinen
+von beiden. In der Hausansicht passiert das ständig, weil der Name eines
+Geräts unter seinem Punkt hängt und der Name des Raumes davor in dessen
+hinterem Drittel steht.
+
+Ein Renderer SOLL die Beschriftungen deshalb **entzerren**, bevor er sie
+zeichnet:
+
+- Raumnamen, Etagennamen und Maße stehen **fest**. Einen Raumnamen zu
+  verschieben hieße, ihn über die Wand des Nachbarn zu schieben — also in
+  einen Raum, der anders heißt.
+- Gerätenamen weichen aus, **abwechselnd nach unten und nach oben**. Nur
+  nach unten wäre eine Reihe von fünf Geräten am Ende eine Spalte, die aus
+  dem Geschoss herausläuft.
+- Was auch dann keinen Platz findet, wird **weggeblendet**, bis jemand
+  darauf zeigt. Ein Name drei Zeilen neben seinem Punkt beschriftet nichts
+  mehr, er behauptet nur noch etwas.
+- Entschieden wird nach **Nachsehen, nicht nach Zählen**. Eine Pauschale
+  („mehr als fünf Geräte, alle Namen weg") trifft auch die vier, die sich
+  nie in die Quere gekommen wären, und lässt bei fünf zwei übereinander
+  stehen.
+
+Die Textbreite darf **geschätzt** werden. Im SVG steht kein Text, den man
+messen könnte, bevor er im Dokument hängt, und die Zeichnung entsteht vorher.
+Es geht darum, ob zwei Namen aufeinanderliegen, und nicht darum, sie auf ein
+Pixel zu setzen.
+
 ### Wie deutlich das Haus ist
 
 Ein Renderer SOLL die **Innenwände sichtbar** zeichnen, nicht nur andeuten:
