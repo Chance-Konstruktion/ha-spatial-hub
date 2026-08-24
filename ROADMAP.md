@@ -840,19 +840,31 @@ Zwei Befunde aus dem Nachsehen, und beide sind grundsätzlich:
       diesem Gerät gibt. Die Taste bleibt — wer eine hat, will sie nicht
       gegen einen Knopf tauschen.
 
-- [ ] **Bearbeiten setzt ein Adminkonto voraus.** `canEdit()` ist
+- [x] **Bearbeiten setzte ein Adminkonto voraus.** `canEdit()` war
       `hass.user.is_admin`, sonst nichts. Ein Kind hat in Home Assistant
-      normalerweise kein Adminkonto — es kann den Editor heute also nicht
+      normalerweise kein Adminkonto — es konnte den Editor also nicht
       einmal öffnen, und keine Verbesserung an seiner Bedienbarkeit
-      erreicht es.
+      erreichte es.
 
-      Das ist keine Nachlässigkeit, sondern eine ungestellte Frage. Der
-      Editor tut zweierlei: Er **ordnet den Plan an** (das steht im
-      eigenen Speicher des Hubs) und er **weist Geräte Bereichen zu**
-      (das schreibt ins Register von Home Assistant und geht jedes andere
-      Dashboard an). Nur das Zweite ist eine Adminsache. Ob das Erste es
-      auch sein muss, ist zu entscheiden, bevor „einfach genug für ein
-      Kind" mehr als ein Satz ist.
+      **Es war keine offene Frage, sondern ein Widerspruch.** Die
+      Spezifikation sagt beim einzigen Befehl, der außerhalb des Hubs
+      schreibt, wörtlich: „Admin-pflichtig. **Anordnen ist es nicht**, das
+      hier schon." Das Backend hält sich daran — `spatial_hub/layout/set`
+      und `layout/reset` haben gar keine Verwalterprüfung, während
+      `action` und `area/assign` `@websocket_api.require_admin` tragen.
+      Nur das Frontend sperrte alles hinter `is_admin`, und die strengere
+      Seite hat gewonnen, ohne dass es jemand entschieden hat.
+
+      Der Vertrag in `panel-transport.js` sagte es sogar selbst: Die
+      Funktion hieß „ob der Betrachter **die Anordnung** ändern darf" und
+      gab `is_admin` zurück. Zwei Fragen in einer.
+
+      Jetzt sind es zwei: `canArrange()` — angemeldet genügt — und
+      `isAdmin()` für das, was nach außen wirkt. Und wer als
+      Nicht-Verwalter ein Gerät in einen anderen Raum zieht, bekommt jetzt
+      einen Satz dazu statt eines Zuges, der stumm verpufft. Die Regel
+      dafür stand längst im Quelltext daneben: Eine Änderung, die nach
+      draußen wirkt, ist nie stumm — ihr Ausbleiben auch nicht.
 
 ## ⬜ Phase 18 — Klima
 

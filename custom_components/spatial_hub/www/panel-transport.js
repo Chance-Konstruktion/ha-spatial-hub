@@ -26,9 +26,22 @@
  *       sie wieder abbestellt. Darf werfen -- der Renderer faengt das ab
  *       und zeichnet dann eben ohne Aktualisierung weiter.
  *
- *   canEdit()                  -> boolean
- *       Ob der Betrachter die Anordnung aendern darf. In Home Assistant
- *       ist das der Verwalter; anderswo darf es alles Moegliche sein.
+ *   canArrange()               -> boolean
+ *       Ob der Betrachter die **Anordnung** aendern darf -- also das Bild,
+ *       das nur der Hub speichert. Das ist ausdruecklich **keine**
+ *       Verwaltersache: Die Spezifikation sagt zum einzigen Befehl, der
+ *       ausserhalb des Hubs schreibt, "Admin-pflichtig. Anordnen ist es
+ *       nicht, das hier schon." Hier stand einmal eine einzige Frage
+ *       `canEdit()`, die "Anordnung" hiess und `is_admin` zurueckgab --
+ *       damit war der ganze Editor fuer jeden gesperrt, der kein
+ *       Verwalter ist, obwohl der Hub seine Schreibbefehle laengst
+ *       durchgelassen haette.
+ *
+ *   isAdmin()                  -> boolean
+ *       Ob der Betrachter tun darf, was **ausserhalb** des Hubs wirkt:
+ *       Aktionen eines Providers (die schalten echte Geraete) und das
+ *       Umhaengen eines Geraets in einen anderen Bereich (das schreibt in
+ *       das Register von Home Assistant, sichtbar in jedem Dashboard).
  *
  *   navigate(path)             -> void
  *       Zu einer anderen Seite der umgebenden Anwendung wechseln.
@@ -62,7 +75,15 @@ export function haTransport(host) {
       return hass().connection.subscribeMessage(handler, message);
     },
 
-    canEdit() {
+    canArrange() {
+      // Angemeldet genuegt. Wer den Grundriss sehen darf, darf ihn auch
+      // ordnen -- das schreibt in den Speicher des Hubs und sonst
+      // nirgends.
+      const h = hass();
+      return Boolean(h && h.user);
+    },
+
+    isAdmin() {
       const h = hass();
       return Boolean(h && h.user && h.user.is_admin);
     },

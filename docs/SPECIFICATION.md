@@ -685,6 +685,14 @@ Bereichszuordnung in Home Assistant, sichtbar in jedem Dashboard und jeder
 Automatisierung.
 
 - **Admin-pflichtig.** Anordnen ist es nicht, das hier schon.
+- Ein Renderer DARF **nicht strenger sein als der Hub**. Wer das Anordnen
+  hinter Verwalterrechte legt, weil es sich sicherer anfühlt, nimmt genau
+  denen den Editor, für die er gedacht ist — und die Sperre steht dann an
+  einer Stelle, an der niemand sie entschieden hat. Was der Hub annimmt,
+  soll der Renderer anbieten; was er ablehnt, soll der Renderer erklären
+  statt es zu verstecken.
+- Ein abgelehnter Befehl SOLL **gesagt werden**. Ein Zug, der stumm
+  zurückspringt, liest sich als Fehler im Programm.
 - **Gerät oder Entität wird nicht gefragt, sondern hergeleitet.** Ein Punkt
   liegt dort, wo er liegt, weil entweder eine Überschreibung an der Entität
   oder der Bereich ihres Geräts das entschieden hat. Was den Punkt dorthin
