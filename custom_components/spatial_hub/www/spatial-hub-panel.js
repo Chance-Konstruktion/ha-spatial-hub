@@ -19,6 +19,8 @@ import { ALL_FLOORS, CLUSTER_THRESHOLD, DOMAIN, FIT, PHONE, ZOOM } from "./panel
 import {
   STACK,
   centreOf,
+  roomLabelSize,
+  ROOM_LABEL,
   insetOf,
   along,
   wallRuns,
@@ -82,6 +84,8 @@ import {
 } from "./panel-colour.js";
 import {
   roomPolygon,
+  cornersOf,
+  labelPointOf,
   cornerHandlesHtml,
   doorsHtml,
   sparklineHtml,
@@ -1126,10 +1130,72 @@ class SpatialHubPanel extends HTMLElement {
         project: (x, y) => this._project(plane, x, y),
         floor: this._stackFloors[plane],
         counterScale: this._counterScale,
+        crowded: this._crowdedAreas.has(area.id),
+        labelSize: this._roomLabelSizeOn(plane),
       },
       area,
       keep,
     );
+  }
+
+  /** Die Raeume, in deren Mitte wirklich etwas liegt.
+   *
+   *  Nur davor weicht der Raumname nach hinten aus; sonst steht er, wo
+   *  er hingehoert. Gezaehlt werden `_visibleNodes` und nicht alle:
+   *  Wer einen Provider ausblendet, bekommt eine leerere Zeichnung, und
+   *  die Namen sollen ihr folgen.
+   *
+   *  Die Bahn ist ein Viertel der Raumtiefe nach jeder Seite. Schmaler
+   *  gefasst rutscht der Name auf die Beschriftung, die unter dem
+   *  Geraet haengt; breiter gefasst gilt jeder Raum als voll, und dann
+   *  ist die Unterscheidung wieder keine.
+   */
+  /** In welcher Groesse die Raumnamen **einer Etage** gesetzt werden.
+   *
+   *  Die kleinste, die einer ihrer Raeume braucht -- so wie am
+   *  Zeichenbrett der Massstab nach dem laengsten Namen gewaehlt wird.
+   *  Je Raum gerechnet stand "Diele" in 16 px neben
+   *  "Hauswirtschaftsraum" in 10, und das liest sich als Rangfolge
+   *  zwischen Raeumen, die gleichrangig sind.
+   *
+   *  Das kostet Groesse in Raeumen, in denen Platz gewesen waere. Es ist
+   *  trotzdem die ruhigere Zeichnung, und darum geht es hier: Ein Riss
+   *  mit sechs Schriftgroessen sieht aus, als sei etwas schiefgegangen.
+   *  Eine Etage ohne langen Namen bleibt unberuehrt -- am Demohaus
+   *  aendert sich nichts.
+   */
+  _roomLabelSizeOn(plane) {
+    const floor = this._stackFloors[plane];
+    if (!floor) return ROOM_LABEL.size;
+    const crowded = this._crowdedAreas;
+    let smallest = ROOM_LABEL.size;
+    for (const area of (this._model || {}).areas || []) {
+      if (area.floor_id !== floor.id || !area.position) continue;
+      if (!this._inSandwich(area)) continue;
+      const corners = cornersOf((x, y) => this._project(plane, x, y), area);
+      const point = labelPointOf(corners, crowded.has(area.id));
+      smallest = Math.min(
+        smallest,
+        roomLabelSize(corners, area.name, this._counterScale, point),
+      );
+    }
+    return smallest;
+  }
+
+  get _crowdedAreas() {
+    const areas = new Map(
+      ((this._model || {}).areas || []).map((area) => [area.id, area]),
+    );
+    const crowded = new Set();
+    for (const node of this._visibleNodes) {
+      const area = areas.get(node.area_id);
+      if (!area || !area.position || !node.position) continue;
+      const depth = (area.size && area.size.height) || 0.3;
+      if (Math.abs(node.position.y - area.position.y) < depth * 0.25) {
+        crowded.add(area.id);
+      }
+    }
+    return crowded;
   }
 
 

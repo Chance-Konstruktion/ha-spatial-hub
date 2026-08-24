@@ -56,13 +56,32 @@ const STACK = {
   // weiss niemand -- sondern so viele, dass das Rechteck als Treppe zu
   // lesen ist und nicht als schraffierte Flaeche.
   treads: 9,
-  // Storeys sit slightly behind each other instead of exactly above.
-  // Dead-aligned, the upper floor's outline lands on the lower one's and
-  // the eye has nothing to separate them by except the gap; offset, each
-  // storey shows its own corner and the stack reads as an exploded view
-  // of one building.
-  stagger: 34,
 };
+
+// Hier stand einmal `stagger: 34` -- jede Etage ein Stueck weiter rechts
+// als die darueber. Die Begruendung war, dass deckungsgleiche Etagen
+// ineinander verschwimmen und das Auge nichts hat, woran es sie trennt.
+//
+// Das stimmte, als die Etagen flache Umrisse dicht beieinander waren.
+// Seither haben sie `rise`, `slab` und Waende mit Dicke, und zwischen
+// ihnen liegen `gap` = 340 Einheiten Luft: Sie sind unverwechselbar
+// getrennte Koerper. Die Aufgabe des Versatzes war erledigt, er selbst
+// aber nicht.
+//
+// Angesehen war er das Gegenteil von dem, was diese Ansicht leisten
+// soll. 34 von 620 Haus­breite sind 5,5 % -- zu wenig fuer eine
+// erkennbare Absicht und zu viel fuer eine Flucht: Man liest keine
+// auseinandergezogene Zeichnung *eines* Gebaeudes, sondern drei
+// Grundrisse, die nicht ganz uebereinanderliegen. Ohne Versatz teilen
+// sich alle Etagen eine Senkrechte, und genau das sagt "ein Haus".
+// Zur Gegenprobe mit 80 gezeichnet: Dann ist der Versatz zwar Absicht,
+// aber es sind drei Zeichnungen auf einer Diagonale.
+//
+// Er kostete ausserdem Bildbreite, und zwar wachsend mit dem Haus: Bei
+// drei Etagen belegte das Haus 71 % der Bildbreite statt 77 %, bei acht
+// nur noch 59 %. Ein Stapel wird also umso kleiner gezeichnet, je mehr
+// Stockwerke er hat -- in einer Ansicht, deren einziger Zweck der
+// Stapel ist.
 
 /** The middle of a projected outline. Where a room's name belongs: at the
  *  corner it collided with the neighbour's name two rooms in a row. */
@@ -737,8 +756,7 @@ const projectOnto = ({ frame, gutter, floors, index }, x, y) => {
   const ny = (y - minY(frame)) / spanY(frame);
   const shrink = STACK.back + (1 - STACK.back) * ny;
   return {
-    x: gutter + STACK.stagger * index +
-      STACK.width / 2 + (nx - 0.5) * STACK.width * shrink,
+    x: gutter + STACK.width / 2 + (nx - 0.5) * STACK.width * shrink,
     y: STACK.top + index * STACK.gap + ny * STACK.depth,
   };
 };
@@ -761,10 +779,15 @@ const stackHeight = (floors, extra = 0) =>
   Math.max(0, (floors || []).length - 1) * STACK.gap +
   STACK.depth + STACK.slab + STACK.pad + Math.max(0, extra);
 
-/** How wide the drawing has to be. Every storey is offset a little
- *  further right than the one above it, so the bottom one decides. */
-const stackWidth = (gutter, count) =>
-  gutter + STACK.pad + STACK.width + Math.max(0, count - 1) * STACK.stagger;
+/** How wide the drawing has to be.
+ *
+ *  Unabhaengig von der Zahl der Etagen: Sie liegen alle auf derselben
+ *  Senkrechten, also ist die breiteste Stelle die Vorderkante -- einmal.
+ *  `count` bleibt in der Signatur, damit ein Renderer, der eine eigene
+ *  Anordnung baut, die Zahl weiterhin bekommt.
+ */
+const stackWidth = (gutter, count = 0) =>
+  gutter + STACK.pad + STACK.width;
 
 // ── Einrasten ─────────────────────────────────────────────
 
@@ -921,6 +944,15 @@ const dimensionStops = (areas, gap = JOIN_GAP) => {
  *  Frage genau genug: Es geht darum, ob zwei Namen aufeinanderliegen,
  *  und nicht darum, sie auf ein Pixel zu setzen.
  */
+/** Der Raumname: Groesse, Untergrenze und die Luft zur Wand.
+ *
+ *  `size` steht auch in `panel-styles.js` -- das Entzerren braucht sie,
+ *  bevor irgendetwas im Dokument haengt. Der Test darunter haelt beide
+ *  zusammen. `pad` ist die Luft, die links und rechts zur Wand bleibt:
+ *  ein Name, der die Wand beruehrt, liest sich als angeklebt.
+ */
+const ROOM_LABEL = Object.freeze({ size: 16, min: 10, pad: 6 });
+
 const LABEL = Object.freeze({
   // Breite je Zeichen als Anteil der Schriftgroesse. 0.55 ist der grobe
   // Mittelwert einer Grotesk -- "iii" ist schmaler, "WWW" breiter, und
@@ -944,6 +976,59 @@ const LABEL = Object.freeze({
  *  ihn mittig annimmt, liegt eine halbe Namenslaenge daneben -- das
  *  Entzerren wuerde dann gegen einen Platz pruefen, an dem nichts steht.
  */
+/** Wie breit ein Raum auf einer bestimmten Hoehe ist.
+ *
+ *  Nicht die Breite des umschliessenden Rechtecks: Ein Raum mit
+ *  abgeschraegter Ecke ist oben schmaler als unten, und ein Name, der
+ *  gegen das Rechteck geprueft wurde, steht dann trotzdem im Freien.
+ *  Geschnitten wird die Kontur mit der Waagerechten durch den Namen.
+ */
+const spanAt = (corners, y) => {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let index = 0; index < corners.length; index += 1) {
+    const a = corners[index];
+    const b = corners[(index + 1) % corners.length];
+    if ((a.y <= y && b.y >= y) || (b.y <= y && a.y >= y)) {
+      const along = b.y === a.y ? 0 : (y - a.y) / (b.y - a.y);
+      const x = a.x + (b.x - a.x) * along;
+      lo = Math.min(lo, x);
+      hi = Math.max(hi, x);
+    }
+  }
+  return hi > lo ? hi - lo : 0;
+};
+
+/** Welche Groesse ein Raumname **braucht**, damit er hineinpasst.
+ *
+ *  Nicht die, in der er gesetzt wird: Das entscheidet die Etage. Diese
+ *  Funktion beantwortet nur die Frage fuer einen Raum, und der Aufrufer
+ *  nimmt die kleinste Antwort seiner Etage fuer alle.
+ *
+ *  Denn eine Bauzeichnung setzt Raumnamen in **einer** Groesse. Je Raum
+ *  gerechnet stand "Diele" in 16 px neben "Hauswirtschaftsraum" in 10 --
+ *  angesehen liest sich das als Rangfolge zwischen den Raeumen, und die
+ *  gibt es nicht. Der Massstab wird nach dem laengsten Namen gewaehlt,
+ *  so wie am Zeichenbrett auch.
+ *
+ *  Die Alternative waere, den zu langen Namen wegzublenden, und ein Raum
+ *  ohne Namen ist im Riss schlimmer als ein kleiner Name -- der Riss ist
+ *  ja dafuer da.
+ *
+ *  Unter `ROOM_LABEL.min` wird nicht verkleinert. Was dort nicht mehr
+ *  hineinpasst, steht ueber die Wand hinaus, und das ist die ehrlichere
+ *  Auskunft: Der Raum ist zu schmal fuer seinen Namen. Eine Schrift, die
+ *  weiter schrumpft, ist irgendwann keine Beschriftung mehr, sondern ein
+ *  grauer Strich, der so tut als waere er eine.
+ */
+const roomLabelSize = (corners, text, scale, at) => {
+  const span = spanAt(corners, at.y) - ROOM_LABEL.pad * 2;
+  const natural =
+    String(text || "").length * ROOM_LABEL.size * scale * LABEL.perChar;
+  if (natural <= 0 || span <= 0 || natural <= span) return ROOM_LABEL.size;
+  return Math.max(ROOM_LABEL.min, ROOM_LABEL.size * (span / natural));
+};
+
 const labelBox = (label, shift = 0) => {
   const size = (label.size || 16) * (label.scale || 1);
   const width = String(label.text || "").length * size * LABEL.perChar;
@@ -1104,6 +1189,9 @@ export {
   panRange,
   touchSpan,
   LABEL,
+  ROOM_LABEL,
+  spanAt,
+  roomLabelSize,
   labelBox,
   declutter,
   DIM,

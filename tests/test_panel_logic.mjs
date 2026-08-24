@@ -74,6 +74,15 @@ const { sparklineHtml, doorsHtml, cornerHandlesHtml } = await import(
   ).href
 );
 
+/** Die Masse des Raumnamens -- damit die Tests nicht ihre eigene 16
+ *  mitbringen und still auseinanderlaufen, wenn sie sich aendert. */
+const { ROOM_LABEL } = await import(
+  pathToFileURL(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "panel-geometry.js"),
+  ).href
+);
+
 const at = (x, y) => ({ x, y, z: 0 });
 
 const node = (id, extra = {}) => ({
@@ -980,17 +989,34 @@ test("storeys are drawn top down, the way a section is read", () => {
   assert.deepEqual(view._stackFloors.map((f) => f.id), ["og", "eg"]);
 });
 
-test("the same point on a higher storey is drawn higher up, and a step over", () => {
+test("the storeys share one vertical axis, because they are one house", () => {
   const view = panel(model(), { floor: null });
   const upper = view._project(0, 0.5, 0.5);
   const lower = view._project(1, 0.5, 0.5);
 
   assert.ok(upper.y < lower.y, "the storeys would sit on top of each other");
-  // Not the same x. Dead-aligned, the upper outline lands exactly on the
-  // lower one and only the gap tells them apart; offset, every storey
-  // shows a corner of its own and the stack reads as one building taken
-  // apart rather than four drawings in a pile.
-  assert.ok(lower.x > upper.x, "the storeys stand exactly above each other");
+  // Hier stand einmal das Gegenteil: jede Etage ein Stueck weiter rechts,
+  // damit deckungsgleiche Umrisse nicht ineinander verschwimmen. Das war
+  // richtig, solange die Etagen flache Umrisse dicht beieinander waren --
+  // inzwischen haben sie Hoehe, Waende mit Dicke und 340 Einheiten Luft
+  // dazwischen. Angesehen las der Versatz nicht als auseinandergezogenes
+  // Gebaeude, sondern als drei Grundrisse, die nicht ganz uebereinander
+  // liegen.
+  assert.equal(lower.x, upper.x, "die Etagen stehen versetzt statt gestapelt");
+});
+
+test("the drawing does not get wider the more storeys the house has", () => {
+  // Der Versatz addierte sich: Bei acht Etagen belegte das Haus noch
+  // 59 % der Bildbreite statt 77 %. Ein Stapel wurde also umso kleiner
+  // gezeichnet, je mehr Stockwerke er hatte -- in einer Ansicht, deren
+  // einziger Zweck der Stapel ist.
+  const storeys = (count) =>
+    Array.from({ length: count }, (unused, index) => ({
+      id: `f${index}`, name: `Etage ${index}`, level: index, icon: "",
+    }));
+  const drei = panel(model({ floors: storeys(3) }), { floor: null });
+  const acht = panel(model({ floors: storeys(8) }), { floor: null });
+  assert.equal(acht._stackWidth, drei._stackWidth);
 });
 
 test("both flanks of a storey lean inwards, not both to the right", () => {
@@ -4483,6 +4509,158 @@ test("the room's name gets out of the way of what is in the room", () => {
   const back = view._project(plane, 0.5, 0.2).y;
   assert.ok(nameY < middle, "the name is still sitting on the devices");
   assert.ok(nameY >= back, "and it has not climbed out through the back wall");
+});
+
+/** Wie tief der Raumname in seinem Raum sitzt: 0 = Hinterkante, 1 = vorn. */
+const nameDepth = (view, floorId) => {
+  const svg = view._stackHtml();
+  const nameY = Number(
+    /translate\([\d.-]+,([\d.-]+)\)[^>]*>\s*<text class="room-label"/
+      .exec(svg)[1],
+  );
+  const plane = view._stackFloors.findIndex((floor) => floor.id === floorId);
+  const back = view._project(plane, 0.5, 0.2).y;
+  const front = view._project(plane, 0.5, 0.8).y;
+  return (nameY - back) / (front - back);
+};
+
+const oneRoom = (extra = {}) =>
+  model({
+    areas: [{ id: "r", name: "Wohnzimmer", floor_id: "eg",
+              position: at(0.5, 0.5), size: { width: 0.6, height: 0.6 } }],
+    ...extra,
+  });
+
+test("a room with nothing in it keeps its name in the middle", () => {
+  // Das Ausweichen nach hinten war die Antwort auf ein Geraet in der
+  // Raummitte. Wo keines steht, war es ein Tausch und keine Loesung: Der
+  // Name klebte an der Hinterwand, obwohl der ganze Raum frei ist.
+  const leer = panel(oneRoom(), { floor: null });
+  const voll = panel(
+    oneRoom({ nodes: [node("a:lamp", { area_id: "r", position: at(0.5, 0.5) })] }),
+    { floor: null },
+  );
+  assert.ok(nameDepth(leer, "eg") > 0.4,
+            "der Name klebt an der Hinterwand, obwohl nichts im Raum steht");
+  assert.ok(nameDepth(voll, "eg") < 0.3,
+            "der Name sitzt auf dem Geraet, das in der Mitte steht");
+});
+
+test("a name does not dodge a device that is switched off", () => {
+  // Wer die Ebene eines Providers ausblendet, sieht eine leerere
+  // Zeichnung. Ein Name, der darin vor einem unsichtbaren Geraet
+  // ausweicht, weicht vor nichts aus.
+  const daten = oneRoom({
+    nodes: [node("a:lamp", { area_id: "r", position: at(0.5, 0.5) })],
+  });
+  for (const layer of daten.layers) {
+    if ((layer.provider_id || "") === "a") layer.visible = false;
+  }
+  const view = panel(daten, { floor: null });
+  assert.equal(view._visibleNodes.length, 0, "die Vorbedingung stimmt nicht");
+  assert.ok(nameDepth(view, "eg") > 0.4,
+            "der Name weicht einem Geraet aus, das gar nicht gezeichnet wird");
+});
+
+test("the drawn name and the one decluttering knows about are the same", () => {
+  // Zwei Rechnungen fuer denselben Punkt waeren zwei Stellen, an denen
+  // er auseinanderlaeuft -- und ein Entzerren, das gegen den falschen
+  // Punkt prueft, ist schlimmer als keines.
+  const view = panel(oneRoom(), { floor: null });
+  const svg = view._stackHtml();
+  const drawn = Number(
+    /translate\([\d.-]+,([\d.-]+)\)[^>]*>\s*<text class="room-label"/
+      .exec(svg)[1],
+  );
+  const known = view._stackRoomLabels(view._stackFloors, view._counterScale)
+    .find((label) => label.text === "Wohnzimmer");
+  assert.ok(known, "das Entzerren kennt den Raumnamen gar nicht");
+  assert.ok(Math.abs(known.y - drawn) < 0.5,
+            `gezeichnet bei ${drawn}, bekannt als ${known.y}`);
+});
+
+/** Die Schriftgroesse, mit der ein Raumname gezeichnet wurde.
+ *
+ *  Ohne Escapen: Die Namen hier unten sind Raumnamen und keine Muster.
+ */
+const drawnSize = (view, name) => {
+  const svg = view._stackHtml();
+  const hit = new RegExp(
+    '<text class="room-label"(?: style="font-size:([0-9.]+)px")?>' + name + "<",
+  ).exec(svg);
+  assert.ok(hit, `${name} steht gar nicht in der Zeichnung`);
+  return hit[1] ? Number(hit[1]) : ROOM_LABEL.size;
+};
+
+const rowOf = (namen) =>
+  model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+    areas: namen.map((n, i) => ({
+      id: `r${i}`, name: n, floor_id: "eg", kind: "indoor",
+      position: at((i + 0.5) / namen.length, 0.5),
+      size: { width: 1 / namen.length, height: 1 },
+    })),
+    nodes: [],
+  });
+
+const NARROW = ["Diele", "Hauswirtschaftsraum", "Esszimmer",
+                "Abstellkammer", "Bad", "Gästezimmer"];
+
+test("a name too wide for its room is set smaller, not left to run over", () => {
+  // Nachgemessen im gezeichneten SVG, nicht geschaetzt: Sechs Raeume
+  // nebeneinander, und "Hauswirtschaftsraum" stand ueber zwei Nachbarn.
+  const view = panel(rowOf(NARROW), { floor: null });
+  assert.ok(drawnSize(view, "Hauswirtschaftsraum") < ROOM_LABEL.size,
+            "der lange Name wurde nicht verkleinert");
+});
+
+test("one type size per storey, the way a drawing is lettered", () => {
+  // Je Raum gerechnet stand "Diele" in 16 px neben "Hauswirtschaftsraum"
+  // in 10 -- angesehen liest sich das als Rangfolge zwischen Raeumen,
+  // die gleichrangig sind.
+  const view = panel(rowOf(NARROW), { floor: null });
+  const sizes = new Set(NARROW.map((name) => drawnSize(view, name)));
+  assert.equal(sizes.size, 1,
+               `die Etage traegt ${sizes.size} Schriftgroessen: `
+               + `${[...sizes].join(", ")}`);
+});
+
+test("a storey with room to spare keeps the full size", () => {
+  // Sonst kostete die Regel ueberall Groesse und nicht nur dort, wo
+  // sie gebraucht wird -- am Demohaus aendert sich nichts.
+  const view = panel(rowOf(["Bad", "Flur", "Küche"]), { floor: null });
+  assert.equal(drawnSize(view, "Bad"), ROOM_LABEL.size);
+});
+
+test("a shrunk name never goes below the size at which it is still writing", () => {
+  // Eine Schrift, die weiter schrumpft, ist keine Beschriftung mehr,
+  // sondern ein grauer Strich, der so tut als waere er eine.
+  const view = panel(
+    rowOf(["A", "Hauswirtschaftsraumzugangsflur", "B", "C", "D", "E"]),
+    { floor: null },
+  );
+  assert.equal(drawnSize(view, "Hauswirtschaftsraumzugangsflur"),
+               ROOM_LABEL.min);
+});
+
+test("decluttering is told the size every name is actually drawn at", () => {
+  // Ein Kasten, der groesser ist als seine Schrift, laesst Geraetenamen
+  // ausweichen, die gepasst haetten -- und ein zu kleiner laesst sie
+  // stehen, wo sie sich decken.
+  //
+  // Ueber *alle* Raeume und nicht nur einen: Als das Zeichnen auf eine
+  // Groesse je Etage umgestellt wurde und das Entzerren noch je Raum
+  // rechnete, fielen die beiden Zahlen fuer den laengsten Namen zufaellig
+  // zusammen -- eine Wache, die nur ihn ansah, blieb gruen.
+  const view = panel(rowOf(NARROW), { floor: null });
+  const known = view._stackRoomLabels(view._stackFloors, view._counterScale);
+  for (const name of NARROW) {
+    const label = known.find((entry) => entry.text === name);
+    assert.ok(label, `das Entzerren kennt ${name} gar nicht`);
+    assert.ok(Math.abs(label.size - drawnSize(view, name)) < 0.01,
+              `${name}: gezeichnet mit ${drawnSize(view, name)}, `
+              + `bekannt als ${label.size}`);
+  }
 });
 
 test("a flat gets its drawing, not a column with one word in it", () => {

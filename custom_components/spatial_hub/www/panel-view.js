@@ -36,6 +36,8 @@ import {
   openingKind,
   openingRun,
   declutter,
+  roomLabelSize,
+  ROOM_LABEL,
   LABEL,
   DIM,
   dimension,
@@ -64,7 +66,7 @@ import { ALL_FLOORS, formatValue, pretty } from "./panel-const.js";
 // auseinanderlaufen koennen, sind schlimmer als eine an der falschen
 // Stelle. Wer die Schriftgroesse aendert, aendert sie hier und in
 // `panel-styles.js`; der Test darunter haelt beide zusammen.
-const ROOM_LABEL_SIZE = 16;
+const ROOM_LABEL_SIZE = ROOM_LABEL.size;
 const STACK_LABEL_SIZE = 18;
 const STACK_LABEL_DROP = 30;
 const STOREY_LABEL_SIZE = 30;
@@ -573,16 +575,22 @@ export const ANSICHT = {
    */
   _stackRoomLabels(floors, scale) {
     const labels = [];
+    // Einmal fuer alle Etagen: dieselbe Auskunft, die `_roomPolygon`
+    // beim Zeichnen benutzt. Zwei Rechnungen waeren zwei Stellen, an
+    // denen der Name woanders steht, als das Entzerren ihn vermutet.
+    const crowded = this._crowdedAreas;
     floors.forEach((floor, at) => {
+      // Eine Groesse fuer die ganze Etage -- dieselbe, die `_roomPolygon`
+      // beim Zeichnen setzt.
+      const size = this._roomLabelSizeOn(at);
       for (const area of this._model.areas || []) {
         if (area.floor_id !== floor.id || !area.position) continue;
         if (!this._inSandwich(area)) continue;
-        const point = labelPointOf(
-          cornersOf((x, y) => this._project(at, x, y), area),
-        );
+        const corners = cornersOf((x, y) => this._project(at, x, y), area);
+        const point = labelPointOf(corners, crowded.has(area.id));
         labels.push({
           x: point.x, y: point.y, text: area.name,
-          size: ROOM_LABEL_SIZE, scale, fixed: true,
+          size, scale, fixed: true,
         });
       }
     });

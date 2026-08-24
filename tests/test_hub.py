@@ -509,6 +509,75 @@ async def test_a_balcony_hangs_on_a_wall_instead_of_wrapping_the_flat(hass, hub)
     assert garden["size"]["width"] > 1, "the garden stopped wrapping the house"
 
 
+def _boxes(model, floor_id):
+    """Die Raeume einer Etage als Rechtecke, aus Mitte und Groesse."""
+    return [
+        (
+            area["name"],
+            area["position"]["x"] - area["size"]["width"] / 2,
+            area["position"]["x"] + area["size"]["width"] / 2,
+            area["position"]["y"] - area["size"]["height"] / 2,
+            area["position"]["y"] + area["size"]["height"] / 2,
+        )
+        for area in model["areas"]
+        if area.get("floor_id") == floor_id and not area.get("outdoor")
+        and area.get("kind") == "indoor"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_the_rooms_fill_the_storey_wall_to_wall(hass, hub):
+    """Kein Streifen vorn, keine Fuge zwischen den Spalten.
+
+    Der Rand war ein Zwanzigstel je Zelle und stand ueber die ganze
+    Hausbreite vorn frei -- zusammen mit der vorderen Aussenwand las sich
+    das als Sockel, auf dem die Etage steht.
+    """
+    from homeassistant.helpers import area_registry as ar
+
+    for name in ("Diele", "Esszimmer", "Gäste-WC"):
+        ar.async_get(hass).areas.append(
+            FakeArea(name.lower().replace("ä", "ae").replace("-", "_"),
+                     name, floor_id="eg")
+        )
+    model = await hub.async_model()
+
+    boxes = _boxes(model, "eg")
+    assert len(boxes) == 5
+    assert min(box[1] for box in boxes) == pytest.approx(0.0), "links bleibt Luft"
+    assert max(box[2] for box in boxes) == pytest.approx(1.0), "rechts bleibt Luft"
+    assert min(box[3] for box in boxes) == pytest.approx(0.0), "vorn bleibt ein Streifen"
+    assert max(box[4] for box in boxes) == pytest.approx(1.0), "hinten bleibt ein Streifen"
+
+
+@pytest.mark.asyncio
+async def test_the_last_row_leaves_no_hole_in_the_floor_plan(hass, hub):
+    """Fuenf Raeume ergeben drei Spalten und zwei Reihen -- die sechste
+    Zelle blieb leer. Ein Grundriss hat dort kein Loch: die Raeume der
+    letzten Reihe teilen die Breite unter sich auf."""
+    from homeassistant.helpers import area_registry as ar
+
+    for name in ("Diele", "Esszimmer", "Gäste-WC"):
+        ar.async_get(hass).areas.append(
+            FakeArea(name.lower().replace("ä", "ae").replace("-", "_"),
+                     name, floor_id="eg")
+        )
+    model = await hub.async_model()
+
+    boxes = _boxes(model, "eg")
+    covered = sum((box[2] - box[1]) * (box[4] - box[3]) for box in boxes)
+    assert covered == pytest.approx(1.0), f"nur {covered:.0%} der Etage ist Raum"
+
+    # Und die Flaeche stimmt nicht, weil zwei Raeume uebereinander liegen.
+    for index, one in enumerate(boxes):
+        for other in boxes[index + 1:]:
+            overlap = (
+                min(one[2], other[2]) - max(one[1], other[1]) > 1e-9
+                and min(one[4], other[4]) - max(one[3], other[3]) > 1e-9
+            )
+            assert not overlap, f"{one[0]} liegt auf {other[0]}"
+
+
 @pytest.mark.asyncio
 async def test_an_outdoor_area_is_arranged_outside_the_house(hass, hub):
     from homeassistant.helpers import area_registry as ar
