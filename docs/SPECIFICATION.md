@@ -416,9 +416,24 @@ zeichnet:
 - Gerätenamen weichen aus, **abwechselnd nach unten und nach oben**. Nur
   nach unten wäre eine Reihe von fünf Geräten am Ende eine Spalte, die aus
   dem Geschoss herausläuft.
+- Die **Symbole selbst zählen mit**. Ein Punkt sagt, wo etwas *ist* — er
+  belegt Platz im Bild und lässt sich nicht verschieben, um einer
+  Beschriftung Platz zu machen. Ein Entzerren, das nur Text gegen Text
+  prüft, schiebt Namen genau auf die Punkte: Es findet dort „frei", weil
+  dort kein Text steht.
+
+  Das eigene Symbol ist dabei kein Sonderfall. Ein Gerätename hängt
+  unter seinem Punkt und berührt ihn nicht; weicht er nach oben aus,
+  läuft er hinein — und dort ist er genauso unlesbar wie unter einem
+  fremden.
 - Was auch dann keinen Platz findet, wird **weggeblendet**, bis jemand
   darauf zeigt. Ein Name drei Zeilen neben seinem Punkt beschriftet nichts
   mehr, er behauptet nur noch etwas.
+
+  Das kostet sichtbare Namen, und das ist richtig so: In einem Raum mit
+  sechzehn Geräten standen vorher **zwölf** Beschriftungen sichtbar auf
+  einem fremden Symbol. Sie waren nicht zu lesen, sie haben es nur nicht
+  zugegeben. Jetzt stehen zwölf frei und vier warten auf das Zeigen.
 - Entschieden wird nach **Nachsehen, nicht nach Zählen**. Eine Pauschale
   („mehr als fünf Geräte, alle Namen weg") trifft auch die vier, die sich
   nie in die Quere gekommen wären, und lässt bei fünf zwei übereinander

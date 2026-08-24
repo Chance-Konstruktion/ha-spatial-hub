@@ -36,6 +36,7 @@ import {
   openingKind,
   openingRun,
   declutter,
+  PIN,
   roomLabelSize,
   ROOM_LABEL,
   LABEL,
@@ -420,7 +421,28 @@ export const ANSICHT = {
         text: node.label, size: STACK_LABEL_SIZE, scale,
       };
     });
-    const placed = declutter([...fixed, ...nodeLabels]).slice(fixed.length);
+
+    // Die Symbole selbst sind auch im Weg. Sie sind fest -- ein Punkt
+    // sagt, wo etwas *ist*, den kann man nicht verschieben, um Platz fuer
+    // eine Beschriftung zu machen. Das Entzerren kannte bisher nur Text
+    // und schob Namen deshalb genau auf die Punkte: am Demohaus sechs
+    // Beschriftungen unter einem fremden Symbol, "Dielenlicht" auf
+    // 31x22 Bildpunkten.
+    //
+    // Das eigene Symbol ist dabei kein Sonderfall. Ein Name haengt
+    // `STACK_LABEL_DROP` darunter und beruehrt es nicht; weicht er nach
+    // oben aus, laeuft er hinein -- und dann ist er dort genauso
+    // unlesbar wie unter einem fremden.
+    const pins = this._visibleNodes.map((node) => {
+      const at = spots.get(node.id);
+      return {
+        x: at.x, y: at.y, width: PIN.size * scale, height: PIN.size * scale,
+        fixed: true,
+      };
+    });
+
+    const placed = declutter([...fixed, ...pins, ...nodeLabels])
+      .slice(fixed.length + pins.length);
 
     const nodes = this._visibleNodes
       .map((node, order) => {
