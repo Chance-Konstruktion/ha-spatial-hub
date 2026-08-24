@@ -184,7 +184,7 @@ wird von B gefüllt.
 
 Und erst danach die Feature-Phasen 16–19.
 
-## E — Die Etage als Zeichnung, nicht als Oberfläche
+## ✅ E — Die Etage als Zeichnung, nicht als Oberfläche
 
 Der Anlass war eine hochgeladene Referenz: ein Grundriss auf schwarzem
 Grund, weiße Haarlinien, Wände mit echter Dicke, Türen als Lücken, die
@@ -226,20 +226,85 @@ nicht.
       die Räume die Außenwand nicht erreichen. Auch eine dunklere Füllung
       der Wand ändert daran nichts; beides ausprobiert und angesehen.
 
-- [ ] **Die Räume füllen das Haus nicht.** Die Automatik legt sie auf ein
-      Raster mit Rand: vorn bleiben 2,5 % der Haustiefe über die ganze
+- [x] **Die Räume füllen das Haus nicht.** Die Automatik legte sie auf ein
+      Raster mit Rand: vorn blieben 2,5 % der Haustiefe über die ganze
       Breite leer, dazu Lücken zwischen den Spalten. In einem echten
       Grundriss ist jeder Quadratmeter jemandes Zimmer, und genau dieser
-      Streifen ist es, der zusammen mit der Außenwand als Sockel liest.
-      Das ist **keine Zeichenfrage** — es ist `async_arrange_areas`, also
-      die Anordnung, und damit ein Eingriff auf der Hub-Seite.
+      Streifen ist es, der zusammen mit der Außenwand als Sockel las.
+      Das war **keine Zeichenfrage** — es war `_grid_cell` unter
+      `async_arrange_areas`, also die Anordnung, und damit ein Eingriff
+      auf der Hub-Seite.
 
-- [ ] **Die Raumnamen.** Sie kleben an der Hinterwand und laufen
+      Der Rand ist weg: jede Zelle gab rundum ein Zwanzigstel ab. Und die
+      letzte Reihe ist selten voll — fünf Räume ergeben drei Spalten und
+      zwei Reihen, die sechste Zelle blieb leer. Ein Loch im Grundriss.
+      Sie wird nicht gefüllt, sie fällt weg: die Räume der letzten Reihe
+      teilen die Breite unter sich auf. Am Demohaus bedeckten die Räume
+      vorher **67,5 %** ihrer Etage, jetzt 100 %, ohne Überlappung.
+
+      **Was dabei nebenbei heil wurde: die Maßkette.** Jede Fuge war ein
+      eigener Abschnitt, zu schmal für seine Zahl, also unbeschriftet —
+      von zwanzig Abschnitten trugen zehn ein Maß, und die Teilmaße
+      addierten sich nicht zum Gesamtmaß (5,40 + 5,40 unter einem Haus
+      von 12,00 m). Jetzt sind es elf Abschnitte, alle elf beschriftet,
+      und 6,00 + 6,00 ergibt 12,00. Die Kette hatte nie einen Fehler; sie
+      hat die ganze Zeit korrekt gemeldet, dass dort Fugen sind.
+
+- [x] **Die Raumnamen.** Sie kleben an der Hinterwand und laufen
       ineinander („DIELE TREPPE ESSZIMMER"). Nach hinten geschoben wurden
       sie, damit sie nicht auf dem ersten automatisch platzierten Gerät
       liegen — in einer leeren Zeichnung ist das schlicht falsch. Die
       Lösung muss beides können, nicht das eine gegen das andere
       tauschen.
+
+      **Das Kleben ist weg.** Das Ausweichen war eine Pauschale:
+      `labelPointOf` schob *jeden* Namen 55 % zur Hinterkante, gemessen
+      saß jeder bei Tiefe 0,21 seines Raumes. Jetzt entscheidet der Raum
+      — `crowded` sagt, ob in der Mittelbahn wirklich etwas liegt, und
+      nur dann weicht der Name aus. Am Demohaus ist das Gäste-WC der
+      einzige leere Raum, und sein Name steht jetzt bei 0,48 statt 0,21.
+
+      Gezählt werden dabei die **sichtbaren** Geräte. Wer die Ebene eines
+      Providers ausblendet, bekommt eine leerere Zeichnung; ein Name, der
+      darin vor einem unsichtbaren Gerät ausweicht, weicht vor nichts
+      aus. Das war vorher nicht falsch entschieden, es war gar nicht
+      entschieden.
+
+      **Das Ineinanderlaufen ist auch weg.** Es war echt — mit echten
+      Textmaßen nachgemessen, nicht geschätzt: Sechs Räume nebeneinander,
+      „Hauswirtschaftsraum" 283 px breit in einem Raum von 198 px,
+      „Abstellkammer" 201 px in 175 px, drei überlagernde Paare.
+
+      Ein Raumname ist in `declutter` `fixed` — er weicht nicht aus und
+      wird nicht weggeblendet, und das bleibt richtig: Ein Raum ohne
+      Namen ist schlimmer als ein Gerät ohne Namen. Also wird er
+      **kleiner gesetzt**, so wie in einer Bauzeichnung. Unter 10 px hört
+      das auf — eine Schrift, die weiter schrumpft, ist keine
+      Beschriftung mehr, sondern ein grauer Strich, der so tut als wäre
+      er eine.
+
+      **Eine Größe je Etage, nicht je Raum.** Zuerst rechnete jeder Raum
+      für sich, und das war messbar richtig und angesehen falsch: „Diele"
+      in 16 px direkt neben „Hauswirtschaftsraum" in 10 px liest sich als
+      Rangfolge zwischen Räumen, die gleichrangig sind — sechs
+      Schriftgrößen in einem Riss sehen aus, als sei etwas
+      schiefgegangen. Der Maßstab wird nach dem längsten Namen gewählt,
+      so wie am Zeichenbrett auch. Das kostet Größe dort, wo Platz
+      gewesen wäre; eine Etage ohne langen Namen bleibt unberührt.
+
+      Gefunden wurde das **nur durch Hinsehen**. Beide Fassungen sind
+      nach der Messung gleich gut: null Überlagerungen, kein Name außer­
+      halb seines Raumes.
+
+      Gemessen wird gegen die **Kontur auf der Höhe des Namens**, nicht
+      gegen das umschließende Rechteck: Ein Raum mit abgeschrägter Ecke
+      ist oben schmaler als unten, und ein Name, der gegen das Rechteck
+      geprüft wurde, stünde dort trotzdem im Freien.
+
+      Nachher am selben Fall: null Überlagerungen, kein Name mehr außer­
+      halb seines Raumes, und alle sechs in derselben Größe. Am Demohaus
+      ändert sich **nichts** — alle sechzehn Namen bleiben bei 16 px. Der
+      Umbau greift genau dort ein, wo er gebraucht wird.
 
 - [x] **Der leere linke Rand.** Der Etagenname stand groß und gesperrt in
       einer eigenen Spalte, die bei einer einzelnen Etage ein Drittel der
@@ -251,9 +316,46 @@ nicht.
       Etage — wer in einer wohnt, hat bisher ein Drittel des Bildes an
       eine Spalte verloren, in der ein einziges Wort steht.
 
-- [ ] **Dann erst das Sandwich.** Und dort noch einmal von vorn: die
-      Flucht gilt jetzt pro Etage, `stagger` schiebt sie gegeneinander —
-      ob das zusammen noch als *ein* Gebäude liest, ist ungeprüft.
+- [x] **Dann erst das Sandwich.** Und dort noch einmal von vorn: die
+      Flucht gilt jetzt pro Etage, `stagger` schob sie gegeneinander —
+      ob das zusammen noch als *ein* Gebäude liest, war ungeprüft.
+
+      Nachgesehen: **nein.** `stagger` ist raus.
+
+      Er war einmal richtig. Als die Etagen flache Umrisse dicht
+      beieinander waren, hatte das Auge ohne ihn nichts, woran es sie
+      trennt. Seither haben sie `rise`, `slab`, Wände mit Dicke und 340
+      Einheiten Luft dazwischen — die Aufgabe war erledigt, der Versatz
+      nicht.
+
+      34 von 620 Hausbreite sind **5,5 %**: zu wenig für eine erkennbare
+      Absicht, zu viel für eine Flucht. Man las keine auseinandergezogene
+      Zeichnung *eines* Gebäudes, sondern drei Grundrisse, die nicht ganz
+      übereinanderliegen. Zur Gegenprobe mit 80 gezeichnet — dann ist der
+      Versatz zwar Absicht, aber es sind drei Zeichnungen auf einer
+      Diagonale. Ohne Versatz teilen sich alle Etagen eine Senkrechte,
+      und genau das sagt „ein Haus".
+
+      Dazu ein Preis, der mit dem Haus wuchs: Der Versatz addierte sich in
+      die Bildbreite. Bei drei Etagen belegte das Haus **71 %** der Breite
+      statt 77 %, bei acht nur noch **59 %**. Ein Stapel wurde also umso
+      kleiner gezeichnet, je mehr Stockwerke er hat — in der Ansicht,
+      deren einziger Zweck der Stapel ist. Jetzt sind es 77 %, unabhängig
+      von der Etagenzahl.
+
+      Auch das war **nur durch Hinsehen** zu finden. Der Test dazu hielt
+      den Versatz sogar fest (`lower.x > upper.x`) — er prüfte, dass das
+      Gewollte geschieht, und nicht, ob es das Richtige ist.
+
+**Was diese Phase gelehrt hat.** Von sechs Punkten waren drei mit Tests
+gar nicht zu finden: dass der Name in einem leeren Raum an der Wand
+klebt, dass sechs Schriftgrößen in einem Riss wie ein Fehler aussehen,
+und dass der Versatz das Gebäude auseinandernimmt statt es zu zeigen.
+Bei allen dreien war die Suite grün, und beim Versatz hielt der Test das
+Falsche sogar ausdrücklich fest — er prüfte, dass das Gewollte
+geschieht, nicht ob es das Richtige ist. Dieselbe Lehre wie bei den
+Screenshots in [`tools/README.md`](tools/README.md), nur diesmal
+dreimal hintereinander.
 
 Danach kommt die Frage, die bewusst offen liegt: **wo der Zustand
 hingehört.** Die Referenz kennt kein „Licht an" — sie ist eine

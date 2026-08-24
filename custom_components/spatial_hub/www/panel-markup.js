@@ -17,6 +17,8 @@
 import {
   STACK,
   centreOf,
+  roomLabelSize,
+  ROOM_LABEL,
   shapeOf,
   soilHatch,
   wallsOf,
@@ -70,14 +72,25 @@ const cornersOf = (project, area) => {
     .map(([x, y]) => project(x, y));
 };
 
-/** Wo der Name eines Raumes steht: im hinteren Drittel, nicht in der Mitte.
+/** Wo der Name eines Raumes steht: in der Mitte, solange dort Platz ist.
  *
- *  In der Mitte stand er genau dort, wo auch die Geraete stehen -- die
- *  Automatik setzt ein Geraet ohne eigene Angabe in die Raummitte, und
- *  dessen Beschriftung haengt darunter. Auf dem ersten Bild fuer die
- *  README las man deshalb "Adapter Arbeitszimmer" quer durch das Wort
- *  "Arbeitszimmer". Nach hinten geschoben teilen sich beide den Raum:
- *  der Name des Raumes hinten, was darin steht davor.
+ *  In der Mitte stand er einmal immer -- und damit genau dort, wo auch
+ *  die Geraete stehen: Die Automatik setzt ein Geraet ohne eigene Angabe
+ *  in die Raummitte, und dessen Beschriftung haengt darunter. Auf dem
+ *  ersten Bild fuer die README las man deshalb "Adapter Arbeitszimmer"
+ *  quer durch das Wort "Arbeitszimmer".
+ *
+ *  Die Antwort darauf war, ihn *immer* nach hinten zu schieben, und das
+ *  war ein Tausch und keine Loesung: In einem Raum, in dem nichts steht,
+ *  klebt der Name seither an der Hinterwand, obwohl der ganze Raum frei
+ *  ist -- und in einer Reihe schmaler Raeume laufen die Namen dort
+ *  ineinander, wo sie in der Mitte nebeneinander gepasst haetten.
+ *
+ *  Deshalb entscheidet das jetzt der Raum und nicht die Regel: `crowded`
+ *  sagt, ob in der Mitte wirklich etwas liegt. Und zwar etwas
+ *  **Sichtbares** -- wer die Geraeteebene ausschaltet, sieht eine leere
+ *  Zeichnung, und ein Name, der darin vor einem unsichtbaren Geraet
+ *  ausweicht, weicht vor nichts aus.
  *
  *  Die Verschiebung geht nach oben statt auf einen festen Punkt im
  *  Raumkasten, damit sie fuer jede Kontur gilt und nicht nur fuer das
@@ -85,20 +98,24 @@ const cornersOf = (project, area) => {
  *  des Sandwiches verschiebt nur x --, also liegt alles zwischen Mitte
  *  und dieser Kante sicher noch im Raum.
  */
-const labelPointOf = (corners) => {
+const labelPointOf = (corners, crowded = true) => {
   const middle = centreOf(corners);
+  if (!crowded) return middle;
   const back = Math.min(...corners.map((corner) => corner.y));
   return { x: middle.x, y: middle.y - (middle.y - back) * 0.55 };
 };
 
-const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) => {
+const roomPolygon = (
+  { project, floor, counterScale, crowded = true, labelSize = null },
+  area, keep = () => true,
+) => {
   const width = (area.size && area.size.width) || 0.3;
   const height = (area.size && area.size.height) || 0.3;
   const x0 = area.position.x - width / 2;
   const y0 = area.position.y - height / 2;
   const corners = cornersOf(project, area);
   const points = corners.map((point) => `${point.x},${point.y}`).join(" ");
-  const label = labelPointOf(corners);
+  const label = labelPointOf(corners, crowded);
 
   // Walls, and only for rooms. A garden has no walls, and the soil has
   // none either -- standing a terrace up on 26 units of masonry would say
@@ -183,11 +200,21 @@ const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) 
     shape = `<polygon class="soil" points="${points}"/>${hatch}`;
   }
 
+  // Wie gross der Name gesetzt wird, entscheidet der Raum. Dieselbe
+  // Rechnung liefert `_stackRoomLabels` an das Entzerren -- eine
+  // Beschriftung, deren Kasten groesser ist als ihre Schrift, laesst
+  // Namen ausweichen, die gepasst haetten.
+  const size = labelSize
+    !== null ? labelSize : roomLabelSize(corners, area.name, counterScale, label);
+  const shrunk = size < ROOM_LABEL.size
+    ? ` style="font-size:${size.toFixed(2)}px"`
+    : "";
+
   return `${shape}
     <g data-at-x="${label.x}" data-at-y="${label.y}"
        transform="translate(${label.x},${label.y}) scale(${
          counterScale
-       })"><text class="room-label">${escapeHtml(area.name)}</text></g>`;
+       })"><text class="room-label"${shrunk}>${escapeHtml(area.name)}</text></g>`;
 };
 
 /** Die Ecken einer Raumkontur zum Anfassen: ziehen, entfernen, eine

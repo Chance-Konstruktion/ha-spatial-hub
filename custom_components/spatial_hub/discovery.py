@@ -444,14 +444,30 @@ def _entity_state(state: str) -> str:
 
 
 def _grid_cell(index: int, total: int) -> tuple[Position, dict[str, float]]:
-    """Lay areas out on the squarest grid that fits them all."""
+    """Lay areas out on the squarest grid that fits them all.
+
+    Wall to wall, and the last row included. Hier stand einmal ein Rand:
+    jede Zelle gab rundum ein Zwanzigstel ab, damit zwei Raeume
+    nebeneinander als zwei gelesen werden. Das ist die Denkweise einer
+    Oberflaeche, auf der Kacheln liegen -- in einem Grundriss ist jeder
+    Quadratmeter jemandes Zimmer, und getrennt werden Raeume durch ihre
+    Wand, nicht durch Luft dazwischen. Der Streifen, den der Rand vorn
+    ueber die ganze Hausbreite frei liess, las sich zusammen mit der
+    vorderen Aussenwand als Sockel, auf dem die Etage steht.
+
+    Die letzte Reihe ist selten voll: fuenf Raeume ergeben drei Spalten
+    und zwei Reihen, und die sechste Zelle blieb leer -- ein Loch im
+    Grundriss. Sie bekommt keine Fuellung, sondern faellt weg: die Raeume
+    der letzten Reihe teilen die Breite unter sich auf.
+    """
     columns = max(1, math.ceil(math.sqrt(total)))
     rows = max(1, math.ceil(total / columns))
     column, row = index % columns, index // columns
-    width, height = 1.0 / columns, 1.0 / rows
+    # Wie viele in *dieser* Reihe stehen -- in der letzten weniger.
+    in_row = max(1, min(columns, total - row * columns))
+    width, height = 1.0 / in_row, 1.0 / rows
     centre = Position(x=(column + 0.5) * width, y=(row + 0.5) * height)
-    # Leave a gutter so adjacent areas read as separate rooms.
-    return centre, {"width": width * 0.9, "height": height * 0.9}
+    return centre, {"width": width, "height": height}
 
 
 def _apron_cell(index: int, total: int) -> tuple[Position, dict[str, float]]:

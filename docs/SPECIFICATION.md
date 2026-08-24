@@ -151,6 +151,14 @@ In denselben Etagen-Koordinaten wie `position`, und `position` ist die
 `x - width/2` bis `x + width/2`. Ein Renderer, der die Ecke annimmt,
 zeichnet jeden Raum um eine halbe Raumbreite verschoben.
 
+Die **automatische** Anordnung teilt die Etage restlos unter ihren Räumen
+auf: kein Rand vorn, keine Fuge zwischen den Spalten, und die letzte Reihe
+lässt keine Zelle leer stehen — ihre Räume teilen die Breite unter sich
+auf. In einem Grundriss ist jeder Quadratmeter jemandes Zimmer; getrennt
+werden Räume durch ihre Wand, nicht durch Luft dazwischen. Eine
+Nutzeranordnung DARF Lücken lassen — sie ist eine Aussage über die
+Wohnung, keine über das Raster.
+
 Alles, was ein Bereich sonst an Geometrie trägt — `shape`, `doors` — ist
 **kastenlokal** und rechnet gegen genau dieses Rechteck. Das ist der Grund
 für die Aufteilung: Der Kasten wird verschoben, an den Wänden vergrößert und
@@ -350,11 +358,15 @@ beschrifteten Rechteck unterscheidet.
   Wände, die dieselbe sind, sind **eine** Teilung; sonst steht zwischen
   zwei Hilfslinien im Abstand eines Tausendstels ein Maß von null.
 - Ein Maß, das **breiter ist als sein Abschnitt**, SOLL entfallen — die
-  Begrenzungsstriche bleiben. Das ist der Normalfall und kein Sonderfall:
-  Räume, die noch nicht Wand an Wand liegen, haben Fugen von wenigen
-  Zentimetern, und die sind echt. Sie werden nicht verschwiegen, nur nicht
-  beschriftet. Eine zweite Reihe mit dem **Gesamtmaß** hält die Summe
-  trotzdem lesbar.
+  Begrenzungsstriche bleiben. Räume, die nicht Wand an Wand liegen, haben
+  Fugen von wenigen Zentimetern, und die sind echt: Sie werden nicht
+  verschwiegen, nur nicht beschriftet. Eine zweite Reihe mit dem
+  **Gesamtmaß** hält die Summe trotzdem lesbar.
+
+  Bei der **automatischen** Anordnung tritt das nicht mehr auf — sie legt
+  die Räume Wand an Wand, und die Teilmaße addieren sich zum Gesamtmaß.
+  Solange sie es nicht tat, bestand die halbe Kette aus stummen Strichen,
+  und das war eine richtige Auskunft über eine falsche Anordnung.
 - Der Maßstab ist der **dieser Etage**. Ein Keller, den jemand schmaler
   eingetragen hat, ist schmaler; eine Kette, die das verschweigt, ist eine
   falsche Angabe und nicht nur eine ungenaue.
@@ -366,8 +378,15 @@ beschrifteten Rechteck unterscheidet.
 
 Zwei Namen an derselben Stelle sind schlechter als einer: Man liest keinen
 von beiden. In der Hausansicht passiert das ständig, weil der Name eines
-Geräts unter seinem Punkt hängt und der Name des Raumes davor in dessen
-hinterem Drittel steht.
+Geräts unter seinem Punkt hängt und der Name des Raumes davor stehen kann.
+
+Der Raumname steht in der **Mitte** seines Raumes — außer es liegt dort
+wirklich etwas, dann weicht er nach hinten aus. Gezählt wird, was
+**sichtbar** ist: Wer eine Ebene ausblendet, bekommt eine leerere
+Zeichnung, und ein Name, der darin vor einem unsichtbaren Gerät ausweicht,
+weicht vor nichts aus. Immer auszuweichen war die einfachere Regel und die
+falsche — in einem leeren Raum klebt der Name dann an der Hinterwand,
+obwohl der ganze Raum frei ist.
 
 Ein Renderer SOLL die Beschriftungen deshalb **entzerren**, bevor er sie
 zeichnet:
@@ -375,6 +394,25 @@ zeichnet:
 - Raumnamen, Etagennamen und Maße stehen **fest**. Einen Raumnamen zu
   verschieben hieße, ihn über die Wand des Nachbarn zu schieben — also in
   einen Raum, der anders heißt.
+- Ein Raumname, der **breiter ist als sein Raum**, wird deshalb nicht
+  verschoben und nicht weggeblendet, sondern **kleiner gesetzt**. Ein Raum
+  ohne Namen wäre schlimmer als ein kleiner Name — der Riss ist ja dafür
+  da.
+- Die Größe gilt dann für die **ganze Etage**, nicht für den einzelnen
+  Raum: die kleinste, die einer ihrer Räume braucht. Eine Bauzeichnung
+  wird in einer Schriftgröße beschriftet, und der Maßstab folgt dem
+  längsten Namen. Je Raum gerechnet stehen zwei Nachbarn in verschiedenen
+  Größen, und das liest sich als Rangfolge zwischen Räumen, die
+  gleichrangig sind.
+
+  Es gibt eine **Untergrenze**; darunter wird nicht weiter verkleinert.
+  Eine Schrift, die weiter schrumpft, ist keine Beschriftung mehr. Was
+  dann noch übersteht, sagt die Wahrheit: Der Raum ist zu schmal für
+  seinen Namen.
+
+  Gemessen wird gegen die Kontur **auf der Höhe des Namens**, nicht gegen
+  das umschließende Rechteck. Ein Raum mit abgeschrägter Ecke ist oben
+  schmaler als unten.
 - Gerätenamen weichen aus, **abwechselnd nach unten und nach oben**. Nur
   nach unten wäre eine Reihe von fünf Geräten am Ende eine Spalte, die aus
   dem Geschoss herausläuft.
@@ -386,7 +424,10 @@ zeichnet:
   nie in die Quere gekommen wären, und lässt bei fünf zwei übereinander
   stehen.
 
-Die Textbreite darf **geschätzt** werden. Im SVG steht kein Text, den man
+Die Textbreite darf **geschätzt** werden — auch die, nach der verkleinert
+wird. Wichtig ist nur, dass beide dieselbe Schätzung benutzen: Ein
+Entzerren, das mit einer anderen Größe rechnet als die gezeichnete, lässt
+Gerätenamen ausweichen, die gepasst hätten. Im SVG steht kein Text, den man
 messen könnte, bevor er im Dokument hängt, und die Zeichnung entsteht vorher.
 Es geht darum, ob zwei Namen aufeinanderliegen, und nicht darum, sie auf ein
 Pixel zu setzen.
