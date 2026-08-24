@@ -178,6 +178,15 @@ class SpatialHubPanel extends HTMLElement {
     // undo needs, and it makes redo the same operation the other way round.
     this._undo = [];
     this._redo = [];
+    // Das Raster von Hand ausgeschaltet. Bis hierher gab es dafuer nur
+    // die Umschalttaste, und die hat ein Tablet nicht -- siehe
+    // `_noSnap`.
+    this._snapOff = false;
+    // Ob dieses Geraet mit dem Finger bedient wird. Entscheidet nur, wie
+    // die Hinweise formuliert sind: Ein Hinweis, der eine Taste nennt,
+    // die es hier nicht gibt, ist schlimmer als keiner.
+    this._touch = typeof window !== "undefined" &&
+      Boolean(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
     // Die einzige Verbindung nach draussen. Austauschbar ueber den
     // Setter unten -- siehe den Vertrag in panel-transport.js.
     this._io = haTransport(this);
@@ -199,6 +208,21 @@ class SpatialHubPanel extends HTMLElement {
 
   get transport() {
     return this._io;
+  }
+
+  /** Faellt das Raster fuer diesen Zug weg?
+   *
+   *  Eine Frage, eine Stelle. Sie stand fuenfmal im Code als
+   *  `event.shiftKey`, und damit war das Raster auf jedem Geraet ohne
+   *  Tastatur nicht abschaltbar -- ein Zeigerereignis aus einem Finger
+   *  hat `shiftKey === false`, immer. Der Editor soll laut Vision
+   *  einfach genug fuer ein Kind sein, und ein Kind sitzt am Tablet.
+   *
+   *  Die Taste bleibt: Wer eine hat, will sie nicht gegen einen Knopf
+   *  tauschen. Sie ist nur nicht mehr der einzige Weg.
+   */
+  _noSnap(event) {
+    return Boolean(this._snapOff || (event && event.shiftKey));
   }
 
   get _canEdit() {
@@ -1960,7 +1984,7 @@ class SpatialHubPanel extends HTMLElement {
    *  snap it back inside the walls.
    */
   _snap(value, event, frame = { min: 0, span: 1 }) {
-    return snapTo(value, frame, event.shiftKey);
+    return snapTo(value, frame, this._noSnap(event));
   }
 
   /** Every other room's walls on this floor, split by axis.
@@ -2048,7 +2072,7 @@ class SpatialHubPanel extends HTMLElement {
    */
   _magnet(value, axis, event, frame, lines) {
     return magnetTo(
-      value, lines && lines[axis], frame, event.shiftKey,
+      value, lines && lines[axis], frame, this._noSnap(event),
       snapReach(this._theme),
     );
   }
@@ -2135,7 +2159,7 @@ class SpatialHubPanel extends HTMLElement {
    *  right without being told which.
    */
   _wallPull(walls, axis, event, lines) {
-    if (event.shiftKey) return 0;
+    if (this._noSnap(event)) return 0;
     let shift = 0;
     let reach = SNAP_REACH;
     for (const wall of walls) {

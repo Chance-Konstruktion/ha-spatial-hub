@@ -129,6 +129,12 @@ export const ANSICHT = {
                    <ha-icon icon="mdi:shape-plus-outline"></ha-icon> Geräte
                  </button>
                </div>
+               <button class="chip ${this._snapOff ? "" : "on"}"
+                       data-grid="1" aria-pressed="${!this._snapOff}"
+                       title="Raster: hält Wände auf gleicher Höhe.
+Aus lässt sich alles frei setzen.">
+                 <ha-icon icon="mdi:grid"></ha-icon> Raster
+               </button>
                <button class="icon-btn" data-undo="1" title="Rückgängig"
                        ${this._undo.length ? "" : "disabled"}>
                  <ha-icon icon="mdi:undo"></ha-icon>
@@ -763,11 +769,28 @@ export const ANSICHT = {
         das <b>+</b> in der Wandmitte setzt eine neue — so entstehen
         Nischen und Wandversätze. Das <b>×</b> an einer Ecke entfernt sie;
         bleiben weniger als vier übrig, ist der Raum wieder ein Rechteck.
-        <b>Shift</b> hält das Raster aus.</p>`;
+        ${this._gridHintHtml()}</p>`;
     }
-    return `<p class="hint">Räume-Modus: ziehen ordnet an, an Wänden und
-      Ecken eines Bereichs ändert sich seine Größe. <b>Shift</b> hält
-      gedrückt das Raster aus.</p>`;
+    return `<p class="hint">Räume: ziehen ordnet an, an Wänden und Ecken
+      eines Bereichs ändert sich seine Größe. ${this._gridHintHtml()}</p>`;
+  },
+
+  /** Wie man das Raster loswird -- und zwar so, wie es dieses Geraet kann.
+   *
+   *  Hier stand fuer beide Hinweise "Shift haelt das Raster aus", einmal
+   *  sogar als "Shift haelt gedrueckt das Raster aus". Zwei Fehler in
+   *  einem Satz: Der zweite ist schiefes Deutsch, der erste ist eine
+   *  Anleitung fuer ein Geraet, das der Leser vielleicht gar nicht hat.
+   *  Auf einem Tablet gibt es keine Umschalttaste, und `shiftKey` ist auf
+   *  einem Zeigerereignis aus einem Finger immer falsch -- das Raster war
+   *  dort also nicht abschaltbar, und der Hinweis nannte trotzdem einen
+   *  Weg. Das ist schlimmer als kein Hinweis.
+   */
+  _gridHintHtml() {
+    return this._touch
+      ? `Der Knopf <b>Raster</b> oben schaltet es aus.`
+      : `<b>Shift</b> schaltet das Raster aus, oder der Knopf
+         <b>Raster</b> oben.`;
   },
 
   /** The expert's answer, and only when asked for.

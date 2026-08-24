@@ -411,7 +411,8 @@ export const EINGABEN = {
       const height = drag.start.bottom - drag.start.top || 1;
       const inside = (value) => Math.min(1, Math.max(0, value));
       const grid = (value, span) =>
-        event.shiftKey ? value : Math.round((value * span) / 0.02) * 0.02 / span;
+        this._noSnap(event) ? value
+          : Math.round((value * span) / 0.02) * 0.02 / span;
       const shape = shapeOf(this._area(drag.key) || {}).map((point) => ({
         ...point,
       }));
@@ -463,7 +464,7 @@ export const EINGABEN = {
       const at = Math.min(1 - half, Math.max(half, raw));
       doors[drag.index] = {
         ...door,
-        at: event.shiftKey ? at : Math.round(at * 20) / 20,
+        at: this._noSnap(event) ? at : Math.round(at * 20) / 20,
       };
       drag.value = { doors };
       // Sofort auf dem Element, damit die Oeffnung dem Zeiger folgt und
@@ -1022,6 +1023,11 @@ export const EINGABEN = {
     }
     if (hit("data-redo")) {
       this._redoStep();
+      return true;
+    }
+    if (hit("data-grid")) {
+      this._snapOff = !this._snapOff;
+      this._render();
       return true;
     }
     return false;
