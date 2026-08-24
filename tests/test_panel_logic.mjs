@@ -460,10 +460,24 @@ test("unplaced areas get a tray and a way back onto the plan", () => {
 
 // ── Edit mode ──────────────────────────────────────────────
 
-test("only an admin is offered the pencil", () => {
+test("arranging is offered to everyone who is logged in, not just admins", () => {
+  // Die Spezifikation sagt beim einzigen Befehl, der ausserhalb des Hubs
+  // schreibt: "Admin-pflichtig. Anordnen ist es nicht, das hier schon."
+  // Der Bleistift war trotzdem `is_admin` -- und `layout/set` im Backend
+  // hat gar keine Verwalterpruefung. Front und Back waren verschiedener
+  // Meinung, und die strengere Seite hat gewonnen, ohne dass es jemand
+  // entschieden hat.
   assert.match(panel()._headerHtml(), /data-toggle-edit/);
-  assert.doesNotMatch(panel(model(), { admin: false })._headerHtml(),
-                      /data-toggle-edit/);
+  assert.match(panel(model(), { admin: false })._headerHtml(),
+               /data-toggle-edit/, "ein Kind kommt gar nicht erst hinein");
+});
+
+test("nobody without a user gets the pencil", () => {
+  // Angemeldet sein ist die Untergrenze -- sonst schriebe der Plan fuer
+  // niemanden.
+  const view = panel();
+  view._hass = {};
+  assert.doesNotMatch(view._headerHtml(), /data-toggle-edit/);
 });
 
 test("editing tools appear only in edit mode", () => {
@@ -4031,12 +4045,23 @@ test("a node with no entity cannot be moved anywhere", async () => {
   assert.deepEqual(view._hass.calls, []);
 });
 
-test("a guest cannot rearrange the house", async () => {
+test("a guest cannot move a device into another room -- and hears why", async () => {
+  // Der Name dieses Tests hiess einmal "cannot rearrange the house". Das
+  // war irrefuehrend: Geprueft wird nicht das Anordnen -- das darf ein
+  // Gast -- sondern das Umhaengen eines Geraets, und *das* schreibt in
+  // das Register von Home Assistant.
+  //
+  // Vorher brach der Zug hier stumm ab. Der Punkt sprang zurueck, und
+  // ohne ein Wort dazu liest sich das als Fehler im Programm. Die Regel
+  // steht direkt darueber im Quelltext: Eine Aenderung, die nach
+  // draussen wirkt, ist nie stumm -- ihr Ausbleiben auch nicht.
   const view = movingPanel(twoRoomHouse());
   view._hass.user.is_admin = false;
 
   await view._moveIntoArea(view._model.nodes[0], 0.7, 0.5);
-  assert.deepEqual(view._hass.calls, []);
+  assert.deepEqual(view._hass.calls, [], "geschrieben wurde trotzdem");
+  assert.match(String(view._error || ""), /Administratorrechte/,
+               "der Zug verpufft ohne ein Wort");
 });
 
 test("the move is announced, and the way back is in the announcement", async () => {
@@ -4258,10 +4283,18 @@ test("a right click is the way into editing, not a dead end", () => {
   assert.equal(view._menu, null, "the menu closes behind itself");
 });
 
-test("a guest is not offered a pencil they cannot pick up", () => {
+test("a guest is offered the pencil, because arranging is not an admin thing", () => {
   const view = panel(model(), { admin: false, edit: false });
   rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
-  assert.deepEqual(ids(view), [], "no menu for someone who may not edit");
+  assert.deepEqual(ids(view), ["edit-on"],
+                   "der Weg ins Bearbeiten fehlt einem Nicht-Verwalter");
+});
+
+test("nobody without a user gets a menu", () => {
+  const view = panel(model(), { admin: false, edit: false });
+  view._hass = {};
+  rightClick(view, [element({ "data-area": "wohnzimmer" }), stage()]);
+  assert.deepEqual(ids(view), []);
   assert.equal(view._menuHtml(), "", "and no empty bubble either");
 });
 

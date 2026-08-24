@@ -225,8 +225,35 @@ class SpatialHubPanel extends HTMLElement {
     return Boolean(this._snapOff || (event && event.shiftKey));
   }
 
-  get _canEdit() {
-    return this._io.canEdit();
+  /** Darf der Betrachter den Plan **ordnen**?
+   *
+   *  Das schreibt in den Speicher des Hubs und sonst nirgends. Die
+   *  Spezifikation sagt es beim einzigen Befehl, der nach draussen
+   *  schreibt, ausdruecklich: "Admin-pflichtig. Anordnen ist es nicht,
+   *  das hier schon."
+   *
+   *  Hier stand `is_admin`, und damit war der ganze Editor fuer jeden
+   *  gesperrt, der kein Verwalter ist -- waehrend `spatial_hub/layout/set`
+   *  im Backend gar keine Verwalterpruefung hat und die Aenderung klaglos
+   *  angenommen haette. Front und Back waren verschiedener Meinung, und
+   *  die strengere Seite hat gewonnen, ohne dass es jemand entschieden
+   *  hat. Wer in Home Assistant kein Verwalter ist -- ein Kind zum
+   *  Beispiel --, konnte den Editor nicht einmal oeffnen.
+   */
+  get _canArrange() {
+    return this._io.canArrange();
+  }
+
+  /** Darf der Betrachter tun, was **ausserhalb** des Hubs wirkt?
+   *
+   *  Aktionen eines Providers schalten echte Geraete; ein Geraet in einen
+   *  anderen Bereich zu haengen schreibt in das Register von Home
+   *  Assistant. Beides ist verwalterpflichtig, und beides prueft das
+   *  Backend ebenfalls -- diese Frage hier ist die Hoeflichkeit davor,
+   *  nicht der Riegel.
+   */
+  get _isAdmin() {
+    return this._io.isAdmin();
   }
 
   /** Home Assistants Eingang -- die letzte Stelle, die seinen Namen kennt.
@@ -383,7 +410,19 @@ class SpatialHubPanel extends HTMLElement {
    *  change like that must never be silent.
    */
   async _moveIntoArea(node, x, y) {
-    if (!this._canEdit || !node || !node.entity_id) return;
+    if (!node || !node.entity_id) return;
+    if (!this._isAdmin) {
+      // Nicht stillschweigend nichts tun. Der Zug ist gelaufen, der Punkt
+      // springt zurueck, und ohne ein Wort dazu liest sich das als Fehler
+      // im Programm. Dieselbe Regel wie eine Zeile hoeher: Eine
+      // Aenderung, die nach draussen wirkt, ist nie stumm -- und ihr
+      // Ausbleiben auch nicht.
+      this._error = "Ein Gerät in einen anderen Raum zu hängen ändert Home "
+        + "Assistant selbst und braucht Administratorrechte. Den Plan "
+        + "ordnen darfst du.";
+      this._render();
+      return;
+    }
     const room = this._areaAt(x, y, node.floor_id);
     const from = node.area_id || null;
     const to = room ? room.id : null;
@@ -1738,7 +1777,7 @@ class SpatialHubPanel extends HTMLElement {
     if (!this._edit) {
       // Rechtsklick ist der Weg *ins* Bearbeiten. Ein Menue, das ausserhalb
       // gar nicht aufgeht, liest sich wie ein Fehler.
-      if (this._canEdit) {
+      if (this._canArrange) {
         items.push({ id: "edit-on", label: "Bearbeiten einschalten",
                      icon: "mdi:pencil" });
       }

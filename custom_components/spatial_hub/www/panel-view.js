@@ -222,7 +222,7 @@ Aus lässt sich alles frei setzen.">
           <ha-icon icon="mdi:stethoscope"></ha-icon>
         </button>
         ${
-          this._canEdit
+          this._canArrange
             ? `<button class="icon-btn ${this._edit ? "on" : ""}"
                        data-toggle-edit="1"
                        title="${this._edit ? "Bearbeiten beenden" : "Bearbeiten"}">
@@ -2055,7 +2055,7 @@ Aus lässt sich alles frei setzen.">
       )
       .join("");
 
-    const canAct = this._io.canEdit();
+    const canAct = this._io.isAdmin();
     const custom = kind === "node" ? this._customIcon(item) : null;
     const badge = kind === "node"
       ? `<span class="popup-icon" style="--node-color:${escapeHtml(
