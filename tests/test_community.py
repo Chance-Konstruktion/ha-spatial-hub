@@ -12,12 +12,11 @@ import re
 from pathlib import Path
 
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "custom_components" / "spatial_hub"
 DIRECTORY = ROOT / "docs" / "PROVIDERS.md"
-TEMPLATES = ROOT / ".github" / "ISSUE_TEMPLATE"
+TEMPLATES = ROOT / ".gitlab" / "issue_templates"
 
 def _ours(path: Path) -> bool:
     """Ist das eine Datei *dieses* Projekts -- und nicht Beiwerk?
@@ -179,15 +178,22 @@ def test_both_translations_tell_the_same_story():
 
 def _template_targets(template):
     """Die Dateien, auf die eine Vorlage verweist."""
-    return re.findall(r"blob/main/(\S+?)(?=[)\s]|$)", template.read_text())
+    return re.findall(r"\.\./blob/main/(\S+?)(?=[)\s]|$)", template.read_text())
 
 
-@pytest.mark.parametrize(
-    "template", sorted(TEMPLATES.glob("*.yml")), ids=lambda p: p.name
-)
-def test_the_templates_are_valid_yaml(template):
-    """GitHub renders a broken template as nothing at all, without telling us."""
-    assert yaml.safe_load(template.read_text()) is not None
+def test_the_templates_are_where_gitlab_looks_for_them():
+    """GitLab liest Vorlagen aus ``.gitlab/issue_templates/`` als Markdown.
+
+    Sie lagen bis hierher als YAML-Formulare in ``.github/ISSUE_TEMPLATE/``
+    -- eine Bauform, die es nur auf GitHub gibt. Auf GitLab war das kein
+    kaputtes Formular, sondern **gar keines**: Der Ordner wird dort nicht
+    gelesen, und niemand bekommt darueber eine Meldung. Ein Angebot, das
+    niemand sieht, ist keines.
+    """
+    assert TEMPLATES.is_dir(), f"{TEMPLATES} gibt es nicht"
+    namen = {p.name for p in TEMPLATES.glob("*.md")}
+    assert "Fehler.md" in namen, f"keine Fehler-Vorlage, nur {sorted(namen)}"
+    assert len(namen) >= 2, f"nur {sorted(namen)}"
 
 
 def test_the_first_thing_an_issue_offers_is_not_filing_an_issue():
@@ -196,15 +202,20 @@ def test_the_first_thing_an_issue_offers_is_not_filing_an_issue():
     Every request routed to the generic adapter or to the SDK is a request
     that never becomes a maintainer's problem -- ours or somebody else's.
     """
-    config = yaml.safe_load((TEMPLATES / "config.yml").read_text())
-    urls = " ".join(link["url"] for link in config["contact_links"])
+    # Auf GitHub stand das in ``config.yml`` als ``contact_links``, also
+    # *neben* der Auswahl. GitLab kennt das nicht -- der Inhalt wird
+    # deshalb selbst zur Vorlage. Die Pruefung gilt weiter, sie sieht nur
+    # woanders hin.
+    urls = " ".join(
+        p.read_text(encoding="utf-8") for p in TEMPLATES.glob("*.md")
+    )
 
     assert "ASK_FOR_SUPPORT" in urls
     assert "sdk/README.md" in urls
 
 
 @pytest.mark.parametrize(
-    "template", sorted(TEMPLATES.glob("*.yml")), ids=lambda p: p.name
+    "template", sorted(TEMPLATES.glob("*.md")), ids=lambda p: p.name
 )
 def test_the_templates_link_to_files_that_exist(template):
     for target in _template_targets(template):
@@ -223,7 +234,7 @@ def test_the_templates_still_point_at_something():
     """
     ziele = [
         ziel
-        for vorlage in sorted(TEMPLATES.glob("*.yml"))
+        for vorlage in sorted(TEMPLATES.glob("*.md"))
         for ziel in _template_targets(vorlage)
     ]
     assert ziele, "keine einzige Vorlage verweist noch auf eine Datei"

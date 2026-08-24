@@ -2,7 +2,7 @@
 
 [![Release](https://img.shields.io/badge/release-early--preview-orange)](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub/-/releases)
 [![Status](https://img.shields.io/badge/status-early--preview-orange)](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub)
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > *"A floor plan that doesn't draw what you configured. It draws what your

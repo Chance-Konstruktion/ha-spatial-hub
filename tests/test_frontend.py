@@ -256,7 +256,11 @@ def test_the_renderer_pulls_nothing_off_the_internet():
     """No CDN, no font host, no build artefact fetched at runtime."""
     source = renderer_source()
     assert "http://" not in source
-    assert not re.search(r"https://(?!github\.com)", source), (
+    # Hier stand einmal eine Ausnahme fuer `github.com`. Nachgemessen kam
+    # im Renderer keine einzige solche Adresse vor -- die Ausnahme war
+    # tot und hat die Regel nur aufgeweicht. Jetzt gilt sie ohne Loch:
+    # keine Adresse nach draussen, von keinem Anbieter.
+    assert "https://" not in source, (
         "a local-first dashboard must render with the network unplugged"
     )
 
