@@ -7,9 +7,9 @@
  * Formen zurueck. Genau deshalb steht es hier und nicht in der Klasse.
  *
  * Ein Raum wird in *beiden* Ansichten aus derselben Kontur gebaut. Dass
- * die Wolke einmal eine Wolke und einmal ein Rechteck war, kam daher,
- * dass es zwei Stellen gab, die dasselbe zeichnen wollten. Eine Funktion,
- * die die Projektion als Argument nimmt, kann es nur noch einmal geben.
+ * das Erdreich einmal so und einmal anders aussah, kam daher, dass es
+ * zwei Stellen gab, die dasselbe zeichnen wollten. Eine Funktion, die die
+ * Projektion als Argument nimmt, kann es nur noch einmal geben.
  *
  * Kein Build, kein Bundle: Der Browser laedt das als ES-Modul direkt.
  */
@@ -18,12 +18,15 @@ import {
   STACK,
   centreOf,
   shapeOf,
-  CLOUD_PATH,
+  soilHatch,
   wallsOf,
   capsOf,
+  openingMarksOf,
   AREA_KIND,
   kindOf,
   doorsOf,
+  OPENING,
+  openingKind,
   isStairs,
   sideName,
 } from "./panel-geometry.js";
@@ -45,43 +48,60 @@ const escapeHtml = (value) =>
  *  oder Balkon ist), `counterScale` haelt die Beschriftung lesbar,
  *  waehrend die Kamera zoomt.
  */
+/** Die projizierte Kontur eines Raumes.
+ *
+ *  The same outline the single-floor view clips to, projected. The two
+ *  views disagreeing about the shape of a room is the bug that made the
+ *  cloud a rectangle in the house view, and a niche visible on one tab
+ *  only would be the same bug wearing a different hat.
+ *
+ *  Steht hier fuer sich, weil nicht nur das Zeichnen sie braucht: wer
+ *  Beschriftungen entzerren will, muss wissen, wo der Raumname landet,
+ *  *bevor* der Raum gezeichnet ist. Zwei Rechnungen dafuer waeren zwei
+ *  Stellen, an denen ein Name um ein paar Einheiten danebenliegt.
+ */
+const cornersOf = (project, area) => {
+  const width = (area.size && area.size.width) || 0.3;
+  const height = (area.size && area.size.height) || 0.3;
+  const x0 = area.position.x - width / 2;
+  const y0 = area.position.y - height / 2;
+  return shapeOf(area)
+    .map((point) => [x0 + point.x * width, y0 + point.y * height])
+    .map(([x, y]) => project(x, y));
+};
+
+/** Wo der Name eines Raumes steht: im hinteren Drittel, nicht in der Mitte.
+ *
+ *  In der Mitte stand er genau dort, wo auch die Geraete stehen -- die
+ *  Automatik setzt ein Geraet ohne eigene Angabe in die Raummitte, und
+ *  dessen Beschriftung haengt darunter. Auf dem ersten Bild fuer die
+ *  README las man deshalb "Adapter Arbeitszimmer" quer durch das Wort
+ *  "Arbeitszimmer". Nach hinten geschoben teilen sich beide den Raum:
+ *  der Name des Raumes hinten, was darin steht davor.
+ *
+ *  Die Verschiebung geht nach oben statt auf einen festen Punkt im
+ *  Raumkasten, damit sie fuer jede Kontur gilt und nicht nur fuer das
+ *  Rechteck. Die hintere Kante ist im Bild waagerecht -- die Schraege
+ *  des Sandwiches verschiebt nur x --, also liegt alles zwischen Mitte
+ *  und dieser Kante sicher noch im Raum.
+ */
+const labelPointOf = (corners) => {
+  const middle = centreOf(corners);
+  const back = Math.min(...corners.map((corner) => corner.y));
+  return { x: middle.x, y: middle.y - (middle.y - back) * 0.55 };
+};
+
 const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) => {
   const width = (area.size && area.size.width) || 0.3;
   const height = (area.size && area.size.height) || 0.3;
   const x0 = area.position.x - width / 2;
   const y0 = area.position.y - height / 2;
-  // The same outline the single-floor view clips to, projected. The two
-  // views disagreeing about the shape of a room is the bug that made
-  // the cloud a rectangle in the house view, and a niche visible on one
-  // tab only would be the same bug wearing a different hat.
-  const corners = shapeOf(area)
-    .map((point) => [x0 + point.x * width, y0 + point.y * height])
-    .map(([x, y]) => project(x, y));
+  const corners = cornersOf(project, area);
   const points = corners.map((point) => `${point.x},${point.y}`).join(" ");
-  // Der Raumname im Raum, wie in jedem Grundriss -- aber nicht in
-  // seiner Mitte, sondern im hinteren Drittel.
-  //
-  // In der Mitte stand er genau dort, wo auch die Geraete stehen: die
-  // Automatik setzt ein Geraet ohne eigene Angabe in die Raummitte, und
-  // dessen Beschriftung haengt darunter. Auf dem ersten Bild fuer die
-  // README las man deshalb "Adapter Arbeitszimmer" quer durch das Wort
-  // "Arbeitszimmer". Nach hinten geschoben teilen sich beide den Raum:
-  // der Name des Raumes hinten, was darin steht davor.
-  //
-  // Die Verschiebung geht nach oben statt auf einen festen Punkt im
-  // Raumkasten, damit sie fuer jede Kontur gilt und nicht nur fuer das
-  // Rechteck. Die hintere Kante ist im Bild waagerecht -- die Schraege
-  // des Sandwiches verschiebt nur x --, also liegt alles zwischen Mitte
-  // und dieser Kante sicher noch im Raum.
-  const middle = centreOf(corners);
-  const back = Math.min(...corners.map((corner) => corner.y));
-  const label = { x: middle.x, y: middle.y - (middle.y - back) * 0.55 };
+  const label = labelPointOf(corners);
 
-  // A virtual area is a cloud here too. It was a cloud on its own tab
-  // and a rectangle in the house view, so the two views disagreed about
-  // what the thing *is* -- and the house view is the one people open.
-  // Walls, and only for rooms. A garden has no walls, and a cloud has
-  // neither -- standing a terrace up on 26 units of masonry would say
+  // Walls, and only for rooms. A garden has no walls, and the soil has
+  // none either -- standing a terrace up on 26 units of masonry would say
   // the exact opposite of what a terrace is.
   //
   // Three parts, in the order you would see them: the floor inside the
@@ -109,7 +129,12 @@ const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) 
         "room-cap",
         keep,
         doors,
-      );
+      ) +
+      // Nach den Waenden, nicht davor: der Schwenk liegt im Raum, und
+      // die vordere Wandflaeche ist undurchsichtig -- davor gezeichnet
+      // waere er gezeichnet und trotzdem nicht zu sehen. Dieselbe Falle
+      // wie bei den Treppenstufen weiter unten.
+      openingMarksOf(corners, STACK.rise, doors, keep);
   }
   // Stufen. In der Referenzzeichnung ist die Treppe das, was einen
   // Grundriss auf den ersten Blick als Grundriss lesbar macht.
@@ -139,23 +164,23 @@ const roomPolygon = ({ project, floor, counterScale }, area, keep = () => true) 
   if (deck) {
     shape += wallsOf(corners, STACK.rise * 0.35, "deck-rail", keep);
   }
+  // Erdreich: eine schraffierte Flaeche, kein Kasten.
+  //
+  // Hier stand eine Wolke -- eine feste Kontur, die auf die Kastengroesse
+  // gezerrt wurde. Sie war das Zeichen fuer "kein Raum", und sie stand
+  // deshalb ueber dem Dach. Im Boden braucht es das Zeichen genauso, aber
+  // ein anderes: Erde ist in einer Bauzeichnung schraffiert. Die
+  // Schraffur wird im Grundriss gerechnet und dann projiziert, also
+  // liegt sie in derselben Flucht wie alles andere auf der Etage.
   if (kindOf(area) === AREA_KIND.VIRTUAL) {
-    // Der Grundriss steht in der Flucht, also steht die Wolke mit
-    // darin: zwei Kanten des projizierten Raumes sind die Achsen, an
-    // denen sie gezeichnet wird. Damit gilt das auch weiter, seit die
-    // Flanken nicht mehr parallel laufen.
-    const origin = project(x0, y0);
-    const alongX = project(x0 + width, y0);
-    const alongY = project(x0, y0 + height);
-    const matrix = [
-      (alongX.x - origin.x) / 100, (alongX.y - origin.y) / 100,
-      (alongY.x - origin.x) / 60, (alongY.y - origin.y) / 60,
-      origin.x, origin.y,
-    ]
-      .map((value) => value.toFixed(4))
-      .join(",");
-    shape = `<path class="stack-cloud" transform="matrix(${matrix})"
-      d="${CLOUD_PATH}"/>`;
+    const hatch = soilHatch(project, x0, y0, width, height)
+      .map(
+        ([from, to]) =>
+          `<line class="soil-hatch" x1="${from.x.toFixed(2)}" y1="${from.y.toFixed(2)}"
+             x2="${to.x.toFixed(2)}" y2="${to.y.toFixed(2)}"/>`,
+      )
+      .join("");
+    shape = `<polygon class="soil" points="${points}"/>${hatch}`;
   }
 
   return `${shape}
@@ -203,10 +228,24 @@ const doorsHtml = (area) => {
   const sides = shapeOf(area).length;
   const doors = doorsOf(area, sides);
   const rows = doors
-    .map(
-      (door, index) => `
+    .map((door, index) => {
+      const kind = openingKind(door);
+      const label = kind === OPENING.WINDOW ? "Fenster" : "Tür";
+      return `
       <div class="door">
         <span class="door-side">${escapeHtml(sideName(Number(door.side)))}</span>
+        <div class="chips door-kind">
+          ${[[OPENING.DOOR, "Tür", "mdi:door"],
+             [OPENING.WINDOW, "Fenster", "mdi:window-closed-variant"]]
+            .map(
+              ([value, text, icon]) => `<button class="chip ${
+                kind === value ? "on" : ""
+              }" data-door="${index}" data-opening-kind="${value}">
+                <ha-icon icon="${icon}"></ha-icon> ${text}
+              </button>`,
+            )
+            .join("")}
+        </div>
         <label class="door-slide">
           <span class="muted">Mitte</span>
           <input type="range" min="0" max="1" step="0.01"
@@ -220,27 +259,41 @@ const doorsHtml = (area) => {
                  data-door="${index}" data-door-field="width">
         </label>
         <button class="icon-btn" data-door-remove="${index}"
-                title="Tür entfernen">
+                title="${label} entfernen">
           <ha-icon icon="mdi:close"></ha-icon>
         </button>
-      </div>`,
-    )
+      </div>`;
+    })
     .join("");
-  const add = Array.from({ length: sides }, (_unused, side) => side)
-    .map(
-      (side) => `<button class="chip" data-door-add="${side}">
-        + ${escapeHtml(sideName(side))}
-      </button>`,
-    )
-    .join("");
+  // Zwei Reihen Knoepfe, eine je Art. Vorher gab es nur "+ hinten" und
+  // die Art gar nicht -- und wer ein Fenster wollte, bekam eine Tuer und
+  // konnte es nirgends korrigieren.
+  const adders = (kind, text, icon) =>
+    Array.from({ length: sides }, (_unused, side) => side)
+      .map(
+        (side) => `<button class="chip" data-door-add="${side}"
+          data-add-kind="${kind}">
+          <ha-icon icon="${icon}"></ha-icon> ${escapeHtml(sideName(side))}
+        </button>`,
+      )
+      .join("");
   return `
-    <h3>Türen</h3>
+    <h3>Türen und Fenster</h3>
     <p class="note">Eine Tür ist eine Lücke in der Wand — sie hört davor
-    auf und fängt dahinter wieder an. Angaben als Anteil der Wand, damit
-    die Tür bleibt, wo sie ist, wenn der Raum größer wird.</p>
+    auf und fängt dahinter wieder an. Ein Fenster sitzt <em>in</em> der
+    Wand: die Wand läuft durch, Brüstung und Sturz stehen als Striche
+    darin. Angaben als Anteil der Wand, damit beides bleibt, wo es ist,
+    wenn der Raum größer wird.</p>
+    <p class="note">Schneller geht es im Grundriss: auf eine Wand klicken
+    setzt dort eine Öffnung, ziehen verschiebt sie, Alt-Klick entfernt
+    sie.</p>
     ${rows ? `<div class="doors">${rows}</div>`
-           : '<p class="note">Noch keine Tür.</p>'}
-    <div class="chips">${add}</div>`;
+           : '<p class="note">Noch keine Öffnung.</p>'}
+    <p class="muted">Tür hinzufügen</p>
+    <div class="chips">${adders(OPENING.DOOR, "Tür", "mdi:door")}</div>
+    <p class="muted">Fenster hinzufügen</p>
+    <div class="chips">${adders(
+      OPENING.WINDOW, "Fenster", "mdi:window-closed-variant")}</div>`;
 };
 
 
@@ -278,6 +331,8 @@ export {
   roomPolygon,
   cornerHandlesHtml,
   doorsHtml,
+  cornersOf,
+  labelPointOf,
   sparklineHtml,
   escapeHtml,
 };

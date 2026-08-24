@@ -20,6 +20,12 @@ import {
   shapeOf,
   spanY,
   yFrame,
+  boxOf,
+  hasShape,
+  kindOf,
+  AREA_KIND,
+  OPENING,
+  openingRun,
 } from "./panel-geometry.js";
 import { qualityColour, stateColour } from "./panel-colour.js";
 import { DOMAIN, SHEET, ZOOM } from "./panel-const.js";
@@ -199,13 +205,14 @@ export const EINGABEN = {
           element.classList.contains("stack")),
     );
 
+    const openingGrip = find("data-opening");
     const plotGrip = find("data-plot-index");
     const cornerGrip = find("data-corner-area");
     const shapeGrip = find("data-shape-index");
     const grip = find("data-resize-area");
     const areaElement = find("data-area");
     const nodeElement = find("data-node");
-    const anyGrip = plotGrip || cornerGrip || shapeGrip;
+    const anyGrip = plotGrip || cornerGrip || shapeGrip || openingGrip;
     const draggable =
       this._edit && stage &&
       (anyGrip || grip || areaElement || nodeElement) &&
@@ -234,7 +241,15 @@ export const EINGABEN = {
       return;
     }
 
-    const target = plotGrip
+    const target = openingGrip
+      ? {
+          mode: "opening",
+          section: "areas",
+          key: openingGrip.getAttribute("data-opening"),
+          index: Number(openingGrip.getAttribute("data-opening-index")),
+          element: openingGrip,
+        }
+      : plotGrip
       ? {
           mode: "plot",
           section: "floors",
@@ -282,7 +297,9 @@ export const EINGABEN = {
       // the outline -- restoring a position here would put the shape
       // back and leave the room somewhere else.
       before:
-        target.mode === "corner"
+        target.mode === "opening"
+          ? { doors: (this._area(target.key) || {}).doors || [] }
+          : target.mode === "corner"
           ? this._shapeBefore(this._area(target.key) || {})
           : target.mode === "plot"
           ? { plot: (this._floor || {}).plot || null }
@@ -294,7 +311,8 @@ export const EINGABEN = {
       // pointer move would let a room snap to a wall it has already
       // pushed, which is a room that walks.
       lines:
-        target.section === "areas" && target.mode !== "corner"
+        target.section === "areas" &&
+        target.mode !== "corner" && target.mode !== "opening"
           ? this._wallLines(target.key)
           : null,
       box: stage.getBoundingClientRect(),
@@ -413,6 +431,53 @@ export const EINGABEN = {
       if (fill) fill.style.clipPath = polygon;
       drag.element.style.left = `${(shape[drag.index].x * 100).toFixed(2)}%`;
       drag.element.style.top = `${(shape[drag.index].y * 100).toFixed(2)}%`;
+      return;
+    }
+
+    if (drag.mode === "opening" && drag.start) {
+      // Eine Oeffnung laeuft auf ihrer Wand und nirgendwo sonst. Der
+      // Zeiger sagt, wo im Raum er ist; daraus wird der Anteil entlang
+      // genau der einen Kante -- deshalb ist das hier kein
+      // Verschieben in zwei Achsen, sondern in einer.
+      const area = this._area(drag.key) || {};
+      const doors = (area.doors || []).map((door) => ({ ...door }));
+      const door = doors[drag.index];
+      if (!door) return;
+      const width = drag.start.right - drag.start.left || 1;
+      const height = drag.start.bottom - drag.start.top || 1;
+      // Kante 0 und 2 laufen in x, Kante 1 und 3 in y. Und 2 und 3
+      // laufen rueckwaerts -- die Kontur laeuft im Uhrzeigersinn, also
+      // ist "vorne" von rechts nach links.
+      const side = Number(door.side);
+      const raw = side === 0
+        ? (x - drag.start.left) / width
+        : side === 1
+        ? (y - drag.start.top) / height
+        : side === 2
+        ? 1 - (x - drag.start.left) / width
+        : 1 - (y - drag.start.top) / height;
+      // Nicht ueber die Ecke hinaus: eine Oeffnung, deren Mitte am
+      // Kantenende sitzt, ragt zur Haelfte in die Nachbarwand, und dort
+      // ist sie kein Loch, sondern ein Fehler.
+      const half = Math.min(Math.max(Number(door.width) || 0, 0), 1) / 2;
+      const at = Math.min(1 - half, Math.max(half, raw));
+      doors[drag.index] = {
+        ...door,
+        at: event.shiftKey ? at : Math.round(at * 20) / 20,
+      };
+      drag.value = { doors };
+      // Sofort auf dem Element, damit die Oeffnung dem Zeiger folgt und
+      // nicht erst beim Loslassen springt.
+      const [from, to] = openingRun(doors[drag.index]);
+      const start = `${(from * 100).toFixed(2)}%`;
+      const span = `${((to - from) * 100).toFixed(2)}%`;
+      if (side === 0 || side === 2) {
+        drag.element.style.left = start;
+        drag.element.style.width = span;
+      } else {
+        drag.element.style.top = start;
+        drag.element.style.height = span;
+      }
       return;
     }
 
@@ -750,6 +815,10 @@ export const EINGABEN = {
       this._clickLayers,
       this._clickThemeAndFloor,
       this._clickArrange,
+      // Ganz zum Schluss vor der Auswahl: eine Wand ist die groesste
+      // Trefferflaeche im Bild, und ein Knopf, der darauf liegt, soll
+      // sein eigener Knopf bleiben.
+      this._clickOpenings,
       this._clickSelection,
     ];
     for (const abschnitt of abschnitte) {
@@ -958,6 +1027,81 @@ export const EINGABEN = {
     return false;
   },
 
+  /** Oeffnungen direkt am Grundriss: setzen, entfernen.
+   *
+   *  Der Weg ueber den Dialog bleibt -- fuer genaue Zahlen ist ein
+   *  Regler besser als eine Hand. Aber der uebliche Fall ist "hier soll
+   *  eine Tuer hin", und dafuer war er drei Klicks und zwei Regler zu
+   *  lang: Zahnrad, ans Ende des Dialogs, "+ hinten", schieben, schieben.
+   *
+   *  Verschoben wird gezogen; das steht in `_onPointerDown`. Hier steht
+   *  nur, was ein Klick tut, der nichts gezogen hat.
+   *
+   *  Gibt `true` zurueck, wenn der Klick hier verbraucht wurde.
+   */
+  _clickOpenings(hit, event, stage) {
+    if (!this._editRooms) return false;
+
+    // Alt auf einer vorhandenen Oeffnung entfernt sie -- dieselbe Geste,
+    // mit der auch eine Ecke verschwindet.
+    const opening = hit("data-opening");
+    if (opening && (event.altKey || event.metaKey)) {
+      const area = this._area(opening.getAttribute("data-opening"));
+      const index = Number(opening.getAttribute("data-opening-index"));
+      if (area) {
+        this._setDoors(area, (doors) =>
+          doors.filter((_door, at) => at !== index));
+      }
+      return true;
+    }
+    if (opening) return true;
+
+    // Und ein Klick auf eine Wand setzt dort eine. Welche Wand und wo
+    // darauf, sagt der Zeiger: der Raum ist ein Rechteck, also ist die
+    // naechste Kante die mit dem kleinsten Abstand.
+    //
+    // Aber nur, wenn der Klick nichts anderes gemeint hat. Die acht
+    // Griffe sitzen genau dort, wo auch die Waende sind -- ohne diese
+    // Zeile bekommt jeder Griff, den jemand antippt statt zieht, eine
+    // Tuer geschenkt. Dasselbe gilt fuer die Knoepfe am Bereich und fuer
+    // ein Geraet, das nah an einer Wand steht.
+    if (hit("data-resize-area") || hit("data-corner-area") ||
+        hit("data-shape-index") || hit("data-hide-area") ||
+        hit("data-area-dialog") || hit("data-node") || hit("data-join-area")) {
+      return false;
+    }
+    const areaElement = hit("data-area");
+    if (!areaElement || !stage) return false;
+    const area = this._area(areaElement.getAttribute("data-area"));
+    if (!area || kindOf(area) !== AREA_KIND.INDOOR || hasShape(area)) {
+      return false;
+    }
+    const box = boxOf(area);
+    const { x, y } = this._toFloor(event, { frame: this._frame, stage,
+                                            box: stage.getBoundingClientRect() });
+    const width = box.right - box.left || 1;
+    const height = box.bottom - box.top || 1;
+    const u = (x - box.left) / width;
+    const v = (y - box.top) / height;
+    // Nur der Rand zaehlt. Ein Klick mitten im Raum meint den Raum und
+    // nicht die naechstgelegene Wand -- sonst bekaeme jedes Verschieben,
+    // das kein Verschieben wurde, eine Tuer geschenkt.
+    const EDGE = 0.14;
+    const near = [v, 1 - u, 1 - v, u];
+    const side = near.indexOf(Math.min(...near));
+    if (near[side] > EDGE) return false;
+    // Auf welchem Anteil der Kante: dieselbe Rechnung wie beim Ziehen,
+    // einschliesslich der zwei rueckwaerts laufenden Kanten.
+    const raw = side === 0 ? u : side === 1 ? v : side === 2 ? 1 - u : 1 - v;
+    const span = 0.2;
+    const at = Math.min(1 - span / 2, Math.max(span / 2, raw));
+    this._setDoors(area, (doors) => [
+      ...doors,
+      { side, at: Math.round(at * 20) / 20, width: span, kind: OPENING.DOOR },
+    ]);
+    return true;
+  },
+
   /** Der Bereichsdialog: Art des Raums und seine Tueren.
    *
    *  Gibt `true` zurueck, wenn der Klick hier verbraucht wurde.
@@ -993,10 +1137,33 @@ export const EINGABEN = {
         (candidate) => candidate.id === this._areaDialog,
       );
       const side = Number(doorAdd.getAttribute("data-door-add"));
-      // In der Mitte und knapp ein Fuenftel breit: eine Tuer, die man
-      // sieht, und die man von dort aus dahin schiebt, wo sie hingehoert.
+      const kind = doorAdd.getAttribute("data-add-kind") || OPENING.DOOR;
+      // In der Mitte und knapp ein Fuenftel breit: eine Oeffnung, die
+      // man sieht, und die man von dort aus dahin schiebt, wo sie
+      // hingehoert. Ein Fenster etwas breiter -- ein Fenster von der
+      // Breite einer Tuer sieht aus wie eine Tuer mit Bruestung.
       if (area) {
-        this._setDoors(area, (doors) => [...doors, { side, at: 0.5, width: 0.2 }]);
+        this._setDoors(area, (doors) => [
+          ...doors,
+          { side, at: 0.5, width: kind === OPENING.WINDOW ? 0.3 : 0.2, kind },
+        ]);
+      }
+      return true;
+    }
+
+    // Tuer und Fenster sind dasselbe Ding an derselben Stelle, nur
+    // anders gebaut. Umschalten statt loeschen und neu setzen: die
+    // Stelle, die jemand ausgesucht hat, ist die Arbeit daran.
+    const openingKindChip = hit("data-opening-kind");
+    if (openingKindChip && this._areaDialog) {
+      const area = (this._model.areas || []).find(
+        (candidate) => candidate.id === this._areaDialog,
+      );
+      const index = Number(openingKindChip.getAttribute("data-door"));
+      const kind = openingKindChip.getAttribute("data-opening-kind");
+      if (area) {
+        this._setDoors(area, (doors) =>
+          doors.map((door, at) => (at === index ? { ...door, kind } : door)));
       }
       return true;
     }

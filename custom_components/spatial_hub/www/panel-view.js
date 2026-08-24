@@ -18,7 +18,6 @@
 import {
   AREA_KIND,
   BACK_WALL,
-  CLOUD_SVG,
   FRONT_WALL,
   SIDE_NAME,
   STACK,
@@ -32,6 +31,15 @@ import {
   inFrameY,
   joinsOf,
   kindOf,
+  doorsOf,
+  OPENING,
+  openingKind,
+  openingRun,
+  declutter,
+  LABEL,
+  DIM,
+  dimension,
+  dimensionStops,
   metre,
   minY,
   shapeOf,
@@ -44,8 +52,23 @@ import {
   doorsHtml,
   escapeHtml,
   sparklineHtml,
+  cornersOf,
+  labelPointOf,
 } from "./panel-markup.js";
 import { ALL_FLOORS, formatValue, pretty } from "./panel-const.js";
+
+// Wie gross die zwei Beschriftungen im Stapel sind und wie weit der
+// Geraetename unter seinem Punkt haengt. Steht hier und nicht nur im
+// Stylesheet, weil das Entzerren die Groesse braucht, bevor irgendetwas
+// im Dokument haengt -- und zwei Zahlen, die dasselbe meinen und
+// auseinanderlaufen koennen, sind schlimmer als eine an der falschen
+// Stelle. Wer die Schriftgroesse aendert, aendert sie hier und in
+// `panel-styles.js`; der Test darunter haelt beide zusammen.
+const ROOM_LABEL_SIZE = 16;
+const STACK_LABEL_SIZE = 18;
+const STACK_LABEL_DROP = 30;
+const STOREY_LABEL_SIZE = 30;
+const STOREY_LABEL_ALONE = 16;
 
 
 export const ANSICHT = {
@@ -150,7 +173,16 @@ export const ANSICHT = {
                              </button>`
                           : ""
                       }
-                      <button class="icon-btn ${this._meters ? "on" : ""}"
+                      `
+               }
+               ${
+                 // Der Massstab gilt in beiden Ansichten, also gehoert
+                 // der Schalter in beide. Er stand im Block darueber und
+                 // war damit in der Hausansicht nicht erreichbar -- und
+                 // genau dort sind die Massketten etwas wert, weil man
+                 // dort das ganze Haus sieht.
+                 this._editRooms
+                   ? `<button class="icon-btn ${this._meters ? "on" : ""}"
                               data-toggle-meters="1"
                               title="${
                                 this._meters
@@ -159,6 +191,7 @@ export const ANSICHT = {
                               }">
                         <ha-icon icon="mdi:tape-measure"></ha-icon>
                       </button>`
+                   : ""
                }
                ${
                  this._ghostFloorCount
@@ -222,6 +255,14 @@ export const ANSICHT = {
       corners(at, from, to, fromY, toY)
         .map((point) => `${point.x},${point.y}`).join(" ");
 
+    // Alles, was fest im Bild steht und deshalb beim Entzerren der
+    // Geraetenamen im Weg sein kann: Etagennamen und Massketten. Beide
+    // entstehen hier beim Zeichnen der Etagen, also werden sie hier
+    // eingesammelt -- die Namen der Geraete kommen erst danach und
+    // koennen dann allen ausweichen.
+    const scale = this._counterScale;
+    const fixed = this._stackRoomLabels(floors, scale);
+
     const plans = floors.map((floor, at) => {
       const frame = this._frame;
       // The garden is drawn as what it is: the ground floor's apron, one
@@ -232,12 +273,22 @@ export const ANSICHT = {
       // storeys may carry outdoor areas of their own -- a balcony upstairs
       // is still edited and drawn as a room (see `rooms` below), it just
       // does not turn its whole storey into a lawn.
-      const apron = floor.has_outdoor && floor.ground
-        ? `<polygon class="apron" points="${outline(
-            at, frame.min, frame.min + frame.span,
-            minY(frame), minY(frame) + spanY(frame),
-          )}"/>`
-        : "";
+      // Und dasselbe eine Etage tiefer, nur als Erde statt als Rasen:
+      // die unterste Etage liegt im Boden, und was um sie herum liegt,
+      // ist Erdreich. Dort steckt der Hausanschluss, und dort stehen
+      // seit dem Umzug die virtuellen Bereiche.
+      //
+      // Zwei Faelle, nicht einer mit einer Klasse dran: eine Etage kann
+      // beides sein -- ein Haus ohne Keller hat Garten *und* Erdreich um
+      // dasselbe Erdgeschoss. Dann liegt die Erde unter dem Rasen.
+      const ground = (className) =>
+        `<polygon class="${className}" points="${outline(
+          at, frame.min, frame.min + frame.span,
+          minY(frame), minY(frame) + spanY(frame),
+        )}"/>`;
+      const apron = `${floor.has_soil ? ground("soil-plane") : ""}${
+        floor.has_outdoor && floor.ground ? ground("apron") : ""
+      }`;
       // Der Name steht links neben der Etage, im Rand -- nicht an ihrer
       // Kante. Die x-Koordinate kommt vom linkesten Punkt der Platte,
       // die y-Koordinate aus der oberen Haelfte: so steht der Name auf
@@ -282,21 +333,6 @@ export const ANSICHT = {
           return this._roomPolygon(at, area, keep);
         })
         .join("");
-      // Sky is not a storey. It got a floor slab and an outline like
-      // every other plane, which is exactly what made the cloud level
-      // read as an attic with clouds painted on it. Up there the clouds
-      // are the whole plane -- nothing under them, nothing around them.
-      if (floor.virtual) {
-        return `<g class="plane virtual">
-          ${rooms}
-          <g data-at-x="${label.x}" data-at-y="${label.y}"
-             transform="translate(${label.x},${label.y}) scale(${
-               this._counterScale
-             })"><text class="storey-name ${this._oneStorey ? "alone" : ""}">${escapeHtml(
-               String(floor.name || "").toLocaleUpperCase("de"),
-             )}</text></g>
-        </g>`;
-      }
       // The storey is a floor slab, not a sheet of paper: a thin band of
       // edge under it is the difference between four drawings above each
       // other and four floors of one house.
@@ -311,6 +347,17 @@ export const ANSICHT = {
       // facing the viewer are drawn after them and hide their lower edge,
       // which is what puts the rooms *inside* the house instead of on top
       // of a slab shaped like one.
+      const dims = this._dimensionsOf(at, floor);
+      fixed.push(...dims.labels);
+      // Der Etagenname ist rechtsbuendig gesetzt; sein Kasten liegt also
+      // links von seinem Punkt und nicht um ihn herum.
+      fixed.push({
+        x: label.x, y: label.y,
+        text: String(floor.name || "").toLocaleUpperCase("de"),
+        size: this._oneStorey ? STOREY_LABEL_ALONE : STOREY_LABEL_SIZE,
+        scale, anchor: this._oneStorey ? "start" : "end", fixed: true,
+      });
+
       const house = corners(at, 0, 1);
       const crown = house.map((corner) => ({ x: corner.x, y: corner.y - STACK.rise }));
       const slab = this._oneStorey
@@ -324,6 +371,7 @@ export const ANSICHT = {
         ${rooms}
         ${wallsOf(house, STACK.rise, "shell-face", FRONT_WALL)}
         ${capsOf(crown, STACK.outerWall, "shell-cap")}
+        ${dims.html}
         <g data-at-x="${label.x}" data-at-y="${label.y}"
            transform="translate(${label.x},${label.y}) scale(${
              this._counterScale
@@ -351,29 +399,51 @@ export const ANSICHT = {
       .join("");
 
     const matches = this._matches;
+    // Namen entzerren, bevor irgendeiner gezeichnet wird.
+    //
+    // Vorher galt eine Pauschale: mehr als fuenf Geraete auf einer Ebene,
+    // und *alle* ihre Namen verschwanden bis zum Darueberfahren. Das traf
+    // auch die, die sich nie in die Quere kamen, und liess bei fuenf
+    // Geraeten zwei uebereinander stehen -- gezaehlt wurde ja, nicht
+    // nachgesehen. Jetzt wird nachgesehen.
+    //
+    // Raumnamen sind fest: ein Raumname gehoert in seinen Raum, und ihn
+    // zu verschieben hiesse, ihn ueber die Wand des Nachbarn zu schieben.
+    // Beweglich sind die Geraetenamen -- die haengen ohnehin schon unter
+    // ihrem Punkt und nicht darin.
+    const nodeLabels = this._visibleNodes.map((node) => {
+      const at = spots.get(node.id);
+      return {
+        x: at.x, y: at.y + STACK_LABEL_DROP * scale,
+        text: node.label, size: STACK_LABEL_SIZE, scale,
+      };
+    });
+    const placed = declutter([...fixed, ...nodeLabels]).slice(fixed.length);
+
     const nodes = this._visibleNodes
-      .map((node) => {
+      .map((node, order) => {
         const at = spots.get(node.id);
         const selected =
           this._selected && this._selected.kind === "node" &&
           this._selected.id === node.id;
-        const crowded = this._visibleNodes.filter(
-          (other) => planeOf(other) === planeOf(node),
-        ).length > 5;
+        const spot = placed[order] || { shift: 0, hidden: false };
         const dimmed = matches && !matches.has(node.id);
         return `<g class="stack-node ${selected ? "on" : ""}
-                   ${crowded ? "crowded" : ""} ${dimmed ? "dimmed" : ""}
+                   ${spot.hidden ? "crowded" : ""} ${dimmed ? "dimmed" : ""}
                    ${matches && !dimmed ? "found" : ""}
                    ${node.floor_id ? "" : "floorless"}"
                    data-node="${escapeHtml(node.id)}"
                    style="--layer-opacity:${this._providerOpacity(node.id)}"
                    data-at-x="${at.x}" data-at-y="${at.y}"
-                   transform="translate(${at.x},${at.y}) scale(${
-                     this._counterScale
-                   })">
+                   transform="translate(${at.x},${at.y}) scale(${scale})">
           <circle r="14" fill="${this._nodeColour(node)}"/>
           ${this._stackIconHtml(node)}
-          <text class="stack-label" y="30">${escapeHtml(node.label)}</text>
+          <text class="stack-label" y="${
+            // Zurueck in die Einheiten des Elements: der Kasten wurde im
+            // Bild gerechnet, das <text> haengt aber in einem <g>, das
+            // schon mit counterScale skaliert ist.
+            (STACK_LABEL_DROP + spot.shift / (scale || 1)).toFixed(1)
+          }">${escapeHtml(node.label)}</text>
         </g>`;
       })
       .join("");
@@ -388,6 +458,135 @@ export const ANSICHT = {
     <p class="hint">Alle Etagen auf einmal — die einzige Ansicht, in der eine
     Verbindung zwischen zwei Stockwerken überhaupt zu sehen ist. Zum
     Anordnen und für Details eine einzelne Etage wählen.</p>`;
+  },
+
+  /** Die Masskette unter einer Etage.
+   *
+   *  Geteilt an jeder Wand, die vorne ankommt -- das ist genau das, was
+   *  eine Bauzeichnung unter den Riss setzt, und der Grund, warum man
+   *  einen Grundriss mit zum Baumarkt nehmen kann und einen Netzplan
+   *  nicht.
+   *
+   *  Zwei Reihen: die Teilmasse und darunter das Gesamtmass. Die zweite
+   *  Reihe entfaellt bei nur einem Abschnitt -- dann stuende dieselbe
+   *  Zahl zweimal untereinander.
+   *
+   *  Der Massstab ist der **dieser** Etage (`floor.metres`). Ein Keller,
+   *  den jemand schmaler eingetragen hat als das Erdgeschoss, ist
+   *  schmaler, und eine Kette, die das verschweigt, ist eine falsche
+   *  Angabe und nicht nur eine ungenaue.
+   */
+  _dimensionsOf(at, floor) {
+    const nichts = { html: "", labels: [] };
+    if (!this._meters) return nichts;
+    const rooms = (this._model.areas || []).filter(
+      (area) =>
+        area.floor_id === floor.id && area.position &&
+        this._inSandwich(area) && kindOf(area) === AREA_KIND.INDOOR,
+    );
+    const stops = dimensionStops(rooms);
+    if (stops.length < 2) return nichts;
+    const across = houseMetres(floor);
+    const scale = this._counterScale;
+
+    // Die Vorderkante liegt im Bild waagerecht: die Flucht verschiebt
+    // nur x, und bei y = 1 haben alle Punkte dieselbe Hoehe. Deshalb
+    // ist die Kette eine Gerade und keine Rechnung.
+    const front = (x) => this._project(at, x, 1);
+    const base = front(0).y;
+
+    // Jede gesetzte Zahl wird mitgeschrieben. Das Entzerren der
+    // Geraetenamen muss von ihr wissen -- sonst steht "Adapter
+    // Wohnzimmer" auf "3,60 m", und beide sind weg.
+    const labels = [];
+    const text = (x, y, label) => {
+      labels.push({ x, y, text: label, size: DIM.size, scale, fixed: true });
+      return `<g data-at-x="${x.toFixed(1)}" data-at-y="${y.toFixed(1)}"
+         transform="translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${scale})"
+       ><text class="dim-text">${escapeHtml(label)}</text></g>`;
+    };
+
+    const chain = (row, from, to, label) => {
+      const y = base + DIM.drop + row * DIM.row;
+      const a = front(from);
+      const b = front(to);
+      // Der schraege Begrenzungsstrich der Bauzeichnung, nicht ein
+      // Pfeil: ein Pfeil an einem Mass von zwoelf Bildpunkten ist
+      // groesser als das Mass.
+      const slash = (point) =>
+        `<line class="dim-tick" x1="${(point.x - DIM.tick / 2).toFixed(1)}"
+           y1="${(y + DIM.tick / 2).toFixed(1)}"
+           x2="${(point.x + DIM.tick / 2).toFixed(1)}"
+           y2="${(y - DIM.tick / 2).toFixed(1)}"/>`;
+      // Ein Mass, das breiter ist als sein Abschnitt, steht ueber den
+      // Nachbarn und macht aus drei lesbaren Zahlen eine unlesbare.
+      // Dann lieber nur die Begrenzungsstriche: dass dort geteilt ist,
+      // sagen die auch, und die Reihe darunter sagt weiter die Summe.
+      //
+      // Das ist der Normalfall und kein Sonderfall: Raeume, die noch
+      // nicht Wand an Wand liegen, haben Fugen von wenigen Zentimetern,
+      // und die sind echt -- sie werden nicht verschwiegen, nur nicht
+      // beschriftet.
+      const room = Math.abs(b.x - a.x);
+      const fits =
+        String(label).length * DIM.size * LABEL.perChar * scale + 6 <= room;
+      return `<line class="dim-line" x1="${a.x.toFixed(1)}" y1="${y.toFixed(1)}"
+                x2="${b.x.toFixed(1)}" y2="${y.toFixed(1)}"/>
+        ${slash(a)}${slash(b)}
+        ${fits ? text((a.x + b.x) / 2, y - DIM.lift, label) : ""}`;
+    };
+
+    // Hilfslinien von der Wand herunter bis zur untersten Kette, damit
+    // sichtbar ist, *was* da gemessen wurde. Eine Kette ohne sie ist
+    // eine Zahlenreihe unter einem Bild.
+    const reach = DIM.drop + (stops.length > 2 ? DIM.row : 0);
+    const helpers = stops
+      .map((x) => {
+        const point = front(x);
+        return `<line class="dim-help" x1="${point.x.toFixed(1)}"
+          y1="${point.y.toFixed(1)}" x2="${point.x.toFixed(1)}"
+          y2="${(base + reach + DIM.tick).toFixed(1)}"/>`;
+      })
+      .join("");
+
+    const parts = stops
+      .slice(0, -1)
+      .map((from, index) =>
+        chain(0, from, stops[index + 1],
+              dimension((stops[index + 1] - from) * across)))
+      .join("");
+
+    const whole = stops.length > 2
+      ? chain(1, 0, 1, dimension(across))
+      : "";
+
+    return { html: `<g class="dims">${helpers}${parts}${whole}</g>`, labels };
+  },
+
+  /** Wo im Stapel welcher Raumname steht.
+   *
+   *  Dieselbe Rechnung wie beim Zeichnen, aus derselben Quelle
+   *  (`cornersOf`/`labelPointOf`): Zwei Rechnungen dafuer waeren zwei
+   *  Stellen, an denen ein Name um ein paar Einheiten danebenliegt --
+   *  und ein Entzerren, das gegen die falschen Kaesten prueft, ist
+   *  schlimmer als keines.
+   */
+  _stackRoomLabels(floors, scale) {
+    const labels = [];
+    floors.forEach((floor, at) => {
+      for (const area of this._model.areas || []) {
+        if (area.floor_id !== floor.id || !area.position) continue;
+        if (!this._inSandwich(area)) continue;
+        const point = labelPointOf(
+          cornersOf((x, y) => this._project(at, x, y), area),
+        );
+        labels.push({
+          x: point.x, y: point.y, text: area.name,
+          size: ROOM_LABEL_SIZE, scale, fixed: true,
+        });
+      }
+    });
+    return labels;
   },
 
   /** The icon in the stack, in the same shape as on a single floor.
@@ -669,6 +868,51 @@ export const ANSICHT = {
       .join("");
   },
 
+  /** Die Oeffnungen eines Raumes im Grundriss, auf seinen Kanten.
+   *
+   *  Das hier war der eigentliche Fehler an den Tueren: sie wurden nur
+   *  in der Hausansicht gezeichnet. Angelegt werden sie aber hier, in
+   *  der Einzelansicht -- man klickte also "+ hinten", schob zwei Regler
+   *  und auf dem Bild passierte nichts. Eine Oeffnung, die man beim
+   *  Setzen nicht sieht, kann man auch nicht setzen.
+   *
+   *  Nicht im SVG, sondern als Kaesten auf dem Kasten: ein Raum ist in
+   *  dieser Ansicht ein `div` mit Rahmen, und ein SVG daneben muesste
+   *  jede Verschiebung noch einmal nachrechnen.
+   *
+   *  Nur Rechtecke. Eine freie Kontur hat Kanten, die quer im Kasten
+   *  liegen, und die traefe ein Streifen an dessen Rand nicht -- lieber
+   *  nichts zeigen als etwas Falsches an der falschen Stelle.
+   */
+  _openingsHtml(area) {
+    if (kindOf(area) !== AREA_KIND.INDOOR || hasShape(area)) return "";
+    const id = escapeHtml(area.id);
+    return doorsOf(area, 4)
+      .map((door, index) => {
+        const side = Number(door.side);
+        const [from, to] = openingRun(door);
+        const span = `${((to - from) * 100).toFixed(2)}%`;
+        const start = `${(from * 100).toFixed(2)}%`;
+        // Die Kante entscheidet, welche Achse die Laenge ist. Waagerecht
+        // fuer hinten und vorne, senkrecht fuer die Flanken.
+        const place = [
+          `top:-3px;left:${start};width:${span};height:6px;`,
+          `right:-3px;top:${start};height:${span};width:6px;`,
+          `bottom:-3px;left:${start};width:${span};height:6px;`,
+          `left:-3px;top:${start};height:${span};width:6px;`,
+        ][side];
+        const kind = openingKind(door);
+        // Waagerecht oder senkrecht: die Laibungsstriche stehen quer zur
+        // Oeffnung, und quer ist auf einer Flanke etwas anderes als auf
+        // der Vorder- oder Rueckwand.
+        const lie = side === 0 || side === 2 ? "flat" : "upright";
+        return `<span class="opening ${kind} ${lie}" style="${place}"
+          data-opening="${id}" data-opening-index="${index}"
+          title="${kind === OPENING.WINDOW ? "Fenster" : "Tür"} — ziehen zum Verschieben, Alt-Klick entfernt"></span>`;
+      })
+      .join("");
+  },
+
   _plotHtml() {
     const plot = this._plot;
     if (!plot) return "";
@@ -849,7 +1093,6 @@ export const ANSICHT = {
         // what they were, and the room simply stops being a rectangle
         // within them. Clipping the box would clip its own handles away
         // and make an L-shaped room the one room nobody can edit.
-        // A cloud has an outline of its own and ignores all of this.
         const shaped = hasShape(area) && kindOf(area) !== AREA_KIND.VIRTUAL;
         const fill = shaped
           ? `<div class="area-fill" style="clip-path:polygon(${shapeOf(area)
@@ -885,7 +1128,6 @@ export const ANSICHT = {
               height:${(size.height / spanY(frame)) * 100}%;">
           ${areaBackground}
           ${fill}
-          ${kindOf(area) === AREA_KIND.VIRTUAL ? CLOUD_SVG : ""}
           <span class="area-name">
             ${area.icon ? `<ha-icon icon="${escapeHtml(area.icon)}"></ha-icon>` : ""}
             ${escapeHtml(area.name)}
@@ -899,6 +1141,7 @@ export const ANSICHT = {
                 )} m</span>`
               : ""
           }
+          ${this._openingsHtml(area)}
           ${this._joinMarksHtml(area)}
           ${
             this._editRooms
@@ -1295,7 +1538,7 @@ export const ANSICHT = {
     const kinds = [
       [AREA_KIND.INDOOR, "Raum", "mdi:home-outline"],
       [AREA_KIND.OUTDOOR, "Garten / Außenbereich", "mdi:tree-outline"],
-      [AREA_KIND.VIRTUAL, "Virtuell (Cloud, Internet, VPN)", "mdi:cloud-outline"],
+      [AREA_KIND.VIRTUAL, "Virtuell (Internet, VPN, Cloud)", "mdi:transmission-tower"],
     ];
     return `
       <div class="scrim" data-close-area="1"></div>
@@ -1308,7 +1551,9 @@ export const ANSICHT = {
         </div>
         <p class="note">Ein Garten ist keine Etage. Außenbereiche legen sich
         als Ring um das Erdgeschoss — Vorgarten, Terrasse, Einfahrt und
-        Garage passen alle darauf, ohne ein Stockwerk zu erfinden.</p>
+        Garage passen alle darauf, ohne ein Stockwerk zu erfinden.
+        Virtuelle Bereiche liegen im Erdreich um die unterste Etage:
+        dort, wo der Hausanschluss herkommt.</p>
         <div class="chips">
           ${kinds
             .map(

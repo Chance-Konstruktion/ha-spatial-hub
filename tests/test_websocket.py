@@ -455,6 +455,41 @@ def test_a_door_needs_a_wall_to_be_in():
         _layout_values({"doors": [{"at": 0.5, "width": 0.2}]})
 
 
+def test_an_opening_may_say_whether_it_is_a_door_or_a_window(hass, hub, connection):
+    """Tuer und Fenster sind dasselbe Ding an derselben Stelle, nur
+    anders gebaut -- also ein Feld und nicht zwei Listen."""
+    doors = [
+        {"side": 0, "at": 0.5, "width": 0.2, "kind": "door"},
+        {"side": 2, "at": 0.25, "width": 0.3, "kind": "window"},
+    ]
+    ws.websocket_layout_set(
+        hass,
+        connection,
+        {"id": 1, "section": "areas", "key": "wohnzimmer",
+         "values": {"doors": doors}},
+    )
+
+    assert connection.results[1] == {"success": True}
+    assert hub.store.get("areas", "wohnzimmer")["doors"] == doors
+
+
+def test_an_opening_without_a_kind_is_still_accepted():
+    """Das Feld kam spaeter dazu. Eine Anordnung von vorher hat es nicht,
+    und die soll weiter gelten statt beim Laden zu scheitern."""
+    values = _layout_values({"doors": [{"side": 0, "at": 0.5, "width": 0.2}]})
+
+    assert values["values"]["doors"] == [{"side": 0, "at": 0.5, "width": 0.2}]
+
+
+def test_an_invented_kind_of_opening_is_refused():
+    """Zwei Arten gibt es, und eine dritte waere fuer jeden Renderer eine
+    Ueberraschung -- der zeichnet dann gar nichts, und zwar stumm."""
+    with pytest.raises(vol.Invalid):
+        _layout_values(
+            {"doors": [{"side": 0, "at": 0.5, "width": 0.2, "kind": "luke"}]}
+        )
+
+
 def test_a_split_device_is_reported_not_silently_left_behind(hass):
     """From 2026.8 the same physical box can have a second device entry
     from another integration, with its own area. Moving one moves only

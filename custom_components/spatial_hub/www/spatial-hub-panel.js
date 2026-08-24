@@ -39,8 +39,6 @@ import {
   RECTANGLE,
   shapeOf,
   hasShape,
-  CLOUD_PATH,
-  CLOUD_SVG,
   boxOf,
   SIDE,
   SIDE_NAME,
@@ -54,13 +52,14 @@ import {
   kindOf,
   fold,
   doorsOf,
+  openingKind,
   SIDE_NAMES,
   sideName,
   STAIR_WORDS,
   isStairs,
-  planeLift,
   projectOnto,
   stackHeight,
+  DIM,
   stackWidth,
   snapTo,
   magnetTo,
@@ -508,18 +507,10 @@ class SpatialHubPanel extends HTMLElement {
     const real = floors.filter(
       (floor) => !floor.unassigned && !floor.virtual,
     ).reverse();
-    // Sky first, whatever order Home Assistant gave it. A cloud plane
-    // that inherits its position from a floor list ends up between two
-    // storeys, and the internet is not on the first floor.
-    return [
-      ...floors.filter((floor) => floor.virtual && !floor.unassigned),
-      ...real,
-      ...floors.filter((floor) => floor.unassigned),
-    ];
-  }
-
-  _planeLift(floorIndex) {
-    return planeLift(this._stackFloors[floorIndex]);
+    // Hier stand die Wolkenebene vorneweg. Die gibt es nicht mehr: das
+    // Erdreich ist keine eigene Ebene, sondern der Ring um die unterste
+    // Etage -- und die steht im Stapel ohnehin schon unten.
+    return [...real, ...floors.filter((floor) => floor.unassigned)];
   }
 
   /** Wo ein Punkt einer Etage im Bild landet. Die Rechnung steht in
@@ -549,7 +540,14 @@ class SpatialHubPanel extends HTMLElement {
    *  costs nothing but says which floor is which.
    */
   get _stackHeight() {
-    return stackHeight(this._stackFloors);
+    return stackHeight(this._stackFloors, this._dimensionRoom);
+  }
+
+  /** Wie viel Luft die Massketten unter der untersten Etage brauchen.
+   *  Null, solange sie ausgeschaltet sind -- ein Bild, das dauerhaft
+   *  Platz fuer etwas Unsichtbares freihaelt, ist ein leerer Rand. */
+  get _dimensionRoom() {
+    return this._meters ? DIM.drop + DIM.row + DIM.size * 2 : 0;
   }
 
   /** How wide the drawing has to be. Every storey is offset a little
@@ -1589,6 +1587,10 @@ class SpatialHubPanel extends HTMLElement {
         side: Number(door.side),
         at: Number(door.at),
         width: Number(door.width),
+        // Die Art muss mit durch. Ohne diese Zeile wird jedes Fenster
+        // zur Tuer, sobald jemand irgendeinen Regler im Dialog anfasst
+        // -- und zwar stumm, weil eine fehlende Art als "Tuer" gilt.
+        kind: openingKind(door),
       }));
     const next = change(doors);
     if (!next) return;
@@ -2119,6 +2121,25 @@ class SpatialHubPanel extends HTMLElement {
               x: round(point.x),
               y: round(point.y),
             })),
+          })),
+        },
+        drag.before,
+      );
+      return;
+    }
+    if (drag.mode === "opening") {
+      // Immer die ganze Liste, aus demselben Grund wie in `_setDoors`:
+      // eine Oeffnung hat keine eigene Kennung, ihre Stelle in der Liste
+      // *ist* ihre Kennung.
+      this._setLayout(
+        "areas",
+        drag.key,
+        {
+          doors: drag.value.doors.map((door) => ({
+            side: Number(door.side),
+            at: round(Number(door.at)),
+            width: round(Number(door.width)),
+            ...(door.kind ? { kind: door.kind } : {}),
           })),
         },
         drag.before,

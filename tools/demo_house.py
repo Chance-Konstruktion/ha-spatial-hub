@@ -50,6 +50,11 @@ FLOORS = [
     FakeFloor("ug", "Untergeschoss", level=-1),
     FakeFloor("eg", "Erdgeschoss", level=0),
     FakeFloor("og", "Obergeschoss", level=1),
+    # Keine Etage, sondern der Weg, auf dem ein Benutzer heute sagt "das
+    # ist nicht im Haus": eine erfundene Etage namens "Netz". Der Hub
+    # erkennt sie am Namen, loest sie auf und legt, was darauf lag, ins
+    # Erdreich um das Untergeschoss. Genau dort kommt der Anschluss an.
+    FakeFloor("netz", "Netz", level=9),
 ]
 
 AREAS = [
@@ -67,6 +72,8 @@ AREAS = [
     FakeArea("keller", "Keller", "ug"),
     FakeArea("heizraum", "Heizraum", "ug"),
     FakeArea("waschkueche", "Waschküche", "ug"),
+    FakeArea("anschluss", "Hausanschluss", "netz"),
+    FakeArea("vpn", "VPN", "netz"),
 ]
 
 # Ein Zeichensatz, wie ihn ein Provider mitliefert: fertiges SVG, das der
@@ -167,6 +174,35 @@ def register(hass) -> None:
     }
 
 
+# Tueren und Fenster, wie ein Benutzer sie setzt. Kante 0 ist hinten, 1
+# rechts, 2 vorne, 3 links; `at` ist die Mitte auf der Kante und `width`
+# ihr Anteil daran. Bewusst nur ein paar Raeume -- ein Haus, in dem jede
+# Wand eine Oeffnung hat, zeigt nicht, wie eine Oeffnung aussieht,
+# sondern wie ein Sieb aussieht.
+OPENINGS = {
+    "wohnzimmer": [
+        {"side": 2, "at": 0.35, "width": 0.34, "kind": "window"},
+        {"side": 1, "at": 0.5, "width": 0.2, "kind": "door"},
+    ],
+    "kueche": [
+        {"side": 2, "at": 0.5, "width": 0.3, "kind": "window"},
+        {"side": 0, "at": 0.6, "width": 0.2, "kind": "door"},
+    ],
+    "diele": [
+        {"side": 3, "at": 0.5, "width": 0.24, "kind": "door"},
+        {"side": 0, "at": 0.5, "width": 0.2, "kind": "door"},
+    ],
+    "schlafzimmer": [
+        {"side": 2, "at": 0.5, "width": 0.36, "kind": "window"},
+        {"side": 3, "at": 0.4, "width": 0.2, "kind": "door"},
+    ],
+    "bad": [
+        {"side": 0, "at": 0.5, "width": 0.22, "kind": "window"},
+        {"side": 2, "at": 0.5, "width": 0.2, "kind": "door"},
+    ],
+}
+
+
 async def main() -> None:
     hass = HomeAssistant()
     fr.async_get(hass).floors = FLOORS
@@ -174,6 +210,8 @@ async def main() -> None:
     register(hass)
 
     hub = SpatialHub(hass, LayoutStore(hass))
+    for area_id, doors in OPENINGS.items():
+        hub.store.update("areas", area_id, {"doors": doors})
     model = await hub.async_model()
     json.dump(model, sys.stdout, indent=1, default=str)
 

@@ -148,12 +148,22 @@ _UNJOINED_SCHEMA = vol.All([str], vol.Length(max=64))
 # `width` stops short of 1: a wall that is entirely doorway is not a wall
 # with a door in it, it is a missing wall, and the editor already has a
 # way to say that.
+#
+# `kind` unterscheidet Tuer und Fenster. Optional und mit "door" als
+# Vorgabe, weil dieses Feld spaeter dazugekommen ist: eine gespeicherte
+# Anordnung von vorher hat es nicht, und die soll weiter gelten statt
+# beim Laden zu scheitern. Der Schluessel der Liste heisst weiterhin
+# `doors` -- ihn umzubenennen haette jede vorhandene Anordnung entwertet,
+# und dafuer ist ein besserer Name nicht genug.
+_OPENING_KINDS = ("door", "window")
+
 _DOOR_SCHEMA = {
     vol.Required("side"): vol.All(vol.Coerce(int), vol.Range(min=0, max=63)),
     vol.Required("at"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1)),
     vol.Required("width"): vol.All(
         vol.Coerce(float), vol.Range(min=0.01, max=0.95)
     ),
+    vol.Optional("kind"): vol.In(_OPENING_KINDS),
 }
 # A room has walls, not a hundred of them -- and each wall a door or two.
 _DOORS_SCHEMA = vol.All([_DOOR_SCHEMA], vol.Length(max=64))

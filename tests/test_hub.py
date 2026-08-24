@@ -569,8 +569,8 @@ async def test_the_user_overrules_the_guess(hass, hub):
 
 
 @pytest.mark.asyncio
-async def test_a_virtual_area_gets_a_plane_of_its_own(hass, hub):
-    from custom_components.spatial_hub.const import VIRTUAL_FLOOR_ID
+async def test_a_virtual_area_lands_in_the_soil_around_the_lowest_storey(hass, hub):
+    """Kein Stockwerk ueber dem Dach mehr, sondern das Erdreich daneben."""
     from homeassistant.helpers import area_registry as ar
 
     ar.async_get(hass).areas.append(FakeArea("cloud", "Cloud", floor_id="eg"))
@@ -578,13 +578,62 @@ async def test_a_virtual_area_gets_a_plane_of_its_own(hass, hub):
     model = await hub.async_model()
 
     cloud = next(area for area in model["areas"] if area["id"] == "cloud")
-    assert cloud["floor_id"] == VIRTUAL_FLOOR_ID
-    virtual = next(
-        floor for floor in model["floors"] if floor["id"] == VIRTUAL_FLOOR_ID
+    assert cloud["virtual"] is True
+    assert cloud["floor_id"] == "eg", "die unterste echte Etage"
+    assert not any(floor.get("virtual") for floor in model["floors"]), (
+        "keine erfundene Etage mehr -- genau die kostete die Bildhoehe"
     )
-    assert virtual["virtual"] is True
-    # Above everything else, so it never reads as a room in the building.
-    assert model["floors"][-1]["id"] == VIRTUAL_FLOOR_ID
+    # Im Ring, nicht im Haus: das ist der Unterschied zwischen "neben dem
+    # Haus im Boden" und "ein Raum im Erdgeschoss".
+    assert not 0 <= cloud["position"]["y"] <= 1
+
+    ground = next(floor for floor in model["floors"] if floor["id"] == "eg")
+    assert ground["has_soil"] is True
+    assert ground["has_outdoor"] is True, "ohne Umland kein Erdreich"
+
+
+@pytest.mark.asyncio
+async def test_the_soil_goes_around_the_cellar_when_there_is_one(hass, hub):
+    """Ein Keller liegt im Boden. Dann liegt das Erdreich um ihn."""
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import floor_registry as fr
+
+    fr.async_get(hass).floors.append(FakeFloor("keller", "Keller", level=-1))
+    ar.async_get(hass).areas.append(
+        FakeArea("technik", "Technik", floor_id="keller")
+    )
+    ar.async_get(hass).areas.append(FakeArea("cloud", "Cloud", floor_id="eg"))
+    hub.store.update("areas", "cloud", {"kind": "virtual"})
+    model = await hub.async_model()
+
+    cloud = next(area for area in model["areas"] if area["id"] == "cloud")
+    assert cloud["floor_id"] == "keller"
+    assert next(
+        floor for floor in model["floors"] if floor["id"] == "keller"
+    )["has_soil"] is True
+    # Und das Erdgeschoss bleibt, was es ist -- der Garten liegt weiter dort.
+    assert not next(
+        floor for floor in model["floors"] if floor["id"] == "eg"
+    ).get("has_soil")
+
+
+@pytest.mark.asyncio
+async def test_garden_and_soil_do_not_take_the_same_slot(hass, hub):
+    """Ein Ring hat seine Plaetze einmal. Zwei Rechnungen darueber
+    setzten Garten und Erdreich uebereinander."""
+    from homeassistant.helpers import area_registry as ar
+
+    ar.async_get(hass).areas.append(FakeArea("garten", "Garten", floor_id="eg"))
+    ar.async_get(hass).areas.append(FakeArea("cloud", "Cloud", floor_id="eg"))
+    hub.store.update("areas", "cloud", {"kind": "virtual"})
+    model = await hub.async_model()
+
+    spots = {
+        area["id"]: (area["position"]["x"], area["position"]["y"])
+        for area in model["areas"]
+        if area["id"] in ("garten", "cloud")
+    }
+    assert spots["garten"] != spots["cloud"]
 
 
 # ── Sandwich settings ─────────────────────────────────────────────────

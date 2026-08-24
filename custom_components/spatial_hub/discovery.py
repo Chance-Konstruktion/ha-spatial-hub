@@ -279,9 +279,9 @@ def async_arrange_areas(
     """Give every area without a position an automatic one, in place.
 
     Rooms get the squarest grid that fits the storey. Virtual areas get the
-    sky: spread across the whole window, well past the walls, because a
-    cloud sits *over and around* the house rather than in a tidy block
-    above one corner of it.
+    soil: the same ring a garden gets, one storey further down, because
+    the internet comes out of the ground beside the house and not out of
+    the sky above it.
 
     Outdoor areas depend on which storey they are on, and that is the whole
     reason `ground_floor_id` is here. On the ground floor, outdoor space is
@@ -300,15 +300,33 @@ def async_arrange_areas(
         by_plane.setdefault((area.get("floor_id"), kind.value), []).append(area)
 
     for (floor_id, kind), plane_areas in by_plane.items():
+        outdoors = by_plane.get((floor_id, AreaKind.OUTDOOR.value), [])
+        virtuals = by_plane.get((floor_id, AreaKind.VIRTUAL.value), [])
+        upstairs = ground_floor_id is not None and floor_id != ground_floor_id
+
+        # Garten und Erdreich teilen sich einen Ring. Ein Ring hat seine
+        # Plaetze nur einmal -- rechnet jede Art fuer sich aus, wie viele
+        # es sind, bekommen beide denselben Platz und stehen uebereinander.
+        # Deshalb steht die Gesamtzahl hier und nicht in der Schleife.
+        ring_total = len(outdoors) + len(virtuals)
+
         if kind == AreaKind.VIRTUAL.value:
-            placer = _sky_cell
+            # Hinter dem, was schon draussen liegt: das Erdreich nimmt die
+            # Plaetze, die der Garten uebrig laesst.
+            placer, first, total = _apron_cell, len(outdoors), ring_total
         elif kind == AreaKind.OUTDOOR.value:
-            upstairs = ground_floor_id is not None and floor_id != ground_floor_id
-            placer = _balcony_cell if upstairs else _apron_cell
+            # Ein Balkon haengt an einer Wand, ein Garten liegt ringsum --
+            # ausser auf der Etage mit dem Erdreich. Das ist die unterste,
+            # und dort haengt nichts an der Wand.
+            if upstairs and not virtuals:
+                placer, first, total = _balcony_cell, 0, len(plane_areas)
+            else:
+                placer, first, total = _apron_cell, 0, ring_total
         else:
-            placer = _grid_cell
+            placer, first, total = _grid_cell, 0, len(plane_areas)
+
         for index, area in enumerate(plane_areas):
-            position, size = placer(index, len(plane_areas))
+            position, size = placer(index + first, total)
             area.setdefault("position", position.as_dict())
             area.setdefault("size", size)
 
@@ -436,36 +454,6 @@ def _grid_cell(index: int, total: int) -> tuple[Position, dict[str, float]]:
     return centre, {"width": width * 0.9, "height": height * 0.9}
 
 
-def _sky_cell(index: int, total: int) -> tuple[Position, dict[str, float]]:
-    """Lay a virtual area out in the sky over the house.
-
-    The same window the garden uses -- ``-margin .. 1 + margin`` -- rather
-    than the building's own footprint. A cloud packed into a grid the size
-    of the walls reads as a room on the top floor; spread over the whole
-    window it reads as what it is, something above and around the house.
-
-    Staggered rows, because clouds in a perfect grid are a spreadsheet.
-    """
-    margin = OUTDOOR_MARGIN
-    span = 1.0 + 2 * margin
-    columns = max(1, math.ceil(math.sqrt(total)))
-    rows = max(1, math.ceil(total / columns))
-    column, row = index % columns, index // columns
-    width, height = span / columns, span / rows
-    # Every other row nudged sideways, so the clouds interleave instead of
-    # lining up in columns. A quarter of a cell, which is enough to break
-    # the grid and not enough to push the last one out of the window.
-    offset = width / 4 if row % 2 else -width / 4
-    box = {"width": width * 0.72, "height": height * 0.6}
-    # Nudged, then kept in the window: the stagger must not push the last
-    # cloud of a row half out of the drawing, which is where it lands as
-    # soon as the columns divide evenly into the span.
-    half = box["width"] / 2
-    x = -margin + (column + 0.5) * width + offset
-    x = min(1 + margin - half, max(-margin + half, x))
-    return Position(x=x, y=-margin + (row + 0.5) * height), box
-
-
 def _apron_cell(index: int, total: int) -> tuple[Position, dict[str, float]]:
     """Lay an outdoor area out in the ring around the ground floor.
 
@@ -578,9 +566,14 @@ def async_place_nodes(
 
         # A node in the garden may sit outside the house rectangle -- that
         # is the whole point of the apron, so it must not be clamped back in.
+        #
+        # Das Erdreich liegt in demselben Ring, also gilt es dort genauso.
+        # Ohne diese Zeile landet der Router im Haus statt an dem Anschluss,
+        # zu dem er gehoert -- und zwar stumm, weil Klemmen kein Fehler ist.
         outdoor = any(
             area["id"] == area_id
-            and AreaKind.parse(area.get("kind")) is AreaKind.OUTDOOR
+            and AreaKind.parse(area.get("kind"))
+            in (AreaKind.OUTDOOR, AreaKind.VIRTUAL)
             for area in areas
         )
         low = -OUTDOOR_MARGIN if outdoor else 0.0

@@ -207,7 +207,7 @@ von den Wänden zu reißen.
 
 - Ein Renderer MUSS dieselbe Kontur in **jeder** Ansicht zeichnen. Eine Nische,
   die nur auf einem Reiter sichtbar ist, ist derselbe Fehler wie ein Raum, der
-  in der einen Ansicht ein Rechteck und in der anderen eine Wolke ist.
+  in der einen Ansicht ein Rechteck und in der anderen etwas anderes ist.
 - Eine unlesbare Kontur — zu wenige Punkte, keine Zahlen — fällt auf das
   Rechteck zurück. Ein Grundriss, der wegen einer kaputten Ecke nicht mehr
   zeichnet, ist das schlechtere Ergebnis.
@@ -215,26 +215,45 @@ von den Wänden zu reißen.
   die letzte Ecke entfernt, löscht `shape` und gibt den Raum an die
   Wandgriffe zurück.
 
-### Türen
+### Türen und Fenster
 
-Ein Bereich DARF eine Liste `doors` tragen. Eine Tür ist keine eigene Form,
-sondern eine **Lücke**: die Stelle, an der die Wand aufhört und dahinter
-wieder anfängt. Jeder Eintrag hat drei Felder, alle drei erforderlich:
+Ein Bereich DARF eine Liste `doors` tragen. Sie enthält **Öffnungen**, und
+eine Öffnung ist keine eigene Form, sondern eine Angabe über die Wand.
+Jeder Eintrag hat drei erforderliche Felder und ein optionales:
 
 | Feld | Bedeutung |
 |---|---|
 | `side` | welche Kante — der Index in der Kontur, in derselben Reihenfolge, in der sie läuft. Ohne `shape` sind das die vier Kanten des Rechtecks: `0` hinten, `1` rechts, `2` vorne, `3` links |
 | `at` | die **Mitte** der Öffnung auf dieser Kante, `0..1` von der einen Ecke zur anderen |
 | `width` | wie viel der Kante die Öffnung einnimmt, `0..1` |
+| `kind` | `"door"` oder `"window"`. Fehlt das Feld, ist es eine Tür |
+
+Der Listenname `doors` ist älter als das Feld `kind` und bleibt, wie er ist:
+Ihn umzubenennen hätte jede gespeicherte Anordnung entwertet, und dafür ist
+ein besserer Name nicht genug.
+
+Der Unterschied zwischen beiden Arten ist keine Farbe, sondern die Wand:
+
+- Eine **Tür** ist eine **Lücke**. Die Wand hört davor auf und fängt dahinter
+  wieder an.
+- Ein **Fenster** sitzt **in** der Wand. Die Wand läuft durch — eine Wand,
+  die unter dem Fenster aufhört, ist eine Tür.
 
 Kastenlokal aus demselben Grund wie `shape`: Ein in Metern vermaßtes Türblatt
 wanderte, sobald der Raum breiter gezogen wird. Als Anteil der Wand bleibt die
-Tür, wo sie hingehört.
+Öffnung, wo sie hingehört.
 
-- Ein Renderer, der Wände mit Stärke zeichnet, MUSS die Lücke durch die
-  **ganze** Mauer führen — Wandfläche und Mauerkrone gleichermaßen. Nur die
-  sichtbare Außenseite zu unterbrechen ergibt kein Durchgehen, sondern ein
-  zugemauertes Fenster.
+- Ein Renderer, der Wände mit Stärke zeichnet, MUSS die Lücke einer **Tür**
+  durch die **ganze** Mauer führen — Wandfläche und Mauerkrone gleichermaßen.
+  Nur die sichtbare Außenseite zu unterbrechen ergibt kein Durchgehen,
+  sondern ein zugemauertes Fenster.
+- Ein Renderer SOLL eine Öffnung in **jeder** Ansicht zeigen, in der er den
+  Raum zeigt. Eine Öffnung, die nur in der Hausansicht erscheint, kann man in
+  der Einzelansicht nicht setzen — man klickt, schiebt zwei Regler, und auf
+  dem Bild passiert nichts. Genau das war hier der Fall.
+- Ein `kind`, das der Renderer nicht kennt, SOLL wie `"door"` behandelt
+  werden. Nichts zu zeichnen wäre eine Wand, die stillschweigend geschlossen
+  ist.
 - Öffnungen, die sich überlappen, SOLLEN als **eine** Öffnung gelten. Zwei
   Türen, die sich berühren, sind eine Tür, und ein Wandstück negativer Länge
   ist nichts, worüber ein Renderer nachdenken sollte.
@@ -246,8 +265,8 @@ Tür, wo sie hingehört.
   es die gemeinsame Wand (§ Gemeinsame Wände).
 
 Wie beim `shape` gilt: Der Hub speichert und liefert `doors` und **liest sie
-nie**. Was eine Tür bedeutet, ist die Frage dessen, der den Grundriss
-zeichnet.
+nie**. Was eine Tür oder ein Fenster bedeutet, ist die Frage dessen, der den
+Grundriss zeichnet.
 
 ### Hintergrundbild eines Bereichs
 
@@ -321,6 +340,56 @@ ziehen, bis es aussieht wie zu Hause — und ein so gezeichneter Grundriss ist
 ein gültiger Grundriss. `metres` ist die Antwort für die, die ihr Haus auf
 den Zentimeter kennen, und sonst für niemanden; fehlt es, MUSS ein Renderer
 schlicht keine Maße anzeigen statt eine erfundene Zahl.
+
+Wo ein Renderer Maße zeigt, SOLL er sie als **Maßkette** zeigen und nicht
+als Zahl im Raum: Hilfslinien an den Wänden, dazwischen ein Strich mit dem
+Maß darauf, geteilt an jeder Wand — das ist, was einen Grundriss von einem
+beschrifteten Rechteck unterscheidet.
+
+- Geteilt wird an den Wänden, die an der **Vorderkante** ankommen. Zwei
+  Wände, die dieselbe sind, sind **eine** Teilung; sonst steht zwischen
+  zwei Hilfslinien im Abstand eines Tausendstels ein Maß von null.
+- Ein Maß, das **breiter ist als sein Abschnitt**, SOLL entfallen — die
+  Begrenzungsstriche bleiben. Das ist der Normalfall und kein Sonderfall:
+  Räume, die noch nicht Wand an Wand liegen, haben Fugen von wenigen
+  Zentimetern, und die sind echt. Sie werden nicht verschwiegen, nur nicht
+  beschriftet. Eine zweite Reihe mit dem **Gesamtmaß** hält die Summe
+  trotzdem lesbar.
+- Der Maßstab ist der **dieser Etage**. Ein Keller, den jemand schmaler
+  eingetragen hat, ist schmaler; eine Kette, die das verschweigt, ist eine
+  falsche Angabe und nicht nur eine ungenaue.
+- Die Zeichnung MUSS für die unterste Kette **wachsen**. Sonst ist sie
+  gezeichnet und trotzdem nicht zu sehen — und zwar nur bei der untersten
+  Etage, was der unangenehmste Fehler von allen ist.
+
+### Beschriftungen, die sich nicht decken
+
+Zwei Namen an derselben Stelle sind schlechter als einer: Man liest keinen
+von beiden. In der Hausansicht passiert das ständig, weil der Name eines
+Geräts unter seinem Punkt hängt und der Name des Raumes davor in dessen
+hinterem Drittel steht.
+
+Ein Renderer SOLL die Beschriftungen deshalb **entzerren**, bevor er sie
+zeichnet:
+
+- Raumnamen, Etagennamen und Maße stehen **fest**. Einen Raumnamen zu
+  verschieben hieße, ihn über die Wand des Nachbarn zu schieben — also in
+  einen Raum, der anders heißt.
+- Gerätenamen weichen aus, **abwechselnd nach unten und nach oben**. Nur
+  nach unten wäre eine Reihe von fünf Geräten am Ende eine Spalte, die aus
+  dem Geschoss herausläuft.
+- Was auch dann keinen Platz findet, wird **weggeblendet**, bis jemand
+  darauf zeigt. Ein Name drei Zeilen neben seinem Punkt beschriftet nichts
+  mehr, er behauptet nur noch etwas.
+- Entschieden wird nach **Nachsehen, nicht nach Zählen**. Eine Pauschale
+  („mehr als fünf Geräte, alle Namen weg") trifft auch die vier, die sich
+  nie in die Quere gekommen wären, und lässt bei fünf zwei übereinander
+  stehen.
+
+Die Textbreite darf **geschätzt** werden. Im SVG steht kein Text, den man
+messen könnte, bevor er im Dokument hängt, und die Zeichnung entsteht vorher.
+Es geht darum, ob zwei Namen aufeinanderliegen, und nicht darum, sie auf ein
+Pixel zu setzen.
 
 ### Wie deutlich das Haus ist
 
@@ -438,7 +507,7 @@ freier String:
 |---|---|---|
 | `indoor` | ein Raum | im Haus, 0…1 |
 | `outdoor` | Garten, Terrasse, Garage, Einfahrt, Carport, Pool … | im Ring **um das Erdgeschoss** |
-| `virtual` | Cloud, Internet, VPN — real genug zum Zeigen, in keinem Stockwerk | eigene Ebene über dem Dach |
+| `virtual` | Internet, VPN, Cloud — real genug zum Zeigen, in keinem Stockwerk | Erdreich im Ring um die unterste Etage |
 
 **Ein Garten ist keine Etage.** Bekäme er eine, läge sie zwischen Keller und
 Erdgeschoss, als könne man hinunter in den Garten steigen — und ein Haus mit
@@ -484,8 +553,7 @@ Eine Etage, die selbst nicht `indoor` ist, DARF NICHT als Erdgeschoss gewählt
 werden. Sonst wird der Garten zu der Etage, um die sich der Garten legt, und
 hält sich damit selbst am Leben.
 
-Jeder `virtual`-Bereich wird **einzeln** gezeichnet — eine Wolke pro Bereich.
-Cloud, VPN und Server sind drei Dinge, nicht ein Kasten mit drei Kästen darin.
+Wohin virtuelle Bereiche kommen, steht unter § Das Erdreich.
 
 ### Ohne Etage
 
@@ -531,7 +599,7 @@ Linie eine Wand ist und welche eine Bodenkante.
 - Räume MÜSSEN **von hinten nach vorn** gezeichnet werden. Mit Höhe verdeckt,
   wer zuletzt gezeichnet wird — in Speicherreihenfolge kehrt sich das Geschoss
   nach innen.
-- Nur `indoor` bekommt Wände. Ein Garten hat keine, eine Wolke erst recht nicht.
+- Nur `indoor` bekommt Wände. Ein Garten hat keine, das Erdreich erst recht nicht.
 - Die Zeichnung MUSS **mit dem Haus wachsen**, statt das Haus in eine feste
   Fläche zu quetschen. Der Abstand zwischen zwei Geschossen MUSS größer sein
   als die Tiefe eines Geschosses, sonst werden sie ineinander gezeichnet.
@@ -599,7 +667,7 @@ Zwei Räume, deren Wände aufeinander liegen, haben **eine** Wand.
 - `unjoined` auf einem Bereich listet die Nachbarn, mit denen er **keine**
   Wand teilt. Von **beiden Seiten** gelesen: eine Trennung darf nicht
   zurückkommen, sobald der Nachbar bearbeitet wird.
-- Nur rechteckige Innenräume. Ein Garten hat keine Wand, eine Wolke erst
+- Nur rechteckige Innenräume. Ein Garten hat keine Wand, das Erdreich erst
   recht nicht, und ein Raum mit eigenem Umriss hat keine Seite namens
   „rechts".
 
@@ -629,21 +697,37 @@ Erdgeschoss.
   definierbar und wird auch als Raum gezeichnet — nur eben ohne Rasenfläche
   unter der ganzen Etage, denn ein Balkon ist kein zweiter Garten.
 
-### Der Himmel
+### Das Erdreich
 
-Eine virtuelle Etage ist keine Etage, sondern der Himmel über dem Haus.
+Virtuelle Bereiche liegen im **Ring um die unterste Etage** — dort, wo der
+Hausanschluss ankommt.
 
-- Sie wird **zuoberst** gezeichnet, unabhängig von der Reihenfolge, die Home
-  Assistant gemeldet hat. Eine Wolkenebene, die ihre Höhe aus der Etagenliste
-  erbt, landet zwischen zwei Geschossen — und das Internet ist nicht im ersten
-  Stock.
-- Sie MUSS **frei über dem Dach** schweben, nicht auf dem obersten Geschoss
-  liegen. Der First steht über der obersten Ebene; eine Wolkenebene als
-  gewöhnliche Platte landet darin statt darüber.
-- Sie bekommt **dieselbe Weite wie der Garten** (`-margin … 1+margin`). In den
-  Grundriss gequetscht liest sich eine Wolke als Raum im Dachgeschoss.
-- Sie trägt **keine Bodenplatte und keinen Rand**. Dort oben sind die Wolken
-  die ganze Ebene.
+Bis dahin bekamen sie eine eigene Ebene über dem Dach, gezeichnet als Wolken.
+Die stand am falschen Ort und kostete zu viel: Sie musste das Dach um mehr als
+eine Geschosstiefe überragen, sonst las sie sich als Dachboden mit
+aufgemaltem Wetter — bei drei Geschossen waren das mit ihrem eigenen
+Etagenplatz zusammen gut vier Zehntel der Bildhöhe für eine Ebene mit zwei
+Kästen darauf. Und das Internet kommt nicht aus dem Himmel, es kommt aus dem
+Boden neben dem Haus.
+
+- Ein virtueller Bereich wird auf die **unterste echte Etage** gelegt und
+  bekommt dort `has_soil: true`. Das ist der Keller, wenn es einen gibt, sonst
+  das Erdgeschoss — dann liegt die Erde unter dem Rasen.
+- Eine **eigene Ebene** DARF NICHT dafür erfunden werden. Sie ist ein
+  Etagenreiter, den niemand öffnet, und im Stapel ein Geschoss, das es im
+  Haus nicht gibt.
+- Er bekommt **denselben Ring wie ein Garten** (`-margin … 1+margin`), und
+  die Etage bekommt dafür `has_outdoor`. In den Grundriss gequetscht liest
+  sich ein virtueller Bereich als Kellerraum.
+- Garten und Erdreich **teilen sich diesen Ring**. Ein Ring hat seine Plätze
+  nur einmal; rechnet jede Art für sich aus, wie viele es sind, bekommen zwei
+  Bereiche denselben Platz.
+- Jeder `virtual`-Bereich wird **einzeln** gezeichnet. Cloud, VPN und Server
+  sind drei Dinge, nicht ein Kasten mit drei Kästen darin.
+- Er trägt **keine Wände**. Ein Renderer SOLL ihn als Material zeichnen —
+  schraffiert, wie eine Bauzeichnung Erde zeichnet — und nicht als Fläche mit
+  Rahmen: ein Kasten neben dem Haus sieht aus wie ein Raum, den jemand
+  vergessen hat.
 
 ---
 

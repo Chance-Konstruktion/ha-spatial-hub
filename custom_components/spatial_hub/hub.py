@@ -26,8 +26,6 @@ from .const import (
     STATE_UNKNOWN,
     UNASSIGNED_FLOOR_ID,
     UNASSIGNED_FLOOR_NAME,
-    VIRTUAL_FLOOR_ID,
-    VIRTUAL_FLOOR_NAME,
     AreaKind,
 )
 from .generic import effective_layers
@@ -494,18 +492,29 @@ class SpatialHub:
                 floor["has_outdoor"] = True
                 floor["outdoor_margin"] = OUTDOOR_MARGIN
 
-        if virtual:
+        # Das Erdreich. Virtuelle Bereiche bekamen frueher eine eigene
+        # Ebene ueber dem Dach; die kostete mehr Bildhoehe als eine ganze
+        # Etage und stellte das Internet dorthin, wo es nicht herkommt.
+        # Es kommt aus dem Boden neben dem Haus -- durch dasselbe Erdreich,
+        # auf dem der Garten liegt. Also derselbe Ring wie ein Garten, nur
+        # an der untersten Etage, und gezeichnet als Erde statt als Wolke.
+        soil = self._lowest_floor(floors)
+        if virtual and soil is not None:
             for area in virtual:
-                area["floor_id"] = VIRTUAL_FLOOR_ID
+                area["floor_id"] = soil["id"]
                 area["virtual"] = True
-            floors = [*floors, {
-                "id": VIRTUAL_FLOOR_ID,
-                "name": VIRTUAL_FLOOR_NAME,
-                # Above the roof, where nobody mistakes it for a room.
-                "level": 900,
-                "icon": "mdi:cloud-outline",
-                "virtual": True,
-            }]
+            # Der Ring gehoert dieser Etage jetzt, auch wenn dort sonst
+            # nichts draussen liegt: ohne dieses Feld zeichnet der
+            # Renderer kein Umland und das Erdreich laege neben dem Bild.
+            soil["has_outdoor"] = True
+            soil["outdoor_margin"] = OUTDOOR_MARGIN
+            soil["has_soil"] = True
+        elif virtual:
+            # Kein Stockwerk, an das sich das Erdreich haengen liesse.
+            # Dann bleibt der Bereich, wo er ist -- eine erfundene Etage
+            # waere genau das, was hier gerade abgeschafft wurde.
+            for area in virtual:
+                area["virtual"] = True
 
         # A storey whose every area has just moved outside was never a
         # storey -- it was the user's way of saying "outside" before the
@@ -516,6 +525,28 @@ class SpatialHub:
             for floor in floors
             if floor["id"] not in emptied or floor["id"] in still_used
         ]
+
+    def _lowest_floor(self, floors: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """Die unterste echte Etage -- die, um die das Erdreich liegt.
+
+        Nicht das Erdgeschoss: ein Keller liegt im Boden, und genau dort
+        soll das Erdreich sein. Gibt es keinen, ist das Erdgeschoss die
+        unterste Etage und bekommt es -- dann liegt das Erdreich neben
+        dem Haus statt darunter, was ohne Keller auch stimmt.
+
+        `unassigned` zaehlt nicht mit. Das ist keine Etage, sondern der
+        Platz fuer alles ohne Etage, und der steht im Stapel ganz unten,
+        ohne deshalb im Boden zu liegen.
+        """
+        candidates = [
+            floor
+            for floor in floors
+            if not floor.get("unassigned")
+            and floor.get("kind", AreaKind.INDOOR) is AreaKind.INDOOR
+        ]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda floor: floor.get("level") or 0)
 
     def _ground_floor(self, floors: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The storey a garden belongs to: level 0, or the lowest above it."""

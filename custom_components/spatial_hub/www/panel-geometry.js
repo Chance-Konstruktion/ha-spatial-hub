@@ -106,6 +106,43 @@ const along = (from, to, at) => ({
   y: from.y + (to.y - from.y) * at,
 });
 
+const OPENING = Object.freeze({ DOOR: "door", WINDOW: "window" });
+
+/** Tuer oder Fenster? Fehlt die Angabe, ist es eine Tuer.
+ *
+ *  Das Feld kam spaeter dazu. Eine Anordnung, die vorher gespeichert
+ *  wurde, hat es nicht -- und die soll weiter gelten, statt beim Laden
+ *  zu einem Raum ohne Oeffnungen zu werden.
+ */
+const openingKind = (door) =>
+  (door && door.kind) === OPENING.WINDOW ? OPENING.WINDOW : OPENING.DOOR;
+
+/** Wo eine Oeffnung auf ihrer Wand anfaengt und aufhoert, 0..1.
+ *
+ *  Eine Stelle, nicht drei: `at` ist die Mitte und `width` die Breite,
+ *  und jede Rechnung, die daraus Anfang und Ende macht, muss dieselbe
+ *  Klemmung anwenden. Zwei Fassungen davon waren der Grund, warum eine
+ *  Tuer am Rand im Bild woanders sass als im Dialog.
+ */
+const openingRun = (door) => {
+  const width = Math.min(Math.max(Number(door && door.width) || 0, 0), 1);
+  const at = Math.min(Math.max(Number(door && door.at), 0), 1);
+  return [at - width / 2, at + width / 2];
+};
+
+/** Die Oeffnungen einer Wand, in der Reihenfolge, in der sie darauf liegen.
+ *
+ *  Gespeichert werden sie in der Reihenfolge, in der jemand sie angelegt
+ *  hat, und das ist keine Reihenfolge. Wer sie zeichnet, braucht sie
+ *  sortiert.
+ */
+const openingsOn = (doors, side) =>
+  (Array.isArray(doors) ? doors : [])
+    .filter((door) => door && Number(door.side) === side)
+    .map((door) => ({ door, run: openingRun(door) }))
+    .filter(({ run }) => run[1] > run[0])
+    .sort((a, b) => a.run[0] - b.run[0]);
+
 /** What is left of one wall once the doorways are taken out of it.
  *
  *  A list of `[from, to]` stretches along the edge, 0 at one corner and 1
@@ -114,20 +151,17 @@ const along = (from, to, at) => ({
  *
  *  Overlapping doors are merged rather than drawn twice: two openings that
  *  touch are one opening, and a wall segment of negative length is not a
- *  thing a renderer should have to think about. Doors are sorted here and
- *  not trusted to arrive in order -- they are stored in the order the user
- *  added them, which is no order at all.
+ *  thing a renderer should have to think about.
+ *
+ *  Ein **Fenster** ist hier keine Luecke. Es sitzt in der Wand, es
+ *  ersetzt sie nicht -- eine Wand, die unter dem Fenster aufhoert, ist
+ *  eine Tuer. Gezeichnet wird es deshalb zusaetzlich und nicht anstelle
+ *  der Wand, und diese Funktion sieht davon nichts.
  */
 const wallRuns = (doors, side) => {
-  const holes = (Array.isArray(doors) ? doors : [])
-    .filter((door) => door && Number(door.side) === side)
-    .map((door) => {
-      const width = Math.min(Math.max(Number(door.width) || 0, 0), 1);
-      const at = Math.min(Math.max(Number(door.at), 0), 1);
-      return [at - width / 2, at + width / 2];
-    })
-    .filter(([from, to]) => to > from)
-    .sort((a, b) => a[0] - b[0]);
+  const holes = openingsOn(doors, side)
+    .filter(({ door }) => openingKind(door) === OPENING.DOOR)
+    .map(({ run }) => run);
 
   const runs = [];
   let cursor = 0;
@@ -162,6 +196,68 @@ const capsOf = (corners, thickness, className, keep = () => true,
     })
     .join("");
 };
+
+/** Fenster und Tuerschwenk: was eine Oeffnung ausser einer Luecke ist.
+ *
+ *  Eine Luecke allein sagt nicht, was sie ist. In einer Bauzeichnung
+ *  steht am Durchgang ein Viertelkreis -- der Schwenk des Tuerblatts --
+ *  und im Fenster liegt eine Bruestung. Genau daran liest man einen
+ *  Grundriss als Grundriss, und ohne das waren beide dasselbe: nichts.
+ *
+ *  `corners` ist die projizierte Kontur, `rise` die Wandhoehe. Beides
+ *  wie bei `wallsOf`, damit Wand und Oeffnung nicht aus zwei Rechnungen
+ *  kommen und sich um ein Pixel verfehlen.
+ */
+const openingMarksOf = (corners, rise, doors, keep = () => true) =>
+  corners
+    .map((corner, index) => {
+      if (!keep(index)) return "";
+      const next = corners[(index + 1) % corners.length];
+      return openingsOn(doors, index)
+        .map(({ door, run: [from, to] }) => {
+          const start = along(corner, next, from);
+          const end = along(corner, next, to);
+          if (openingKind(door) === OPENING.WINDOW) {
+            // Ein Fenster ist eine duennere Wand mit einer Bruestung
+            // darunter, keine Luecke: die Wand laeuft durch, und was
+            // sie zum Fenster macht, sind die zwei waagerechten Linien
+            // auf Bruestungs- und Sturzhoehe.
+            const band = (height) =>
+              `<polyline class="window-bar" points="${start.x},${
+                start.y - height
+              } ${end.x},${end.y - height}"/>`;
+            return `<polygon class="window-pane" points="${start.x},${start.y} ` +
+              `${end.x},${end.y} ${end.x},${end.y - rise} ` +
+              `${start.x},${start.y - rise}"/>` +
+              band(rise * 0.35) + band(rise * 0.85);
+          }
+          // Der Schwenk: Tuerblatt und Viertelkreis, das Zeichen, an dem
+          // man eine Tuer in einem Grundriss erkennt. Die Angel sitzt am
+          // vorderen Ende der Oeffnung -- welches das ist, entscheidet
+          // die Laufrichtung der Kontur, und damit schwenken alle Tueren
+          // eines Raumes gleichsinnig statt jede, wie es sich ergibt.
+          const span = Math.hypot(end.x - start.x, end.y - start.y);
+          // Unter einem Pixel ist der Kreis ein Punkt und der Bogen ein
+          // Fehler im SVG. Die Luecke bleibt, das Zeichen entfaellt.
+          if (span < 1.5) return "";
+          // Nach innen heisst: nach rechts von der Laufrichtung. Die
+          // Kontur laeuft (0,0) (1,0) (1,1) (0,1), im Bild also im
+          // Uhrzeigersinn -- eine Fallunterscheidung je Wand braucht es
+          // dafuer nicht.
+          const nx = -(end.y - start.y) / span;
+          const ny = (end.x - start.x) / span;
+          const hinge = { x: start.x, y: start.y - rise };
+          const jamb = { x: end.x, y: end.y - rise };
+          const leaf = { x: hinge.x + nx * span, y: hinge.y + ny * span };
+          return `<path class="door-swing" d="M${hinge.x.toFixed(2)},${
+            hinge.y.toFixed(2)
+          } L${leaf.x.toFixed(2)},${leaf.y.toFixed(2)} A${span.toFixed(2)},${
+            span.toFixed(2)
+          } 0 0 1 ${jamb.x.toFixed(2)},${jamb.y.toFixed(2)}"/>`;
+        })
+        .join("");
+    })
+    .join("");
 
 /** Standing walls along a projected outline.
  *
@@ -252,10 +348,10 @@ const snapReach = (theme) => {
  *  quadratisch bleibt.
  */
 const frameOf = (floor, areas) => {
-  // Sky gets the same room as garden. A cloud belongs *around* the house,
-  // not squeezed into its footprint -- the internet is not a room on the
-  // second floor, and a plane exactly as wide as the walls says it is.
-  const wide = floor && (floor.has_outdoor || floor.virtual);
+  // Garten und Erdreich brauchen beide das Umland: beide liegen im Ring
+  // um die Etage, nicht in ihrem Grundriss. Eine Etage, deren Fenster
+  // genau so breit ist wie ihre Waende, kann nichts davon zeigen.
+  const wide = floor && floor.has_outdoor;
   const base = wide ? floor.outdoor_margin || 0.28 : 0;
   // links, rechts, oben, unten -- das Haus liegt immer auf 0..1.
   const side = { left: base, right: base, top: base, bottom: base };
@@ -385,19 +481,50 @@ const shapeOf = (area) => {
 /** Whether an area has an outline of its own worth mentioning. */
 const hasShape = (area) => shapeOf(area) !== RECTANGLE;
 
-/** The outline every virtual area is drawn in.
+/** Der Abstand zweier Schraffurstriche, in Grundriss-Einheiten.
  *
- *  Stretched to whatever the area's box is, so a wide VPN and a small
- *  cloud are the same shape at different sizes rather than two shapes.
- *  `preserveAspectRatio="none"` is the point: it is a label for "this is
- *  not a room", not a picture of a cloud that has to stay round.
+ *  Fester Abstand statt fester Anzahl. Mit einer festen Anzahl haengt der
+ *  Winkel an der Form des Kastens: das Erdreich ist ein Band von 1.4 auf
+ *  0.22, und die Diagonale eines solchen Kastens liegt fast flach -- auf
+ *  dem Bild sah das aus wie Maserung und nicht wie Erde. Ein fester
+ *  Abstand laesst den Winkel in Ruhe und die Zahl der Striche mitwachsen,
+ *  was genau richtig herum ist: eine Schraffur ist eine Dichte.
  */
-const CLOUD_PATH = "M26 52 C12 52 5 44 5 35 C5 26 12 19 21 19 " +
-  "C24 9 33 3 43 3 C56 3 66 12 68 24 C79 24 88 30 88 39 " +
-  "C88 47 80 52 70 52 Z";
+const SOIL_HATCH_GAP = 0.075;
 
-const CLOUD_SVG = `<svg class="cloud" viewBox="0 0 100 60"
-  preserveAspectRatio="none" aria-hidden="true"><path d="${CLOUD_PATH}"/></svg>`;
+/** Wie viele Striche hoechstens. Ein Bereich ueber das ganze Grundstueck
+ *  gezogen bekaeme sonst dreistellig viele Linien, und der Renderer
+ *  zeichnet sie alle, bevor jemand merkt, dass es zu viele sind. */
+const SOIL_HATCH_MAX = 48;
+
+/** Die Schraffur eines Erdreich-Bereichs, als Striche in Bildkoordinaten.
+ *
+ *  Diagonal unter 45 Grad im Grundriss, weil senkrecht wie eine Wand
+ *  aussaehe und waagerecht wie ein Boden.
+ *
+ *  `project` bildet einen Punkt des Grundrisses ab. Die Striche werden
+ *  deshalb im Grundriss gerechnet und erst dann projiziert: eine
+ *  Schraffur, die im Bild gerechnet wird, steht auf jeder Etage anders
+ *  schraeg -- die Flucht wirkt ja auf jeder Ebene anders.
+ *
+ *  Abgeschnitten wird mit der Fallunterscheidung und nicht mit einer
+ *  Clip-Maske: ein Strich, der ueber die Kante laeuft, ist im SVG ein
+ *  Strich ueber der Kante, auch wenn ihn gerade zufaellig etwas verdeckt.
+ */
+const soilHatch = (project, x0, y0, width, height, gap = SOIL_HATCH_GAP) => {
+  const reach = width + height;
+  const step = Math.max(gap, reach / SOIL_HATCH_MAX);
+  const lines = [];
+  for (let t = step; t < reach; t += step) {
+    const from = t <= height ? [0, t] : [t - height, height];
+    const to = t <= width ? [t, 0] : [width, t - width];
+    lines.push([
+      project(x0 + from[0], y0 + from[1]),
+      project(x0 + to[0], y0 + to[1]),
+    ]);
+  }
+  return lines;
+};
 
 /** A room's four walls in floor coordinates. */
 const boxOf = (area) => {
@@ -584,17 +711,15 @@ const isStairs = (area) =>
 // Projektion, die man nur mit einem Custom Element in der Hand ausrechnen
 // kann, ist keine Geometrie mehr, sondern ein Nebeneffekt.
 
-/** How far above the storeys a plane floats.
- *
- *  Only the sky floats, and it has to clear the top storey by more than
- *  a storey's own depth, or a cloud plane reads as an attic with weather
- *  painted on the ceiling.
- */
-const planeLift = (floor) => (floor && floor.virtual ? STACK.depth * 0.5 + 130 : 0);
-
-/** Headroom for the sky, added to everything so the lift pushes the
- *  clouds up *within* the drawing instead of off the top of it. */
-const skyOf = (floors) => Math.max(0, ...(floors || []).map(planeLift));
+// Hier stand einmal `planeLift`/`skyOf`: der Abstand, den die Wolkenebene
+// ueber dem Dach brauchte, um nicht als Dachboden mit aufgemaltem Wetter
+// gelesen zu werden. Das waren STACK.depth/2 + 130 = 255 Einheiten Luft,
+// die auf *jede* Zeichnung addiert wurden, plus die 340 des eigenen
+// Etagenplatzes -- bei einem Haus mit vier Ebenen zusammen gut vier
+// Zehntel der Bildhoehe fuer eine Ebene, auf der drei Kaesten standen.
+//
+// Das Erdreich braucht davon nichts: es liegt im Ring um die unterste
+// Etage, also auf einer Ebene, die es ohnehin schon gibt.
 
 /** Where a point on a given floor lands in the stacked drawing.
  *
@@ -614,8 +739,7 @@ const projectOnto = ({ frame, gutter, floors, index }, x, y) => {
   return {
     x: gutter + STACK.stagger * index +
       STACK.width / 2 + (nx - 0.5) * STACK.width * shrink,
-    y: STACK.top + skyOf(floors) + index * STACK.gap + ny * STACK.depth -
-      planeLift((floors || [])[index]),
+    y: STACK.top + index * STACK.gap + ny * STACK.depth,
   };
 };
 
@@ -627,10 +751,15 @@ const projectOnto = ({ frame, gutter, floors, index }, x, y) => {
  *  it. Air between the storeys is what makes them storeys, so the picture
  *  grows with the house instead of the house shrinking into the picture.
  */
-const stackHeight = (floors) =>
-  STACK.top + skyOf(floors) +
+/** `extra` ist Platz unter der untersten Etage: die Massketten haengen
+ *  unter der Vorderkante, und bei der untersten ist unter der
+ *  Vorderkante das Ende des Bildes. Ohne diesen Zuschlag ist die Kette
+ *  gezeichnet und trotzdem nicht zu sehen -- und zwar nur bei einer
+ *  einzigen Etage, was der unangenehmste Fehler von allen ist. */
+const stackHeight = (floors, extra = 0) =>
+  STACK.top +
   Math.max(0, (floors || []).length - 1) * STACK.gap +
-  STACK.depth + STACK.slab + STACK.pad;
+  STACK.depth + STACK.slab + STACK.pad + Math.max(0, extra);
 
 /** How wide the drawing has to be. Every storey is offset a little
  *  further right than the one above it, so the bottom one decides. */
@@ -707,6 +836,191 @@ const flushWith = (rect, box) => {
 
 // ── Kamera ────────────────────────────────────────────────
 
+// ── Maßketten ─────────────────────────────────────────────
+//
+// Eine Bauzeichnung sagt nicht nur, wo etwas steht, sondern wie breit es
+// ist -- und zwar nicht als Zahl im Kasten, sondern als Kette unter dem
+// Riss: Hilfslinien an jeder Wand, dazwischen ein Strich mit einem Maß
+// darauf. Erst damit ist ein Grundriss etwas, mit dem man zum Baumarkt
+// gehen kann.
+
+/** Wie eine Maßkette im Bild liegt, in Bildeinheiten.
+ *
+ *  Die Kette haengt unter der Vorderkante der Etage, weil dort im Bild
+ *  nichts ist -- ueber dem Riss laege sie auf der Rueckwand, und darin
+ *  liegt schon die Beschriftung der Etage.
+ */
+const DIM = Object.freeze({
+  // Abstand der ersten Kette von der Vorderkante, und der zweiten von
+  // der ersten. Die zweite traegt das Gesamtmass.
+  drop: 44,
+  row: 34,
+  // Laenge der schraegen Begrenzungsstriche und Abstand der Schrift
+  // ueber der Kette.
+  tick: 8,
+  lift: 7,
+  size: 13,
+});
+
+/** Ein Mass in Metern, wie es auf einer Kette steht.
+ *
+ *  Zwei Nachkommastellen, nicht eine wie sonst im Panel: Auf einer
+ *  Masskette steht in einer Bauzeichnung immer der Zentimeter, und
+ *  "3,0 m" liest sich als gerundet, wo "3,00 m" als gemessen gilt.
+ *  Genau dieser Unterschied ist der Grund, warum jemand eine Kette
+ *  einblendet.
+ */
+const dimension = (value) => `${value.toFixed(2).replace(".", ",")} m`;
+
+/** Wo eine Masskette geteilt wird: an jeder Wand, die vorne ankommt.
+ *
+ *  Die linke und die rechte Kante jedes Raumes, dazu die zwei Kanten des
+ *  Hauses. Zwei Waende, die dieselbe sind, sind eine Teilung -- sonst
+ *  bekaeme jede geteilte Wand zwei Hilfslinien im Abstand eines
+ *  Tausendstels und dazwischen ein Mass von null.
+ *
+ *  Alles ausserhalb des Hauses faellt weg. Ein Garten hat keine Wand,
+ *  die vorne ankommt, und ein Mass, das im Rasen anfaengt, misst nichts.
+ */
+const dimensionStops = (areas, gap = JOIN_GAP) => {
+  const edges = [0, 1];
+  for (const area of Array.isArray(areas) ? areas : []) {
+    if (!area || !area.position) continue;
+    const box = boxOf(area);
+    edges.push(box.left, box.right);
+  }
+  const sorted = edges
+    .filter((x) => Number.isFinite(x) && x > -gap && x < 1 + gap)
+    .map((x) => Math.min(1, Math.max(0, x)))
+    .sort((a, b) => a - b);
+  const stops = [];
+  for (const x of sorted) {
+    if (!stops.length || x - stops[stops.length - 1] > gap) stops.push(x);
+  }
+  return stops;
+};
+
+// ── Beschriftungen entzerren ──────────────────────────────
+//
+// Zwei Namen an derselben Stelle sind schlechter als einer: man liest
+// keinen von beiden. In der Hausansicht passiert das staendig, weil der
+// Name eines Geraetes unter seinem Punkt haengt und der Name des Raumes
+// davor in dessen hinterem Drittel steht -- bei zwei Zimmerreihen
+// uebereinander sind das ein paar Einheiten Abstand.
+//
+// Bisher gab es dagegen nur eine Pauschale: mehr als fuenf Geraete auf
+// einer Ebene, und *alle* Namen verschwanden bis zum Darueberfahren.
+// Das trifft auch die vier, die sich nie in die Quere gekommen waeren,
+// und laesst bei fuenf Geraeten zwei uebereinander stehen.
+
+/** Wie eine Beschriftung im Bild Platz braucht.
+ *
+ *  Geschaetzt, nicht gemessen: Im SVG steht kein Text, den man messen
+ *  koennte, bevor er im Dokument haengt -- und die Zeichnung wird
+ *  gebaut, bevor sie haengt. Ein Mittelwert je Zeichen ist fuer diese
+ *  Frage genau genug: Es geht darum, ob zwei Namen aufeinanderliegen,
+ *  und nicht darum, sie auf ein Pixel zu setzen.
+ */
+const LABEL = Object.freeze({
+  // Breite je Zeichen als Anteil der Schriftgroesse. 0.55 ist der grobe
+  // Mittelwert einer Grotesk -- "iii" ist schmaler, "WWW" breiter, und
+  // beides kommt in Raumnamen selten allein vor.
+  perChar: 0.55,
+  // Zeilenhoehe und Schrittweite, beides als Vielfaches der Groesse.
+  // Der Schritt ist groesser als die Zeile, damit ein verschobener Name
+  // nicht direkt an dem klebt, dem er ausgewichen ist.
+  height: 1.4,
+  step: 1.5,
+  // Wie viele Zeilen nach oben und unten versucht werden. Danach ist
+  // Wegblenden ehrlicher: ein Name drei Zeilen neben seinem Punkt
+  // beschriftet nichts mehr, er behauptet nur noch etwas.
+  tries: 3,
+});
+
+/** Der Kasten, den eine Beschriftung im Bild belegt.
+ *
+ *  `anchor` ist dasselbe wie `text-anchor` im SVG und muss dasselbe
+ *  sagen: Der Etagenname ist rechtsbuendig gesetzt, und ein Kasten, der
+ *  ihn mittig annimmt, liegt eine halbe Namenslaenge daneben -- das
+ *  Entzerren wuerde dann gegen einen Platz pruefen, an dem nichts steht.
+ */
+const labelBox = (label, shift = 0) => {
+  const size = (label.size || 16) * (label.scale || 1);
+  const width = String(label.text || "").length * size * LABEL.perChar;
+  const height = size * LABEL.height;
+  const y = label.y + shift;
+  const x0 = label.anchor === "end"
+    ? label.x - width
+    : label.anchor === "start"
+    ? label.x
+    : label.x - width / 2;
+  return { x0, x1: x0 + width, y0: y - height / 2, y1: y + height / 2 };
+};
+
+const boxesOverlap = (a, b) =>
+  a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+/** Beschriftungen so verschieben, dass sie sich nicht mehr decken.
+ *
+ *  `fixed` heisst "diese steht, wo sie steht": ein Raumname gehoert in
+ *  seinen Raum, und ihn zu verschieben hiesse, ihn ueber die Wand des
+ *  Nachbarn zu schieben. Verschoben wird also, was beweglich ist, und
+ *  das sind die Namen der Geraete -- die haengen ohnehin schon unter
+ *  ihrem Punkt und nicht darin.
+ *
+ *  Abwechselnd nach unten und nach oben, in wachsendem Abstand. Nur nach
+ *  unten waere eine Reihe von fuenf Geraeten am Ende eine Spalte, die
+ *  aus dem Geschoss herauslaeuft.
+ *
+ *  Was keinen Platz findet, bekommt `hidden` -- und der Aufrufer blendet
+ *  es weg, bis jemand darauf zeigt. Ein Name, der sich nirgendwo
+ *  hinstellen kann, ist an *jeder* Stelle unlesbar.
+ *
+ *  Die Reihenfolge der Rueckgabe ist die der Eingabe, damit der Aufrufer
+ *  sie neben seine eigene Liste legen kann.
+ */
+const declutter = (labels) => {
+  const list = Array.isArray(labels) ? labels : [];
+  const taken = [];
+  const answer = new Array(list.length);
+
+  // Die festen zuerst und vollstaendig: sonst weicht ein Geraetename
+  // einem Raumnamen aus, der erst danach dazukommt.
+  list.forEach((label, index) => {
+    if (!label || !label.fixed) return;
+    taken.push(labelBox(label));
+    answer[index] = { shift: 0, hidden: false };
+  });
+
+  // Von oben nach unten, damit dasselbe Bild zweimal dasselbe Ergebnis
+  // hat. Die Reihenfolge im Modell ist keine Reihenfolge.
+  const movable = list
+    .map((label, index) => ({ label, index }))
+    .filter(({ label }) => label && !label.fixed)
+    .sort((a, b) => a.label.y - b.label.y || a.index - b.index);
+
+  for (const { label, index } of movable) {
+    const size = (label.size || 16) * (label.scale || 1);
+    const step = size * LABEL.step;
+    let placed = null;
+    for (let ring = 0; ring <= LABEL.tries && placed === null; ring += 1) {
+      for (const shift of ring === 0 ? [0] : [ring * step, -ring * step]) {
+        const box = labelBox(label, shift);
+        if (!taken.some((other) => boxesOverlap(box, other))) {
+          taken.push(box);
+          placed = shift;
+          break;
+        }
+      }
+    }
+    answer[index] = placed === null
+      ? { shift: 0, hidden: true }
+      : { shift: placed, hidden: false };
+  }
+
+  return answer;
+};
+
 /** Wie weit die Zeichnung in einer Achse verschoben werden darf.
  *
  *  Groesser als das Fenster: kein Spalt an beiden Enden, der Blick bleibt
@@ -738,6 +1052,7 @@ export {
   insetOf,
   along,
   wallRuns,
+  openingMarksOf,
   capsOf,
   wallsOf,
   FRONT_WALL,
@@ -755,8 +1070,9 @@ export {
   RECTANGLE,
   shapeOf,
   hasShape,
-  CLOUD_PATH,
-  CLOUD_SVG,
+  SOIL_HATCH_GAP,
+  SOIL_HATCH_MAX,
+  soilHatch,
   boxOf,
   SIDE,
   SIDE_NAME,
@@ -770,12 +1086,14 @@ export {
   kindOf,
   fold,
   doorsOf,
+  OPENING,
+  openingKind,
+  openingRun,
+  openingsOn,
   SIDE_NAMES,
   sideName,
   STAIR_WORDS,
   isStairs,
-  planeLift,
-  skyOf,
   projectOnto,
   stackHeight,
   stackWidth,
@@ -785,4 +1103,10 @@ export {
   flushWith,
   panRange,
   touchSpan,
+  LABEL,
+  labelBox,
+  declutter,
+  DIM,
+  dimension,
+  dimensionStops,
 };

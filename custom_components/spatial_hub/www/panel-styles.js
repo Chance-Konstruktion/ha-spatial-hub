@@ -235,10 +235,14 @@ main { flex:0 0 auto; min-width:0; }
 .storey-name.alone { font-size:16px; text-anchor:start; opacity:.65; }
 .storey-name { font-size:30px; fill:var(--fp-ink, currentColor); opacity:.8;
                letter-spacing:.1em; text-anchor:end; }
-.stack-cloud { fill:var(--fp-virtual, rgba(120,144,180,.16));
-               stroke:var(--fp-virtual-line, rgba(120,144,180,.7));
-               stroke-width:1.5; vector-effect:non-scaling-stroke;
-               stroke-dasharray:7 5; }
+/* Ein virtueller Bereich im Erdreich: schraffierte Flaeche statt Wolke.
+   Die Flaeche traegt die Farbe, die Striche tragen die Aussage -- so
+   liest es sich als Material und nicht als Zimmer ohne Waende. */
+.soil { fill:var(--fp-soil-area, rgba(120,100,72,.22));
+        stroke:var(--fp-soil-line, rgba(120,100,72,.75));
+        stroke-width:1.5; vector-effect:non-scaling-stroke; }
+.soil-hatch { stroke:var(--fp-soil-line, rgba(120,100,72,.75));
+              stroke-width:1; vector-effect:non-scaling-stroke; opacity:.75; }
 /* Innenwaende. Vorher eine Andeutung, die auf einem hellen Hintergrund
    praktisch verschwand -- und damit war das Haus im Sandwich eine leere
    Platte mit Punkten darauf. Jetzt eine Wand: sichtbar, aber immer noch
@@ -351,7 +355,24 @@ main { flex:0 0 auto; min-width:0; }
 .apron { fill:var(--fp-outdoor, rgba(76,175,80,.10));
          stroke:var(--fp-outdoor-line, rgba(76,175,80,.45));
          stroke-width:2; stroke-dasharray:12 8; }
-.plane.virtual .storey { stroke-dasharray:14 10; opacity:.7; }
+/* Das Erdreich um die unterste Etage. Ein Ton, kein Bild: was darin
+   liegt, traegt seine eigene Schraffur, und zwei Schraffuren
+   uebereinander sind ein Muster und kein Grundriss mehr. */
+.soil-plane { fill:var(--fp-soil, rgba(120,100,72,.14));
+              stroke:var(--fp-soil-line, rgba(120,100,72,.4));
+              stroke-width:2; stroke-dasharray:4 6; }
+/* Massketten. Haarlinien, damit sie den Riss nicht ueberstimmen -- eine
+   Kette ist eine Angabe ueber die Zeichnung und nicht Teil des Baus.
+   Die Hilfslinie ist die leiseste von dreien: sie sagt nur, wo gemessen
+   wurde, und das weiss man ohnehin schon, wenn man die Wand sieht. */
+.dim-line, .dim-tick, .dim-help {
+  stroke:var(--fp-ink, currentColor); fill:none;
+  vector-effect:non-scaling-stroke; pointer-events:none; }
+.dim-line { stroke-width:1; opacity:.75; }
+.dim-tick { stroke-width:1.4; opacity:.85; }
+.dim-help { stroke-width:1; opacity:.3; stroke-dasharray:3 4; }
+.dim-text { font-size:13px; fill:var(--fp-ink, currentColor); opacity:.85;
+            text-anchor:middle; letter-spacing:.02em; pointer-events:none; }
 /* Die Suche blendet nicht aus, sie stellt zurück: der Rest bleibt sichtbar. */
 .stack-node.dimmed { opacity:calc(var(--layer-opacity,1) * .25); }
 .stack-node.found circle { stroke:var(--fp-accent, var(--primary-color,#03a9f4));
@@ -611,23 +632,60 @@ select { font:inherit; padding:6px; border-radius:8px;
 .handle-se { bottom:-5px; right:-5px; cursor:nwse-resize; }
 .handle-ne { top:-5px; right:-5px; cursor:nesw-resize; }
 .handle-sw { bottom:-5px; left:-5px; cursor:nesw-resize; }
+/* Oeffnungen im Grundriss. Eine Tuer ist eine Luecke -- also wird die
+   Wand darunter weggewischt, in der Farbe des Blattes; ein Fenster ist
+   eine duennere Wand, also bleibt ein Strich stehen. Genau der
+   Unterschied, den auch die Hausansicht zeichnet. */
+.opening { position:absolute; pointer-events:auto; cursor:grab; }
+/* Eine Tuer wischt die Wand weg -- und setzt an beide Enden einen
+   Laibungsstrich. Ohne die ist eine Luecke im Grundriss nichts, und
+   "nichts" war genau der Zustand, aus dem hier herausgekommen werden
+   soll: die Tuer war da, man sah sie nur nicht.
+
+   Als Verlauf und nicht als zwei Pseudoelemente: der Streifen ist sechs
+   Pixel schmal, und zwei absolute Kinder darin sind mehr Bauteil als
+   Zeichnung. */
+.opening.door { background:var(--card-background-color,#fff);
+                box-shadow:0 0 0 1px var(--card-background-color,#fff); }
+.opening.door.flat {
+  background-image:linear-gradient(to right,
+    var(--fp-wall, rgba(0,0,0,.55)) 0 1px, transparent 1px calc(100% - 1px),
+    var(--fp-wall, rgba(0,0,0,.55)) calc(100% - 1px) 100%); }
+.opening.door.upright {
+  background-image:linear-gradient(to bottom,
+    var(--fp-wall, rgba(0,0,0,.55)) 0 1px, transparent 1px calc(100% - 1px),
+    var(--fp-wall, rgba(0,0,0,.55)) calc(100% - 1px) 100%); }
+/* Ein Fenster laesst die Wand stehen: der Rahmen ist die Wand, die
+   durchlaeuft, und das Weisse darin die Scheibe. */
+.opening.window { background:var(--card-background-color,#fff);
+                  border:1px solid var(--fp-wall, rgba(0,0,0,.55));
+                  box-sizing:border-box; }
+/* Der Schwenk und die Bruestung in der Hausansicht. Beides Linien, kein
+   Fuellwerk: eine ausgemalte Tuer waere ein Moebelstueck. */
+.door-swing { fill:none; stroke:var(--fp-wall, rgba(0,0,0,.45));
+              stroke-width:1; vector-effect:non-scaling-stroke;
+              stroke-dasharray:3 3; }
+.window-pane { fill:var(--card-background-color,#fff); fill-opacity:.65;
+               stroke:none; }
+.window-bar { fill:none; stroke:var(--fp-wall, rgba(0,0,0,.55));
+              stroke-width:1; vector-effect:non-scaling-stroke; }
+.door-swing, .window-pane, .window-bar { pointer-events:none; }
 .area-config { position:absolute; top:2px; right:26px; border:0; background:transparent;
                color:var(--secondary-text-color,#727272); cursor:pointer; padding:2px;
                display:flex; border-radius:50%; }
 .area.outdoor { border-style:solid; border-color:var(--fp-outdoor-line, rgba(76,175,80,.6));
                 background:var(--fp-outdoor, rgba(76,175,80,.10)); }
-/* Ein virtueller Bereich ist kein Raum, und ein Rechteck mit gepunktetem
-   Rand sagt das niemandem. Jeder so markierte Bereich bekommt seine eigene
-   Wolke: Cloud, VPN und Server sind drei Dinge, nicht ein Kasten mit drei
-   Kästen darin. */
-.area.virtual { border:0; background:transparent; opacity:1; }
-.area.virtual .cloud { position:absolute; inset:0; overflow:visible;
-                       pointer-events:none; }
-.area.virtual .cloud path {
-  fill:var(--fp-virtual, rgba(120,144,180,.16));
-  stroke:var(--fp-virtual-line, rgba(120,144,180,.7));
-  stroke-width:1.5; vector-effect:non-scaling-stroke; stroke-dasharray:7 5; }
-.area.virtual .area-name { top:30%; left:0; right:0; justify-content:center; }
+/* Ein virtueller Bereich ist kein Raum. In der Einzelansicht sagt das
+   die Schraffur -- als CSS-Verlauf, weil hier kein SVG liegt, sondern
+   ein Kasten. Dieselben 45 Grad wie im Stapel, damit beide Ansichten
+   dasselbe Ding zeigen. */
+.area.virtual { border-style:solid;
+                border-color:var(--fp-soil-line, rgba(120,100,72,.75));
+                background:
+                  repeating-linear-gradient(45deg,
+                    transparent 0 7px,
+                    var(--fp-soil-line, rgba(120,100,72,.75)) 7px 8px),
+                  var(--fp-soil-area, rgba(120,100,72,.22)); }
 /* Die Ablage steht bewusst außerhalb des Grundrisses: was hier liegt,
    hat noch keinen Platz im Haus, und einer im Raster wäre eine Behauptung. */
 .tray { margin:10px 0 0; padding:8px 12px; border-radius:12px;
