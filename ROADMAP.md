@@ -804,15 +804,55 @@ lässt sich nach unten wegziehen: Wer einen Raum einrichtet, braucht den
 Platz.
 
 Offen sind unter anderem Mehrfachauswahl, Labels an einen eigenen Platz
-ziehen, ein **Rechtsklickmenü** im Editor (Raumart ändern, duplizieren,
-löschen, ausblenden — und später die Aufhängung für Möbel) und ein Weg,
-einen Raum zu zeichnen, ohne ihn erst in Home Assistant anzulegen.
+ziehen und ein Weg, einen Raum zu zeichnen, ohne ihn erst in Home
+Assistant anzulegen.
+
+**Diese Liste stand lange falsch hier.** Sie nannte das Rechtsklickmenü
+und den langen Druck auf dem Touchscreen als offen — beides ist seit
+Abschnitt A erledigt. Schlimmer als veraltet war aber, *was* sie vom Menü
+verlangte: „duplizieren, löschen". Genau das hat Abschnitt A mit
+Begründung ausgeschlossen, weil Bereiche dem Bereichsregister von Home
+Assistant gehören und ein „Löschen" hier ein Löschen *überall* wäre. Wer
+Phase 17 gelesen und gebaut hätte, hätte die destruktive Aktion
+eingebaut, gegen die sich das Projekt ausdrücklich entschieden hat. Das
+Menü im Code hat sie nicht — nachgesehen.
 
 Interaktion ist hier mitgemeint und größtenteils schon da: **kurzer Klick
 schaltet**, **langer Druck öffnet** das mittige Modal mit Werten, Entities,
 More-Info und dem Panel des Providers — der Grundriss bleibt dahinter
-sichtbar. Was noch fehlt, ist der lange Druck auf dem Touchscreen mit dem
-gleichen Verhalten wie mit der Maus.
+sichtbar. Der lange Druck auf dem Touchscreen verhält sich seit
+Abschnitt A wie die Maus.
+
+### Was „ein Kind" heute noch verhindert
+
+Zwei Befunde aus dem Nachsehen, und beide sind grundsätzlich:
+
+- [x] **Das Raster ließ sich nur mit der Umschalttaste abschalten.**
+      `event.shiftKey` stand an fünf Stellen im Code und war der einzige
+      Weg. Ein Tablet hat keine Umschalttaste, und ein Zeigerereignis aus
+      einem Finger meldet `shiftKey` immer als falsch — am Gerät, an dem
+      ein Kind sitzt, war das Raster also gar nicht abschaltbar. Der
+      Hinweistext nannte den Weg trotzdem, und zwar in schiefem Deutsch:
+      „Shift hält gedrückt das Raster aus."
+
+      Jetzt eine Frage an einer Stelle (`_noSnap`), ein Knopf **Raster**
+      in der Leiste, und ein Hinweis, der nur Wege nennt, die es auf
+      diesem Gerät gibt. Die Taste bleibt — wer eine hat, will sie nicht
+      gegen einen Knopf tauschen.
+
+- [ ] **Bearbeiten setzt ein Adminkonto voraus.** `canEdit()` ist
+      `hass.user.is_admin`, sonst nichts. Ein Kind hat in Home Assistant
+      normalerweise kein Adminkonto — es kann den Editor heute also nicht
+      einmal öffnen, und keine Verbesserung an seiner Bedienbarkeit
+      erreicht es.
+
+      Das ist keine Nachlässigkeit, sondern eine ungestellte Frage. Der
+      Editor tut zweierlei: Er **ordnet den Plan an** (das steht im
+      eigenen Speicher des Hubs) und er **weist Geräte Bereichen zu**
+      (das schreibt ins Register von Home Assistant und geht jedes andere
+      Dashboard an). Nur das Zweite ist eine Adminsache. Ob das Erste es
+      auch sein muss, ist zu entscheiden, bevor „einfach genug für ein
+      Kind" mehr als ein Satz ist.
 
 ## ⬜ Phase 18 — Klima
 

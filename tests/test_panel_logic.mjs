@@ -2693,6 +2693,44 @@ test("ein Kasten darf auch etwas sein, das kein Text ist", () => {
   assert.deepEqual(box, { x0: 85, x1: 115, y0: 85, y1: 115 });
 });
 
+test("das Raster laesst sich ohne Tastatur abschalten", () => {
+  // Die Vision sagt: einfach genug fuer ein Kind. Ein Kind sitzt am
+  // Tablet, und ein Tablet hat keine Umschalttaste. `shiftKey` ist auf
+  // einem Zeigerereignis aus einem Finger immer falsch -- das Raster war
+  // dort also gar nicht abschaltbar, und der Hinweis nannte es trotzdem.
+  const view = panel(model(), { floor: null });
+  const finger = {};                       // kein shiftKey, wie bei Beruehrung
+
+  assert.equal(view._noSnap(finger), false, "die Vorbedingung stimmt nicht");
+  view._snapOff = true;
+  assert.equal(view._noSnap(finger), true, "der Knopf schaltet das Raster nicht ab");
+});
+
+test("die Umschalttaste bleibt, sie ist nur nicht mehr der einzige Weg", () => {
+  // Wer eine Tastatur hat, will sie nicht gegen einen Knopf tauschen.
+  const view = panel(model(), { floor: null });
+  assert.equal(view._noSnap({ shiftKey: true }), true);
+  assert.equal(view._noSnap({ shiftKey: false }), false);
+});
+
+test("der Hinweis nennt keine Taste, die es auf diesem Geraet nicht gibt", () => {
+  // Hier stand "Shift haelt gedrueckt das Raster aus" -- schiefes Deutsch,
+  // und auf einem Tablet dazu eine Anleitung ins Leere.
+  const view = panel(model(), { floor: null });
+  view._edit = true;
+
+  view._touch = false;
+  const mitTaste = view._editHintHtml();
+  assert.match(mitTaste, /Shift/, "am Rechner darf die Taste genannt werden");
+  assert.match(mitTaste, /Raster/);
+
+  view._touch = true;
+  const mitFinger = view._editHintHtml();
+  assert.doesNotMatch(mitFinger, /Shift/,
+                      "der Hinweis nennt eine Taste, die es hier nicht gibt");
+  assert.match(mitFinger, /Raster/, "und sagt gar nicht mehr, wie es geht");
+});
+
 test("fuenf ruhige Geraete verlieren ihre Namen nicht mehr", () => {
   // Die alte Pauschale: mehr als fuenf auf einer Ebene, und alle Namen
   // verschwanden -- auch die, die weit auseinanderlagen.

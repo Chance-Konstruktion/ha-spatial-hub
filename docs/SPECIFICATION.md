@@ -718,8 +718,15 @@ Zwei Räume, deren Wände aufeinander liegen, haben **eine** Wand.
   der vordere malt seinen Boden über den Wandfuß.
 - Beim Ziehen **rastet** eine Wand auf die des Nachbarn ein. Ohne das landet
   eine Wand dort, wo die halbe Raumbreite gerade hinfällt — und „fast" ist der
-  ganze Unterschied zwischen zwei Räumen und einer gemeinsamen Wand. `Shift`
-  schaltet es ab, wie beim Raster.
+  ganze Unterschied zwischen zwei Räumen und einer gemeinsamen Wand.
+- Ein Editor MUSS einen Weg anbieten, Raster und Einrasten **ohne Tastatur**
+  abzuschalten. `Shift` ist der bequeme Weg für den, der eine hat — als
+  *einziger* Weg schließt er jedes Tablet aus, und damit genau die Geräte,
+  an denen der Anspruch „einfach genug für ein Kind" eingelöst werden soll.
+  Ein Zeigerereignis aus einem Finger meldet `shiftKey` immer als falsch.
+- Ein Hinweistext SOLL nur Wege nennen, die es auf **diesem** Gerät gibt.
+  Eine Anleitung, die auf eine fehlende Taste zeigt, ist schlimmer als
+  keine: Sie lässt den Leser glauben, er habe etwas falsch gemacht.
 - `unjoined` auf einem Bereich listet die Nachbarn, mit denen er **keine**
   Wand teilt. Von **beiden Seiten** gelesen: eine Trennung darf nicht
   zurückkommen, sobald der Nachbar bearbeitet wird.
