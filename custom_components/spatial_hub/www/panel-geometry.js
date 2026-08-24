@@ -953,6 +953,15 @@ const dimensionStops = (areas, gap = JOIN_GAP) => {
  */
 const ROOM_LABEL = Object.freeze({ size: 16, min: 10, pad: 6 });
 
+/** Wie gross ein Geraetesymbol im Bild ist.
+ *
+ *  Der Kreis hat `r = 14` und eine Kontur von 2, macht 30 im Durchmesser.
+ *  Steht hier, weil das Entzerren die Zahl braucht, bevor irgendetwas im
+ *  Dokument haengt -- dieselbe Begruendung wie bei den Schriftgroessen,
+ *  und dieselbe Pflicht: Wer sie im Stylesheet aendert, aendert sie hier.
+ */
+const PIN = Object.freeze({ size: 30 });
+
 const LABEL = Object.freeze({
   // Breite je Zeichen als Anteil der Schriftgroesse. 0.55 ist der grobe
   // Mittelwert einer Grotesk -- "iii" ist schmaler, "WWW" breiter, und
@@ -1031,8 +1040,14 @@ const roomLabelSize = (corners, text, scale, at) => {
 
 const labelBox = (label, shift = 0) => {
   const size = (label.size || 16) * (label.scale || 1);
-  const width = String(label.text || "").length * size * LABEL.perChar;
-  const height = size * LABEL.height;
+  // `width`/`height` direkt angeben kann, was gar kein Text ist: Ein
+  // Geraetesymbol belegt Platz im Bild wie eine Beschriftung, nur laesst
+  // es sich nicht verschieben. Ohne diesen Weg kannte das Entzerren nur
+  // Text und liess Namen genau dort landen, wo ein Symbol steht.
+  const width = label.width != null
+    ? label.width
+    : String(label.text || "").length * size * LABEL.perChar;
+  const height = label.height != null ? label.height : size * LABEL.height;
   const y = label.y + shift;
   const x0 = label.anchor === "end"
     ? label.x - width
@@ -1189,6 +1204,7 @@ export {
   panRange,
   touchSpan,
   LABEL,
+  PIN,
   ROOM_LABEL,
   spanAt,
   roomLabelSize,

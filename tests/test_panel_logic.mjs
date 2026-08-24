@@ -2633,6 +2633,66 @@ test("die Hausansicht setzt keine zwei Namen aufeinander", () => {
   }
 });
 
+test("kein sichtbarer Name liegt auf einem fremden Geraetesymbol", () => {
+  // Das Entzerren kannte nur Text. Ein Punkt sagt aber, wo etwas *ist*
+  // -- er belegt Platz im Bild und laesst sich nicht verschieben. Am
+  // Demohaus lagen deshalb sechs Beschriftungen unter einem fremden
+  // Symbol, "Dielenlicht" auf 31x22 Bildpunkten.
+  //
+  // Sechzehn Geraete in einem Raum: dicht genug, dass Ausweichen allein
+  // nicht reicht. Was dann keinen Platz findet, wird weggeblendet -- das
+  // ist die Regel von nebenan, und sie sagt die Wahrheit: Der Name war
+  // vorher auch nicht zu lesen, er hat es nur nicht zugegeben.
+  const dicht = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+    areas: [{ id: "r", name: "Raum", floor_id: "eg",
+              position: at(0.5, 0.5), size: { width: 1, height: 1 } }],
+    nodes: Array.from({ length: 16 }, (unused, i) =>
+      node(`p:${i}`, {
+        area_id: "r", floor_id: "eg", label: `Geraet ${i}`,
+        position: at(0.2 + 0.6 * ((i % 4) / 3),
+                     0.2 + 0.6 * (Math.floor(i / 4) / 3)),
+      })),
+  });
+  const html = panel(dicht, { floor: null })._stackHtml();
+
+  // Punkt, Beschriftung und Sichtbarkeit aus dem gezeichneten SVG.
+  const nodes = [...html.matchAll(
+    /<g class="stack-node([^"]*)"[\s\S]*?data-at-x="([\d.eE+-]+)"\s+data-at-y="([\d.eE+-]+)"\s+transform="translate\([^)]*\) scale\(([\d.]+)\)">\s*<circle[\s\S]*?<text class="stack-label" y="([\d.-]+)">([^<]*)</g,
+  )].map((m) => ({
+    hidden: /crowded/.test(m[1]),
+    x: +m[2], y: +m[3], scale: +m[4],
+    label: geometry.labelBox({
+      x: +m[2], y: +m[3] + Number(m[5]) * (+m[4]),
+      text: m[6], size: 18, scale: +m[4],
+    }),
+  }));
+  assert.equal(nodes.length, 16, "das SVG wurde nicht richtig gelesen");
+
+  const auf = [];
+  nodes.forEach((one, i) => {
+    if (one.hidden) return;               // weggeblendet ist nicht sichtbar
+    nodes.forEach((other, j) => {
+      if (i === j) return;                // das eigene Symbol haengt daran
+      const r = geometry.PIN.size * other.scale / 2;
+      const box = one.label;
+      if (box.x0 < other.x + r && other.x - r < box.x1 &&
+          box.y0 < other.y + r && other.y - r < box.y1) {
+        auf.push(`${i} auf dem Symbol von ${j}`);
+      }
+    });
+  });
+  assert.deepEqual(auf, [], `Namen auf fremden Symbolen: ${auf.join(", ")}`);
+});
+
+test("ein Kasten darf auch etwas sein, das kein Text ist", () => {
+  // Ohne diesen Weg konnte das Entzerren nur Beschriftungen kennen, und
+  // ein Geraetesymbol war fuer es nicht vorhanden.
+  const box = geometry.labelBox(
+    { x: 100, y: 100, width: 30, height: 30 });
+  assert.deepEqual(box, { x0: 85, x1: 115, y0: 85, y1: 115 });
+});
+
 test("fuenf ruhige Geraete verlieren ihre Namen nicht mehr", () => {
   // Die alte Pauschale: mehr als fuenf auf einer Ebene, und alle Namen
   // verschwanden -- auch die, die weit auseinanderlagen.
