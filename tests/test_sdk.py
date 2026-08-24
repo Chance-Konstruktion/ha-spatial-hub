@@ -243,8 +243,8 @@ def test_the_examples_folder_says_which_one_to_read_first():
 
     Both providers were named in the README, in the SDK README and in the
     text we ask maintainers to file -- and none of that helps the person
-    who clicks `examples/` on GitHub and sees two folders with no hint
-    which is the way in. This is the signpost at the place they land, and
+    who clicks `examples/` in the repository and sees two folders with no
+    hint which is the way in. This is the signpost where they land, and
     the test is what keeps it from going out of date when a third example
     turns up.
     """

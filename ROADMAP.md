@@ -167,7 +167,7 @@ Vorher zu klären, weil es die Einstiegshürde senkt:
       gehört nach nebenan.
 - [x] Ist das Beispiel das Erste, was ein Maintainer findet? Es war in der
       README, in `sdk/README.md` und in `ASK_FOR_SUPPORT` genannt — und
-      nichts davon hilft dem, der auf GitHub auf `examples/` klickt und
+      nichts davon hilft dem, der im Repository auf `examples/` klickt und
       zwei Ordner ohne Hinweis vorfindet. Jetzt steht dort ein
       `examples/README.md`, das mit dem kürzeren anfängt und in einer
       Tabelle sagt, was das längere mehr kann. Ein Test prüft, dass jeder
