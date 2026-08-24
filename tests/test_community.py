@@ -19,11 +19,28 @@ SOURCE = ROOT / "custom_components" / "spatial_hub"
 DIRECTORY = ROOT / "docs" / "PROVIDERS.md"
 TEMPLATES = ROOT / ".github" / "ISSUE_TEMPLATE"
 
-MARKDOWN = sorted(
-    path
-    for path in ROOT.rglob("*.md")
-    if not any(part.startswith(".") or part == "node_modules" for part in path.parts)
-)
+def _ours(path: Path) -> bool:
+    """Ist das eine Datei *dieses* Projekts -- und nicht Beiwerk?
+
+    Geprueft wird der Pfad **ab der Projektwurzel**. Hier stand einmal
+    ``path.parts``, also der absolute Pfad, und damit hing das Ergebnis
+    daran, wo jemand das Repository ausgecheckt hat: Liegt es unter einem
+    Ordner, dessen Name mit einem Punkt anfaengt, warf die Regel **jede**
+    Datei weg -- alle fuenfzehn. Der Test darunter bekam eine leere Liste,
+    meldete sich als Auslassung ("got empty parameter set") und prueft
+    seither nichts. In der CI lief er, weil ``/builds/...`` keinen
+    Punkt-Teil hat.
+
+    Ein Test, dessen Ergebnis vom Ablageort abhaengt, ist schlimmer als
+    keiner: Er ist gruen, wo niemand hinsieht.
+    """
+    return not any(
+        part.startswith(".") or part == "node_modules"
+        for part in path.relative_to(ROOT).parts
+    )
+
+
+MARKDOWN = sorted(path for path in ROOT.rglob("*.md") if _ours(path))
 
 
 def _code_only(path: Path) -> str:
@@ -98,6 +115,32 @@ def test_the_directory_stays_documentation():
 # ── Docs that still point somewhere ───────────────────────
 
 
+def test_the_link_check_actually_has_documents_to_check():
+    """Die Wache fuer die Wache.
+
+    ``MARKDOWN`` speist einen parametrisierten Test. Ist die Liste leer,
+    laeuft der nicht -- er meldet sich als Auslassung, und ein gruener
+    Lauf mit einer Auslassung darin sieht aus wie ein gruener Lauf. Genau
+    das ist passiert: Ein Filter sah den absoluten Pfad an, das
+    Repository lag unter einem Ordner mit Punkt im Namen, und alle
+    fuenfzehn Dokumente fielen heraus.
+
+    ``empty_parameter_set_mark = fail_at_collect`` in der ``pytest.ini``
+    faengt den Fall inzwischen allgemein ab. Dieser Test hier sagt
+    zusaetzlich, *was* mindestens dabei sein muss -- eine Liste, die
+    stillschweigend auf drei Dateien zusammenschrumpft, waere ebenfalls
+    kaputt und nicht leer.
+    """
+    namen = {path.relative_to(ROOT).as_posix() for path in MARKDOWN}
+    for pflicht in ("README.md", "ROADMAP.md", "docs/SPECIFICATION.md",
+                    "CONTRIBUTING.md"):
+        assert pflicht in namen, (
+            f"{pflicht} wird nicht auf tote Links geprueft -- gefunden: "
+            f"{sorted(namen)}"
+        )
+    assert len(MARKDOWN) >= 10, f"nur {len(MARKDOWN)} Dokumente gefunden"
+
+
 @pytest.mark.parametrize("document", MARKDOWN, ids=lambda p: str(p.relative_to(ROOT)))
 def test_every_local_link_resolves(document):
     """A broken link in the onboarding path costs us the reader, silently."""
@@ -134,6 +177,11 @@ def test_both_translations_tell_the_same_story():
 # ── Issue templates ───────────────────────────────────────
 
 
+def _template_targets(template):
+    """Die Dateien, auf die eine Vorlage verweist."""
+    return re.findall(r"blob/main/(\S+?)(?=[)\s]|$)", template.read_text())
+
+
 @pytest.mark.parametrize(
     "template", sorted(TEMPLATES.glob("*.yml")), ids=lambda p: p.name
 )
@@ -159,5 +207,23 @@ def test_the_first_thing_an_issue_offers_is_not_filing_an_issue():
     "template", sorted(TEMPLATES.glob("*.yml")), ids=lambda p: p.name
 )
 def test_the_templates_link_to_files_that_exist(template):
-    for target in re.findall(r"blob/main/(\S+?)(?=[)\s]|$)", template.read_text()):
+    for target in _template_targets(template):
         assert (ROOT / target).exists(), f"{template.name} points at missing {target}"
+
+
+def test_the_templates_still_point_at_something():
+    """Eine Schleife ueber nichts behauptet nichts.
+
+    Die Pruefung darueber laeuft je Vorlage, und **eine einzelne Vorlage
+    darf** ohne Verweis auskommen -- eine Fehlermeldung braucht keinen
+    Link auf den Quelltext. Nachgemessen ist ``bug.yml`` genau so eine.
+    Deshalb steht die Mindestzahl hier, ueber alle Vorlagen zusammen: So
+    faellt auf, wenn die Verweise insgesamt verschwinden, ohne dass jede
+    einzelne Vorlage einen tragen muss.
+    """
+    ziele = [
+        ziel
+        for vorlage in sorted(TEMPLATES.glob("*.yml"))
+        for ziel in _template_targets(vorlage)
+    ]
+    assert ziele, "keine einzige Vorlage verweist noch auf eine Datei"
