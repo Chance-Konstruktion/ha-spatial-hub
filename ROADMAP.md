@@ -55,6 +55,24 @@ Conformance-Kit, Spezifikation, `ASK_FOR_SUPPORT` in zwei Sprachen — die
 ganze Maschinerie steht seit Phase 8 bereit, und **noch nie hat sie jemand
 Fremdes angefasst.**
 
+**Ein Grund dafür ist inzwischen bekannt, und er ist banal: Man konnte es
+nicht installieren.** Die einzige Anleitung in der README lautete „HACS →
+custom repository". HACS sagt in seiner eigenen Dokumentation *„Only
+public repositories on GitHub will work with HACS"*, und dieses Projekt
+liegt auf GitLab. Es gab also keinen funktionierenden Weg hinein, während
+daneben ein SDK auf Fremde wartete.
+
+Seit dem Umzug von GitHub stand das so da, ohne dass es jemandem
+aufgefallen wäre — auch mir nicht, bis ich HACS' Dokumentation
+nachgeschlagen statt aus dem Gedächtnis geantwortet habe. Jetzt steht der
+Weg da, der wirklich geht (Ordner kopieren, neu starten), und zwei Tests
+halten ihn fest.
+
+Offen bleibt die Entscheidung dahinter: **ob ein Spiegel entstehen soll,
+den HACS sehen kann.** Ohne einen ist das Projekt für die übliche
+Installationsroute unsichtbar. Das ist keine Zeile Code, sondern eine
+Frage, wie weit die Trennung von GitHub gehen soll.
+
 Zwei Zahlen, an denen das hängt:
 
 - Beide angebundenen Provider sind unsere eigenen. Powerline und
