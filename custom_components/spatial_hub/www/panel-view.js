@@ -616,9 +616,10 @@ Aus lässt sich alles frei setzen.">
         if (!this._inSandwich(area)) continue;
         const corners = cornersOf((x, y) => this._project(at, x, y), area);
         const point = labelPointOf(corners, crowded.has(area.id));
+        // Derselbe Versatz, den `_roomPolygon` beim Zeichnen setzt.
         labels.push({
-          x: point.x, y: point.y, text: area.name,
-          size, scale, fixed: true,
+          x: point.x + this._roomLabelSlide(at, area), y: point.y,
+          text: area.name, size, scale, fixed: true,
         });
       }
     });

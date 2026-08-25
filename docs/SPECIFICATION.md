@@ -391,9 +391,19 @@ obwohl der ganze Raum frei ist.
 Ein Renderer SOLL die Beschriftungen deshalb **entzerren**, bevor er sie
 zeichnet:
 
-- Raumnamen, Etagennamen und Maße stehen **fest**. Einen Raumnamen zu
-  verschieben hieße, ihn über die Wand des Nachbarn zu schieben — also in
-  einen Raum, der anders heißt.
+- Raumnamen, Etagennamen und Maße stehen **fest** — jedenfalls nach oben
+  und unten. Einen Raumnamen dorthin zu verschieben hieße, ihn über die
+  Wand des Nachbarn zu schieben, also in einen Raum, der anders heißt.
+- **Zur Seite darf ein Raumname**, solange er in seiner **eigenen Kontur**
+  bleibt. Das ist die Richtung, in der Platz ist: Steht ein Gerätepunkt in
+  der Mitte einer flachen Fläche — einer Terrasse etwa, gut dreißig
+  Einheiten hoch bei einem Punkt von dreißig —, ist senkrecht nichts zu
+  holen, während daneben Hunderte frei liegen.
+- Ausgewichen wird **in die Mitte der Lücke**, nicht knapp am Punkt vorbei.
+  Ein Name, der an einem Symbol klebt, sieht aus wie ausgewichen; einer,
+  der in seiner Lücke steht, sieht aus wie gesetzt.
+- Findet sich keine Lücke, **bleibt der Name, wo er ist**. Ein Raum ohne
+  Namen ist schlimmer als einer, dessen Name einen Punkt streift.
 - Ein Raumname, der **breiter ist als sein Raum**, wird deshalb nicht
   verschoben und nicht weggeblendet, sondern **kleiner gesetzt**. Ein Raum
   ohne Namen wäre schlimmer als ein kleiner Name — der Riss ist ja dafür
@@ -758,6 +768,13 @@ Erdgeschoss.
 - In der Hausansicht teilen sich alle Geschosse **ein** Fenster, und zwar das
   der **weitesten** Etage. Die erste zu nehmen, die etwas Draußen hat, schnitte
   ein gezeichnetes Grundstück im Erdgeschoss ab, sobald oben ein Balkon hängt.
+- Daraus folgt die Zusage, an der die ganze Ansicht hängt: Die **Außenwände
+  jedes Geschosses landen auf derselben Senkrechten** — vorne links wie
+  hinten rechts, unabhängig davon, ob eine Etage einen Garten hat und die
+  darüber nicht. Ein Erdgeschoss mit Garten durch ein eigenes, weiteres
+  Fenster zu zeichnen macht es schmaler als das Geschoss darüber, und das
+  Haus sieht aus wie eine Hochzeitstorte. Ein Renderer, der pro Etage
+  rechnet, verletzt genau diese Zusage.
 - Das Fenster wächst außerdem mit, sobald ein Außenbereich über den
   Standardrand von 0,28 hinausgezogen wird — nicht nur beim gezeichneten
   Grundstück. Sonst ist bei einem großen Garten irgendwann Schluss, ohne dass

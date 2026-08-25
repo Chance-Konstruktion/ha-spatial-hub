@@ -357,6 +357,19 @@ geschieht, nicht ob es das Richtige ist. Dieselbe Lehre wie bei den
 Screenshots in [`tools/README.md`](tools/README.md), nur diesmal
 dreimal hintereinander.
 
+**Nachtrag: der Name, der nicht ausweichen konnte.** „Terrasse" lag unter
+einem Gerätepunkt, und beide standen bei derselben x-Koordinate — die
+Automatik setzt Name und erstes Gerät in die Mitte der Fläche. Das Band
+ist rund 35 Einheiten tief, der Punkt 30: senkrecht war nichts zu holen.
+Seitwärts lagen im selben Band über 600 Einheiten frei.
+
+Ein Raumname weicht jetzt **zur Seite** aus, solange er in seiner eigenen
+Kontur bleibt — und zwar **in die Mitte der Lücke**, nicht knapp am Punkt
+vorbei: 128 statt 54 Einheiten Abstand. Ein Name, der an einem Symbol
+klebt, sieht aus wie ausgewichen; einer, der in seiner Lücke steht, sieht
+aus wie gesetzt. Wo keine Lücke ist, bleibt er stehen; ein Raum ohne Namen
+wäre schlimmer.
+
 Danach kommt die Frage, die bewusst offen liegt: **wo der Zustand
 hingehört.** Die Referenz kennt kein „Licht an" — sie ist eine
 Architekturzeichnung, und das ist ihre Stärke. Der Panel muss es trotzdem

@@ -20,6 +20,10 @@ import {
   STACK,
   centreOf,
   roomLabelSize,
+  labelBox,
+  spanRangeAt,
+  slideClear,
+  PIN,
   ROOM_LABEL,
   insetOf,
   along,
@@ -1195,6 +1199,7 @@ class SpatialHubPanel extends HTMLElement {
         counterScale: this._counterScale,
         crowded: this._crowdedAreas.has(area.id),
         labelSize: this._roomLabelSizeOn(plane),
+        slide: this._roomLabelSlide(plane, area),
       },
       area,
       keep,
@@ -1243,6 +1248,52 @@ class SpatialHubPanel extends HTMLElement {
       );
     }
     return smallest;
+  }
+
+  /** Die Geraetepunkte einer Ebene als Kaesten im Bild.
+   *
+   *  Ein Punkt sagt, wo etwas *ist* -- er laesst sich nicht verschieben,
+   *  um einer Beschriftung Platz zu machen. Also weicht die Beschriftung
+   *  ihm aus, und dafuer muss sie wissen, wo er liegt.
+   */
+  _pinBoxesOn(plane) {
+    const floors = this._stackFloors;
+    const last = Math.max(0, floors.length - 1);
+    const index = new Map(floors.map((floor, at) => [floor.id, at]));
+    const scale = this._counterScale;
+    const half = PIN.size * scale / 2;
+    const boxes = [];
+    for (const node of this._visibleNodes) {
+      const at = index.has(node.floor_id) ? index.get(node.floor_id) : last;
+      if (at !== plane) continue;
+      const spot = this._project(at, node.position.x, node.position.y);
+      boxes.push({
+        x0: spot.x - half, x1: spot.x + half,
+        y0: spot.y - half, y1: spot.y + half,
+      });
+    }
+    return boxes;
+  }
+
+  /** Wie weit der Name dieses Raumes zur Seite ausweicht.
+   *
+   *  Dieselbe Auskunft fuer das Zeichnen und fuer das Entzerren -- zwei
+   *  Rechnungen waeren zwei Stellen, an denen der Name woanders steht,
+   *  als das Entzerren ihn vermutet.
+   */
+  _roomLabelSlide(plane, area) {
+    if (!area || !area.position) return 0;
+    const scale = this._counterScale;
+    const corners = cornersOf((x, y) => this._project(plane, x, y), area);
+    const point = labelPointOf(corners, this._crowdedAreas.has(area.id));
+    const size = this._roomLabelSizeOn(plane);
+    const box = labelBox({
+      x: point.x, y: point.y, text: area.name, size, scale,
+    });
+    const range = spanRangeAt(corners, point.y);
+    if (!range) return 0;
+    const moved = slideClear(box, this._pinBoxesOn(plane), range);
+    return moved === null ? 0 : moved;
   }
 
   get _crowdedAreas() {
