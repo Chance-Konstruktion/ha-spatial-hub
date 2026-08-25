@@ -2,7 +2,6 @@
 
 [![Release](https://img.shields.io/badge/release-early--preview-orange)](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub/-/releases)
 [![Status](https://img.shields.io/badge/status-early--preview-orange)](https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub)
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > *"A floor plan that doesn't draw what you configured. It draws what your
@@ -374,9 +373,29 @@ simple renderer goes on drawing only `nodes`.
 
 ## Installation
 
-HACS → custom repository → add this repo as an *integration*, install,
-restart Home Assistant, then under *Devices & services* → *Add integration*
-→ **Spatial Hub**. There is nothing to configure.
+Copy the integration into your Home Assistant configuration:
+
+```bash
+git clone https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub.git
+cp -r ha-spatial-hub/custom_components/spatial_hub /config/custom_components/
+```
+
+Then restart Home Assistant and go to *Devices & services* → *Add
+integration* → **Spatial Hub**. There is nothing to configure.
+
+To update, copy the folder again and restart.
+
+### Why not HACS
+
+HACS is the usual way, and it cannot install this. Its documentation is
+explicit: *"Only public repositories on GitHub will work with HACS."* This
+project lives on GitLab, so HACS has no way to reach it — no custom
+repository, no URL, no zip.
+
+The `hacs.json` in this repository is still correct and the CI still checks
+it. It costs nothing and it is ready for the day there is a mirror
+somewhere HACS can see. Until then the two lines above are the whole
+installation, and they work today.
 
 ## Tests
 

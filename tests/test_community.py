@@ -238,3 +238,58 @@ def test_the_templates_still_point_at_something():
         for ziel in _template_targets(vorlage)
     ]
     assert ziele, "keine einzige Vorlage verweist noch auf eine Datei"
+
+
+# ── Der Weg hinein ────────────────────────────────────────
+
+
+def _installation() -> str:
+    """Der Abschnitt der README, der sagt, wie man das Ding installiert."""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    anfang = text.index("\n## Installation")
+    ende = text.index("\n## ", anfang + 5)
+    return text[anfang:ende]
+
+
+def test_the_readme_names_a_way_that_actually_works():
+    """Die einzige Anleitung war monatelang eine, die nicht funktioniert.
+
+    Sie lautete „HACS → custom repository → add this repo". HACS sagt in
+    seiner eigenen Dokumentation: *"Only public repositories on GitHub
+    will work with HACS."* Dieses Projekt liegt auf GitLab -- es gab also
+    **keinen** funktionierenden Weg, die Integration zu installieren, und
+    die README behauptete einen.
+
+    Was hier geprüft wird, ist deshalb nicht die Formulierung, sondern
+    dass der Weg ohne HACS überhaupt dasteht: das Verzeichnis, das kopiert
+    werden muss, und der Ort, an den es gehört.
+    """
+    abschnitt = _installation()
+
+    assert "custom_components/spatial_hub" in abschnitt, (
+        "die README sagt nicht, welches Verzeichnis kopiert werden muss"
+    )
+    assert "custom_components/" in abschnitt.replace(
+        "custom_components/spatial_hub", ""
+    ), "die README sagt nicht, wohin es gehört"
+    assert "restart" in abschnitt.lower() or "neu start" in abschnitt.lower(), (
+        "ohne Neustart lädt Home Assistant eine neue Integration nicht"
+    )
+
+
+def test_hacs_is_not_offered_as_the_way_in():
+    """Ein Weg, den es nicht gibt, ist schlimmer als kein Weg genannt.
+
+    HACS darf erwähnt werden -- es *soll* sogar erklärt werden, warum es
+    nicht geht. Was es nicht darf, ist als Anleitung dastehen.
+    """
+    abschnitt = _installation()
+    anleitung = abschnitt.split("### Why not HACS")[0]
+
+    assert "HACS" not in anleitung, (
+        "HACS steht in der Installationsanleitung -- es kann dieses "
+        "Repository nicht installieren, siehe den Abschnitt darunter"
+    )
+    assert "Why not HACS" in abschnitt, (
+        "die Frage kommt garantiert, also gehört die Antwort dorthin"
+    )
