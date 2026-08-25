@@ -288,7 +288,12 @@ def test_every_named_check_actually_exists():
 # Wie viele Zusagen heute unbewacht sind. Diese Zahl darf **fallen**, nie
 # steigen: Eine neue Regel ohne Prüfung ist eine Entscheidung und kein
 # Versehen, und sie soll auffallen, während jemand hinsieht.
-OFFENE_ZUSAGEN = 6
+#
+# Sie stand bei ihrer Einführung auf 6. Alle sechs waren gebaut und nur
+# unbewacht -- das ist der Normalfall und der Grund, warum die Tabelle
+# überhaupt etwas taugt: Sie hat nicht sechs Fehler gefunden, sondern
+# sechs Stellen, an denen ein Fehler unbemerkt entstehen konnte.
+OFFENE_ZUSAGEN = 0
 
 
 def test_the_number_of_unchecked_promises_does_not_grow():

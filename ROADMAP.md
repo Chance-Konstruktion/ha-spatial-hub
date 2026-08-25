@@ -72,8 +72,15 @@ Jede normative Stelle braucht einen Eintrag, jeder genannte Test muss
 existieren, und die Zahl der ungeprüften darf nicht wachsen.
 
 Der Stand am Tag der Einführung: **6 von 49 ungeprüft**, dazu 6 bewusst
-als Prosa geführt. Das ist besser, als ich erwartet hatte — und die
-sechs offenen sind jetzt eine Liste statt eines Gefühls.
+als Prosa geführt. Weil sie eine Liste waren statt eines Gefühls, waren
+sie am selben Tag erledigt: **0 von 49 ungeprüft.**
+
+Alle sechs waren gebaut und nur unbewacht — Geräte im Raum-Modus,
+Grundstück unter allem, Popup mittig, MDI-Namen als Icon-Schlüssel, die
+vier Gesten in jeder Ansicht, Erdreich schraffiert. Das ist der Normalfall
+und genau der Grund, warum die Tabelle etwas taugt: Sie hat nicht sechs
+Fehler gefunden, sondern sechs Stellen, an denen ein Fehler unbemerkt
+hätte entstehen können.
 
 Beim Anlegen der Tabelle hat der Riegel sofort zugeschlagen: Fünf
 Testnamen, die ich aus dem Gedächtnis eingetragen hatte, gab es nicht.
