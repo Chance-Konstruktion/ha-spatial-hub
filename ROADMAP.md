@@ -63,6 +63,23 @@ Zwei Zahlen, an denen das hängt:
   ~3.700 auf fünfzehn Module. Immerhin liegt er nicht mehr in *einer*
   Datei — Stylesheet und Geometrie sind heraus, die Klasse bleibt.
 
+**Eine dritte Zahl ist dazugekommen, und sie ist unangenehmer.** Die
+Spezifikation beruft sich auf RFC 2119 und stellt damit **49 Zusagen**
+auf. Bis hierher konnte niemand — auch wir nicht — sagen, welche davon
+geprüft werden und welche bloß Prosa sind. Jetzt steht das in
+[`docs/PRUEFUNGEN.md`](docs/PRUEFUNGEN.md), und ein Test erzwingt es:
+Jede normative Stelle braucht einen Eintrag, jeder genannte Test muss
+existieren, und die Zahl der ungeprüften darf nicht wachsen.
+
+Der Stand am Tag der Einführung: **6 von 49 ungeprüft**, dazu 6 bewusst
+als Prosa geführt. Das ist besser, als ich erwartet hatte — und die
+sechs offenen sind jetzt eine Liste statt eines Gefühls.
+
+Beim Anlegen der Tabelle hat der Riegel sofort zugeschlagen: Fünf
+Testnamen, die ich aus dem Gedächtnis eingetragen hatte, gab es nicht.
+Eine Zeile, die auf einen erfundenen Test zeigt, ist schlimmer als
+`offen` — sie sagt, hier sei alles in Ordnung.
+
 Zwei eigene Provider sind eine Integration. Fünf fremde sind eine
 Plattform. Solange nur wir selbst die API benutzen, ist sie womöglich
 unbemerkt auf unsere Denkweise zugeschnitten — **der erste fremde
