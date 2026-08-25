@@ -992,7 +992,7 @@ const LABEL = Object.freeze({
  *  gegen das Rechteck geprueft wurde, steht dann trotzdem im Freien.
  *  Geschnitten wird die Kontur mit der Waagerechten durch den Namen.
  */
-const spanAt = (corners, y) => {
+const spanRangeAt = (corners, y) => {
   let lo = Infinity;
   let hi = -Infinity;
   for (let index = 0; index < corners.length; index += 1) {
@@ -1005,7 +1005,82 @@ const spanAt = (corners, y) => {
       hi = Math.max(hi, x);
     }
   }
-  return hi > lo ? hi - lo : 0;
+  return hi > lo ? { lo, hi } : null;
+};
+
+const spanAt = (corners, y) => {
+  const range = spanRangeAt(corners, y);
+  return range ? range.hi - range.lo : 0;
+};
+
+/** Wie weit ein Raumname **zur Seite** muss, um freizustehen.
+ *
+ *  Ein Raumname weicht nicht nach oben oder unten aus: Er gehoert in
+ *  seinen Raum, und ueber die Wand geschoben stuende er im Raum des
+ *  Nachbarn. Zur Seite ist er aber beweglich, solange er in seiner
+ *  eigenen Kontur bleibt -- und das ist genau die Richtung, in der Platz
+ *  ist.
+ *
+ *  Der Fall, aus dem das entstanden ist: Auf der Terrasse standen Name
+ *  und Geraetepunkt bei **derselben** x-Koordinate, weil die Automatik
+ *  beide in die Mitte der Flaeche setzt. Das Band ist rund 35 Einheiten
+ *  tief, der Punkt 30 -- nach oben ging nichts. Seitwaerts lagen im
+ *  selben Band 620 Einheiten frei.
+ *
+ *  Gibt den kleinsten Versatz zurueck, der alle Hindernisse freistellt,
+ *  oder `null`, wenn es keinen gibt. Dann bleibt der Name, wo er ist:
+ *  Ein Raum ohne Namen ist schlimmer als einer, dessen Name einen Punkt
+ *  streift.
+ */
+const slideClear = (box, blockers, range, gap = 4) => {
+  const width = box.x1 - box.x0;
+  const middle = (box.x0 + box.x1) / 2;
+
+  // Alles in Mittelpunkten des Namens gerechnet: Wo darf seine Mitte
+  // liegen? Das macht aus zwei Kaesten eine Zahlenreihe, und aus dem
+  // Ausweichen ein Aufteilen.
+  const low = range.lo + width / 2 + ROOM_LABEL.pad;
+  const high = range.hi - width / 2 - ROOM_LABEL.pad;
+  if (high < low) return null;          // der Name passt ohnehin nicht hinein
+
+  const inTheWay = blockers.filter(
+    (other) => box.y0 < other.y1 && other.y0 < box.y1,
+  );
+  if (!inTheWay.some((other) => boxesOverlap(box, other))) return 0;
+
+  // Verbotene Mittelpunkte, zusammengelegt: zwei Punkte nebeneinander
+  // sind eine Sperre und nicht zwei.
+  const sperren = inTheWay
+    .map((other) => [other.x0 - gap - width / 2, other.x1 + gap + width / 2])
+    .sort((one, two) => one[0] - two[0])
+    .reduce((zusammen, [von, bis]) => {
+      const letzte = zusammen[zusammen.length - 1];
+      if (letzte && von <= letzte[1]) letzte[1] = Math.max(letzte[1], bis);
+      else zusammen.push([von, bis]);
+      return zusammen;
+    }, []);
+
+  // Was dazwischen frei bleibt.
+  const frei = [];
+  let von = low;
+  for (const [sperreVon, sperreBis] of sperren) {
+    if (sperreVon > von) frei.push([von, Math.min(sperreVon, high)]);
+    von = Math.max(von, sperreBis);
+  }
+  if (von < high) frei.push([von, high]);
+
+  const brauchbar = frei.filter(([a, b]) => b - a >= 0);
+  if (!brauchbar.length) return null;
+
+  // **Mittig in den freien Platz**, nicht knapp am Punkt vorbei. Ein Name,
+  // der an einem Symbol klebt, sieht aus wie ausgewichen; einer, der in
+  // seiner Luecke steht, sieht aus wie gesetzt. Von mehreren Luecken die,
+  // deren Mitte dem urspruenglichen Platz am naechsten liegt.
+  const mitte = ([a, b]) => (a + b) / 2;
+  const ziel = brauchbar
+    .slice()
+    .sort((a, b) => Math.abs(mitte(a) - middle) - Math.abs(mitte(b) - middle))[0];
+  return mitte(ziel) - middle;
 };
 
 /** Welche Groesse ein Raumname **braucht**, damit er hineinpasst.
@@ -1207,6 +1282,8 @@ export {
   PIN,
   ROOM_LABEL,
   spanAt,
+  spanRangeAt,
+  slideClear,
   roomLabelSize,
   labelBox,
   declutter,

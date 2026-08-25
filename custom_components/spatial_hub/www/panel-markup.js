@@ -106,7 +106,7 @@ const labelPointOf = (corners, crowded = true) => {
 };
 
 const roomPolygon = (
-  { project, floor, counterScale, crowded = true, labelSize = null },
+  { project, floor, counterScale, crowded = true, labelSize = null, slide = 0 },
   area, keep = () => true,
 ) => {
   const width = (area.size && area.size.width) || 0.3;
@@ -210,9 +210,13 @@ const roomPolygon = (
     ? ` style="font-size:${size.toFixed(2)}px"`
     : "";
 
+  // Zur Seite, wenn in der Mitte ein Geraetepunkt steht. Nach oben oder
+  // unten geht ein Raumname nicht -- dort waere er im Raum des Nachbarn.
+  const at = { x: label.x + slide, y: label.y };
+
   return `${shape}
-    <g data-at-x="${label.x}" data-at-y="${label.y}"
-       transform="translate(${label.x},${label.y}) scale(${
+    <g data-at-x="${at.x}" data-at-y="${at.y}"
+       transform="translate(${at.x},${at.y}) scale(${
          counterScale
        })"><text class="room-label"${shrunk}>${escapeHtml(area.name)}</text></g>`;
 };

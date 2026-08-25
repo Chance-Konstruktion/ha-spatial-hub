@@ -3813,6 +3813,49 @@ test("the sheet only goes down: upwards there is nothing behind it", () => {
   assert.equal(sheet.style.transform, "translateY(0px)");
 });
 
+test("the outer walls of every storey land on the same line", () => {
+  // Die Zusage der Hausansicht: Das ist *ein* Gebaeude. Sie steht und
+  // faellt damit, dass die Aussenwaende uebereinander liegen -- ein
+  // Erdgeschoss mit Garten wuerde sonst schmaler gezeichnet als das
+  // Geschoss darueber, und das Haus saehe aus wie eine Hochzeitstorte.
+  //
+  // Der Fall, der es bricht, ist nicht das Demohaus (dort haben alle
+  // Etagen Aussenbereiche), sondern die **gemischte** Etagenliste.
+  const data = model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "", has_outdoor: true,
+        outdoor_margin: 0.28 },
+      { id: "og", name: "Obergeschoss", level: 1, icon: "" },
+      { id: "dg", name: "Dachgeschoss", level: 2, icon: "" },
+    ],
+    areas: [
+      { id: "wz", name: "Wohnzimmer", floor_id: "eg",
+        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
+      { id: "garten", name: "Garten", floor_id: "eg", kind: "outdoor",
+        outdoor: true, position: at(0.5, -0.14),
+        size: { width: 1.4, height: 0.22 } },
+      { id: "sz", name: "Schlafzimmer", floor_id: "og",
+        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
+      { id: "ab", name: "Abstellraum", floor_id: "dg",
+        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
+    ],
+  });
+  const view = panel(data, { floor: null });
+  assert.ok(view._stackFloors.length >= 3, "die Vorbedingung stimmt nicht");
+
+  // Alle vier Ecken des Hauses, ueber alle Etagen.
+  for (const [x, y, wo] of [[0, 1, "vorne links"], [1, 1, "vorne rechts"],
+                            [0, 0, "hinten links"], [1, 0, "hinten rechts"]]) {
+    const stellen = view._stackFloors.map(
+      (floor, plane) => view._project(plane, x, y).x,
+    );
+    const versatz = Math.max(...stellen) - Math.min(...stellen);
+    assert.ok(versatz < 0.001,
+              `${wo} steht um ${versatz.toFixed(1)} Einheiten versetzt: `
+              + `${stellen.map((n) => n.toFixed(1)).join(", ")}`);
+  }
+});
+
 test("the widest storey sets the window, not the first one with a garden", () => {
   // A balcony upstairs and a drawn plot downstairs: taking the first
   // storey that has anything outdoors crops the garden out of its own
@@ -4792,6 +4835,118 @@ test("decluttering is told the size every name is actually drawn at", () => {
               `${name}: gezeichnet mit ${drawnSize(view, name)}, `
               + `bekannt als ${label.size}`);
   }
+});
+
+/** Der Fall aus dem echten Bild: ein breites Band, ein Punkt in seiner
+ *  Mitte -- und der Name steht dort auch, weil die Automatik beide
+ *  dorthin setzt. */
+const terraceLike = () =>
+  model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "",
+               has_outdoor: true, outdoor_margin: 0.28 }],
+    areas: [
+      { id: "wz", name: "Wohnzimmer", floor_id: "eg",
+        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
+      { id: "t", name: "Terrasse", floor_id: "eg", kind: "outdoor",
+        outdoor: true, position: at(0.5, -0.14),
+        size: { width: 1.4, height: 0.22 } },
+    ],
+    nodes: [node("a:licht", { area_id: "t", floor_id: "eg",
+                              label: "Licht", position: at(0.5, -0.14) })],
+  });
+
+const roomLabelAt = (view, name) => {
+  const svg = view._stackHtml();
+  // Kein Template-Literal fuer den Ausdruck: dort waere `\d` nur ein `d`.
+  const hit = new RegExp(
+    '<g data-at-x="([0-9.-]+)" data-at-y="([0-9.-]+)"[^]{0,160}?'
+    + '<text class="room-label"[^>]*>' + name + '<',
+  ).exec(svg);
+  assert.ok(hit, `${name} steht gar nicht in der Zeichnung`);
+  return { x: Number(hit[1]), y: Number(hit[2]) };
+};
+
+const pinsOf = (view) => {
+  const svg = view._stackHtml();
+  return [...svg.matchAll(
+    /data-at-x="([\d.-]+)"\s+data-at-y="([\d.-]+)"\s+transform="translate\([^)]*\) scale\(([\d.]+)\)">\s*<circle/g,
+  )].map((m) => ({ x: +m[1], y: +m[2], r: geometry.PIN.size * (+m[3]) / 2 }));
+};
+
+test("a room name steps aside for a pin instead of standing on it", () => {
+  // Nach oben geht ein Raumname nicht -- dort waere er im Raum des
+  // Nachbarn. Das Band der Terrasse ist rund 35 Einheiten tief, der Punkt
+  // 30: senkrecht ist da nichts zu holen. Seitwaerts liegen im selben
+  // Band ueber 600 Einheiten frei.
+  const view = panel(terraceLike(), { floor: null });
+  const name = roomLabelAt(view, "Terrasse");
+  const pin = pinsOf(view)[0];
+  assert.ok(pin, "die Vorbedingung stimmt nicht: kein Punkt gezeichnet");
+
+  assert.ok(Math.abs(name.x - pin.x) > pin.r,
+            `der Name steht auf dem Punkt (${name.x} gegen ${pin.x})`);
+});
+
+test("and it lands in the middle of the free space, not glued to the pin", () => {
+  // Ein Name, der an einem Symbol klebt, sieht aus wie ausgewichen; einer,
+  // der in seiner Luecke steht, sieht aus wie gesetzt. Geprueft wird
+  // deshalb nicht "weit genug weg", sondern **mittig** -- eine Schwelle
+  // waere geraten, die Mitte ist die Aussage.
+  const view = panel(terraceLike(), { floor: null });
+  const name = roomLabelAt(view, "Terrasse");
+  const pin = pinsOf(view)[0];
+  const scale = view._counterScale;
+
+  // Das Band der Terrasse reicht von -0,2 bis 1,2 in Etagenkoordinaten.
+  const kante = {
+    links: view._project(0, -0.2, -0.14).x,
+    rechts: view._project(0, 1.2, -0.14).x,
+  };
+  const breite = "Terrasse".length * geometry.ROOM_LABEL.size * scale
+    * geometry.LABEL.perChar;
+  const luft = geometry.ROOM_LABEL.pad + breite / 2;
+
+  // Die freie Strecke, in der die Mitte des Namens liegen darf -- links
+  // und rechts des Punktes.
+  const luecken = [
+    [kante.links + luft, pin.x - pin.r - 4 - breite / 2],
+    [pin.x + pin.r + 4 + breite / 2, kante.rechts - luft],
+  ].filter(([von, bis]) => bis > von);
+  assert.ok(luecken.length, "die Vorbedingung stimmt nicht: keine Luecke");
+
+  const mitten = luecken.map(([von, bis]) => (von + bis) / 2);
+  const naechste = mitten
+    .slice()
+    .sort((a, b) => Math.abs(a - name.x) - Math.abs(b - name.x))[0];
+  assert.ok(Math.abs(name.x - naechste) < 2,
+            `der Name steht bei ${name.x.toFixed(1)}, die Mitte seiner `
+            + `Luecke liegt bei ${naechste.toFixed(1)} -- er klebt am Punkt`);
+});
+
+test("the drawn name and the one decluttering knows about slide together", () => {
+  // Zwei Rechnungen fuer denselben Versatz waeren zwei Stellen, an denen
+  // er auseinanderlaeuft.
+  const view = panel(terraceLike(), { floor: null });
+  const drawn = roomLabelAt(view, "Terrasse");
+  const known = view._stackRoomLabels(view._stackFloors, view._counterScale)
+    .find((label) => label.text === "Terrasse");
+  assert.ok(known, "das Entzerren kennt den Namen gar nicht");
+  assert.ok(Math.abs(known.x - drawn.x) < 0.5,
+            `gezeichnet bei ${drawn.x}, bekannt als ${known.x}`);
+});
+
+test("a name that cannot get out of the way keeps its place", () => {
+  // Ein Raum ohne Namen ist schlimmer als einer, dessen Name einen Punkt
+  // streift. Wo kein Platz ist, wird nichts weggeblendet.
+  const eng = model({
+    areas: [{ id: "r", name: "Hauswirtschaftsraum", floor_id: "eg",
+              position: at(0.5, 0.5), size: { width: 0.2, height: 0.2 } }],
+    nodes: [node("a:x", { area_id: "r", floor_id: "eg", label: "X",
+                          position: at(0.5, 0.5) })],
+  });
+  const view = panel(eng, { floor: null });
+  const svg = view._stackHtml();
+  assert.match(svg, /Hauswirtschaftsraum/, "der Name ist verschwunden");
 });
 
 test("a flat gets its drawing, not a column with one word in it", () => {
