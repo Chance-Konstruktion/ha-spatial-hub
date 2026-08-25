@@ -26,7 +26,9 @@ ist der Grund für fast jede Entscheidung weiter unten.
 
 ### Schlüsselwörter
 
-**MUSS**, **SOLLTE**, **DARF** im Sinne von RFC 2119.
+**MUSS**, **SOLLTE**, **DARF** im Sinne von RFC 2119. Wer jede dieser
+Zusagen prüft, steht in [PRUEFUNGEN.md](PRUEFUNGEN.md) — eine Zusage,
+die niemand prüft, ist Erzählung mit Großbuchstaben.
 
 ## Transport
 

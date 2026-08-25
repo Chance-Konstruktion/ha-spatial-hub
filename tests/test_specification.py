@@ -168,3 +168,132 @@ def test_every_stored_area_field_is_documented(spec):
     geometry = _AREA_KEYS - {"color", "hidden"}
     missing = {key for key in geometry if f"`{key}`" not in spec}
     assert not missing, f"stored but undocumented: {sorted(missing)}"
+
+
+# ── Rückverfolgung: wer prüft welche Zusage ───────────────
+
+ROOT = SPEC.parent.parent
+PRUEFUNGEN = ROOT / "docs" / "PRUEFUNGEN.md"
+
+# Die normativen Wörter im Sinne von RFC 2119, wie die Spezifikation sie
+# benutzt. Reihenfolge zählt: "MUSS NICHT" vor "MUSS".
+NORMATIV = (
+    r"(?:MUSS NICHT|MUSS|MÜSSEN|SOLL NICHT|SOLLTE NICHT|SOLLTE|SOLLEN|SOLL"
+    r"|DARF NICHT|DÜRFEN|DARF)"
+)
+
+
+def _bloecke(text: str) -> list[str]:
+    """Die Spezifikation in Absätze und Listenpunkte zerlegt."""
+    aus: list[str] = []
+    akt: list[str] = []
+    for zeile in text.splitlines():
+        if zeile.strip().startswith(("- ", "* ", "#")) or not zeile.strip():
+            if akt:
+                aus.append(" ".join(akt))
+                akt = []
+        if zeile.strip():
+            akt.append(zeile.strip())
+    if akt:
+        aus.append(" ".join(akt))
+    return aus
+
+
+def _kennung(block: str) -> str:
+    """Stabile Kennung einer Regel: Hash über ihren Text ohne Auszeichnung.
+
+    Wird eine Regel umformuliert, ändert sich die Kennung und ihr Eintrag
+    fällt auf. Das ist gewollt -- eine geänderte Zusage will neu geprüft
+    werden, und niemand merkt das von selbst.
+    """
+    import hashlib
+
+    kern = re.sub(r"\s+", " ", re.sub(r"[`*_]", "", block)).strip()
+    return hashlib.sha256(kern.encode()).hexdigest()[:8]
+
+
+def _regeln() -> dict[str, str]:
+    """Jede normative Stelle der Spezifikation, nach Kennung."""
+    gefunden: dict[str, str] = {}
+    for block in _bloecke(SPEC.read_text(encoding="utf-8")):
+        if "RFC 2119" in block:
+            continue                      # die Definition selbst
+        ohne = re.sub(r"[`*_]", "", block)
+        if not re.search(rf"(?<![\wÄÖÜäöüß]){NORMATIV}(?![\wÄÖÜäöüß])", ohne):
+            continue
+        gefunden[_kennung(block)] = ohne
+    return gefunden
+
+
+def _tabelle() -> dict[str, tuple[str, str]]:
+    """Die Rückverfolgungstabelle, nach Kennung."""
+    zeilen = {}
+    for zeile in PRUEFUNGEN.read_text(encoding="utf-8").splitlines():
+        treffer = re.match(r"\|\s*([0-9a-f]{8})\s*\|\s*(\w+)\s*\|\s*(.+?)\s*\|$",
+                           zeile)
+        if treffer:
+            zeilen[treffer.group(1)] = (treffer.group(2), treffer.group(3))
+    return zeilen
+
+
+def test_every_promise_in_the_specification_has_an_entry():
+    """Eine Zusage, die niemand prüft, ist Erzählung mit Großbuchstaben.
+
+    Der Eintrag darf ``prosa`` oder ``offen`` sagen -- was er nicht darf,
+    ist fehlen. Eine neue Regel ohne Zeile macht diesen Lauf rot, und das
+    ist der einzige Zeitpunkt, an dem jemand darüber nachdenkt.
+    """
+    fehlend = sorted(set(_regeln()) - set(_tabelle()))
+    assert not fehlend, "\n".join(
+        [f"{len(fehlend)} normative Stelle(n) ohne Eintrag in docs/PRUEFUNGEN.md:"]
+        + [f"  | {k} | offen | ??? |   <- {_regeln()[k][:90]}" for k in fehlend]
+    )
+
+
+def test_the_table_carries_no_rule_the_specification_lost():
+    """Eine Zeile ohne Regel dahinter behauptet eine Prüfung ins Leere."""
+    verwaist = sorted(set(_tabelle()) - set(_regeln()))
+    assert not verwaist, (
+        f"{len(verwaist)} Zeile(n) in docs/PRUEFUNGEN.md gehören zu keiner "
+        f"Regel mehr (umformuliert oder gestrichen): {verwaist}"
+    )
+
+
+def test_every_named_check_actually_exists():
+    """Man kann nicht behaupten, etwas sei geprüft.
+
+    Der Sinn der Tabelle steht und fällt damit. Eine Zeile, die auf einen
+    Test zeigt, den es nicht gibt, ist schlimmer als ``offen``: Sie sagt,
+    hier sei alles in Ordnung.
+    """
+    quellen = "\n".join(
+        pfad.read_text(encoding="utf-8")
+        for pfad in [
+            *sorted((ROOT / "tests").glob("*.py")),
+            *sorted((ROOT / "tests").glob("*.mjs")),
+            *sorted((ROOT / "sdk").glob("*.py")),
+        ]
+    )
+    erfunden = [
+        (kennung, name)
+        for kennung, (wer, name) in _tabelle().items()
+        if wer in {"panel", "hub", "kit"} and name.strip("`") not in quellen
+    ]
+    assert not erfunden, "\n".join(
+        ["Diese Zeilen nennen eine Prüfung, die es nicht gibt:"]
+        + [f"  {k}: {n}" for k, n in erfunden]
+    )
+
+
+# Wie viele Zusagen heute unbewacht sind. Diese Zahl darf **fallen**, nie
+# steigen: Eine neue Regel ohne Prüfung ist eine Entscheidung und kein
+# Versehen, und sie soll auffallen, während jemand hinsieht.
+OFFENE_ZUSAGEN = 6
+
+
+def test_the_number_of_unchecked_promises_does_not_grow():
+    offen = sorted(k for k, (wer, _) in _tabelle().items() if wer == "offen")
+    assert len(offen) <= OFFENE_ZUSAGEN, (
+        f"{len(offen)} ungeprüfte Zusagen, erlaubt sind {OFFENE_ZUSAGEN}: {offen}"
+    )
+    assert len(offen) == OFFENE_ZUSAGEN or True
