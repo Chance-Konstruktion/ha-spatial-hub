@@ -25,7 +25,7 @@ geprüft werden.
 | `kit` | Das Renderer-Conformance-Kit prüft es, also auch bei Fremden. |
 | `hub` | Eine Python-Prüfung am Hub selbst. |
 | `prosa` | Begründung oder Geschmack — mit Absicht nicht maschinell prüfbar. |
-| `offen` | Sollte geprüft werden, ist es aber nicht. |
+| `offen` | Sollte geprüft werden, ist es aber nicht. **Derzeit keine.** |
 
 ## Was diese Tabelle nicht kann
 
@@ -54,7 +54,7 @@ Hash, die Zeile fällt heraus und jemand muss die Zuordnung neu ansehen.
 | 7075b741 | prosa | Verbot einer Zwangsangleichung — kein Verhalten zum Messen |
 | ac0a1a9b | panel | `eine Wand in Reichweite gewinnt gegen das Raster` |
 | b8b12a80 | panel | `editing tools appear only in edit mode` |
-| 3d26c96a | offen | Geräte im Raum-Modus ausblenden |
+| 3d26c96a | panel | `in room mode the devices step out of the way` |
 | 351cc7a9 | hub | `test_every_stored_area_field_is_documented` |
 | fc1f982e | panel | `an L-shaped room is drawn as an L, not as its box` |
 | d4bad3ae | hub | `test_every_stored_area_field_is_documented` |
@@ -65,7 +65,7 @@ Hash, die Zeile fällt heraus und jemand muss die Zuordnung neu ansehen.
 | e62ad8af | hub | `test_every_stored_area_field_is_documented` |
 | f3e06640 | panel | `a staircase is drawn as steps, by whatever the user called it` |
 | bbb5aee9 | hub | `test_every_stored_area_field_is_documented` |
-| ff9819b5 | offen | Grundstück unter allem anderen zeichnen |
+| ff9819b5 | panel | `the plot is drawn under everything else` |
 | f81d1774 | panel | `the widest storey sets the window, not the first one with a garden` |
 | 87cc20dd | hub | `test_every_stored_area_field_is_documented` |
 | afd57e56 | prosa | „Nichts darf Maße voraussetzen" — eine Abwesenheit |
@@ -75,11 +75,11 @@ Hash, die Zeile fällt heraus und jemand muss die Zuordnung neu ansehen.
 | bb96328d | panel | `die Hausansicht setzt keine zwei Namen aufeinander` |
 | dac575a7 | panel | `a room has standing walls, a garden does not` |
 | fbaaa24a | prosa | Wandstärke ist ausdrücklich Geschmack |
-| de5bd02b | offen | Popup mittig über dem Grundriss |
+| de5bd02b | panel | `the popup stands over the plan, not at its edge` |
 | e58e7b74 | panel | `history is offered only where the provider says it has any` |
 | 2765c170 | panel | `ein Provider ist so deutlich wie seine klarste sichtbare Ebene` |
-| bbcb626d | offen | MDI-Namen als Schlüssel für eigene Icons |
-| 2d223e6f | offen | Zusage „in allen Ansichten anklickbar" |
+| bbcb626d | panel | `a provider's own icon is keyed by the MDI name the node already says` |
+| 2d223e6f | panel | `the same four gestures are offered in both views` |
 | db96a05d | panel | `zooming keeps the point under the cursor where it was` |
 | 73a65443 | panel | `test_the_specification_insists_the_kinds_are_an_enum` |
 | 2629f8e3 | hub | `test_a_floors_kind_goes_over_the_wire_as_a_word` |
@@ -94,4 +94,4 @@ Hash, die Zeile fällt heraus und jemand muss die Zuordnung neu ansehen.
 | 4ca68ea9 | panel | `das Raster laesst sich ohne Tastatur abschalten` |
 | 9e7b482a | panel | `der Hinweis nennt keine Taste, die es auf diesem Geraet nicht gibt` |
 | 576c53a3 | prosa | Verbot einer erfundenen Ebene — eine Abwesenheit |
-| 20a773b4 | offen | Erdreich schraffiert statt als Fläche mit Rahmen |
+| 20a773b4 | panel | `the soil is drawn as material, not as a room somebody forgot` |

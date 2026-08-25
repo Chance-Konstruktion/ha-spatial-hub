@@ -4965,3 +4965,126 @@ test("ein Provider ist so deutlich wie seine klarste sichtbare Ebene", () => {
   // Kein Wort dazu heisst voll da, nicht unsichtbar.
   assert.equal(colour.providerOpacity(layers, "c:eins"), 1);
 });
+
+// ── Die Zusagen, die bis hierher niemand geprueft hat ──────
+//
+// Jede dieser sechs stand in docs/PRUEFUNGEN.md als `offen`: gebaut, aber
+// unbewacht. Eine Zusage ohne Pruefer ist Erzaehlung mit Grossbuchstaben --
+// sie haelt genau so lange, bis jemand ohne boese Absicht daneben greift.
+
+test("in room mode the devices step out of the way", () => {
+  // § Zwei Modi: "Im Raum-Modus SOLL ein Renderer die Geraete ausblenden.
+  // Sie sind nicht geloescht, nur nicht im Weg."
+  //
+  // Beide Haelften pruefen: die Klasse am Grundriss *und* die Regel im
+  // Stylesheet. Eine ohne die andere ist stumm -- wer die Klasse
+  // umbenennt, laesst die Regel als toten Buchstaben zurueck.
+  const view = panel(model(), { edit: true, what: "rooms" });
+  assert.match(view._stageHtml(), /class="stage[^"]*editing-rooms/,
+               "der Grundriss sagt gar nicht, dass Raum-Modus ist");
+
+  assert.match(styleSheet(), /\.stage\.editing-rooms \.node[^}]*display:none/,
+               "die Regel, die die Geraete ausblendet, fehlt");
+
+  // Und zurueck holt sie sofort wieder.
+  const geraete = panel(model(), { edit: true, what: "icons" });
+  assert.doesNotMatch(geraete._stageHtml(), /editing-rooms/);
+});
+
+test("the plot is drawn under everything else", () => {
+  // § Grundstueck: "Ein Renderer SOLL es unter allem anderen zeichnen. Es
+  // ist der Grund, auf dem das Haus steht."
+  const data = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "",
+               plot: [{ x: -1, y: -1 }, { x: 2, y: -1 }, { x: 2, y: 2 },
+                      { x: -1, y: 2 }] }],
+    areas: [{ id: "wz", name: "Wohnzimmer", floor_id: "eg",
+              position: at(0.5, 0.5), size: { width: 1, height: 1 } }],
+  });
+  const html = panel(data, { floor: "eg" })._stageHtml();
+
+  const grundstueck = html.indexOf("plot");
+  const raum = html.indexOf('class="area');
+  assert.ok(grundstueck >= 0, "das Grundstueck wird gar nicht gezeichnet");
+  assert.ok(raum >= 0, "die Vorbedingung stimmt nicht: kein Raum");
+  assert.ok(grundstueck < raum,
+            "das Grundstueck liegt ueber dem Haus statt darunter");
+});
+
+test("the popup stands over the plan, not at its edge", () => {
+  // § Popup: "Ein Renderer SOLL es mittig ueber dem Grundriss zeigen,
+  // nicht am Rand" -- der Grundriss bleibt dahinter sichtbar, und das
+  // geht nur mittig.
+  const style = styleSheet();
+  const regel = /\.popup\s*{[^}]*}/.exec(style);
+  assert.ok(regel, "die Regel fuer das Popup fehlt");
+  assert.match(regel[0], /position:fixed/);
+  assert.match(regel[0], /left:50%/);
+  assert.match(regel[0], /top:50%/);
+  assert.match(regel[0], /translate\(-50%,\s*-50%\)/,
+               "mittig heisst: um die eigene halbe Groesse zurueck");
+});
+
+test("a provider's own icon is keyed by the MDI name the node already says", () => {
+  // § Eigene Icons: "Als Schluessel SOLLEN MDI-Namen dienen, die der Node
+  // ohnehin nennt: Ein Renderer ohne Inline-SVG faellt damit auf dasselbe
+  // MDI-Icon zurueck, und nichts sieht falsch aus."
+  const saetze = { powerline: { "mdi:lan-connect": { svg: "<svg/>" } } };
+
+  assert.ok(colour.customIcon(saetze,
+    { id: "powerline:a", icon: "mdi:lan-connect" }),
+    "der Satz des Providers wird nicht ueber den MDI-Namen gefunden");
+
+  // Ein anderer Name faellt zurueck -- und der Rueckfall ist genau das
+  // MDI-Icon, das der Node nennt.
+  assert.equal(colour.customIcon(saetze,
+    { id: "powerline:b", icon: "mdi:lightbulb" }), null);
+
+  // Und der Satz eines fremden Providers gilt nicht.
+  assert.equal(colour.customIcon(saetze,
+    { id: "andere:a", icon: "mdi:lan-connect" }), null,
+    "der Icon-Satz eines Providers faerbt auf einen anderen ab");
+});
+
+test("the same four gestures are offered in both views", () => {
+  // § Anfassen: Mausrad, zwei Finger, Ziehen, Fit-to-Screen -- "in **allen**
+  // Ansichten", und "Das Verhalten MUSS in der Hausansicht identisch sein
+  // zu dem auf einer einzelnen Etage."
+  for (const [wo, sicht] of [["einzelne Etage", "eg"], ["Hausansicht", null]]) {
+    const view = panel(model(), { floor: sicht });
+    for (const geste of ["_onWheel", "_onPointerDown", "_onPointerMove",
+                         "_onTouchStart", "_fitToScreen"]) {
+      assert.equal(typeof view[geste], "function",
+                   `${wo}: ${geste} fehlt`);
+    }
+    assert.match(view._headerHtml(), /data-zoom="fit"/,
+                 `${wo}: kein Weg, wieder alles zu sehen`);
+  }
+});
+
+test("the soil is drawn as material, not as a room somebody forgot", () => {
+  // § Das Erdreich: "Ein Renderer SOLL ihn als Material zeichnen --
+  // schraffiert, wie eine Bauzeichnung Erde zeichnet -- und nicht als
+  // Flaeche mit Rahmen: ein Kasten neben dem Haus sieht aus wie ein Raum,
+  // den jemand vergessen hat."
+  const data = model({
+    floors: [{ id: "ug", name: "Untergeschoss", level: 0, icon: "" },
+             { id: "eg", name: "Erdgeschoss", level: 1, icon: "" }],
+    areas: [
+      { id: "keller", name: "Keller", floor_id: "ug",
+        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
+      { id: "vpn", name: "VPN", floor_id: "ug", kind: "virtual",
+        position: at(0.5, 1.14), size: { width: 1.4, height: 0.22 } },
+      { id: "wz", name: "Wohnzimmer", floor_id: "eg",
+        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
+    ],
+  });
+  const svg = panel(data, { floor: null })._stackHtml();
+
+  assert.match(svg, /class="soil"/, "das Erdreich ist kein Material");
+  assert.match(svg, /class="soil-hatch"/, "es ist nicht schraffiert");
+  // Und ausdruecklich kein Zimmer: die Raumkontur gehoert ihm nicht.
+  const alsRaum = new RegExp('class="room[^"]*"[^>]*/>[^]{0,400}?>VPN<');
+  assert.doesNotMatch(svg, alsRaum,
+                      "das Erdreich wird als Raum mit Rahmen gezeichnet");
+});
