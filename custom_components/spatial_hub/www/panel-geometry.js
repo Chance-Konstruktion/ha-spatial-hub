@@ -334,6 +334,32 @@ const houseMetres = (floor) => {
   return Math.min(200, Math.max(1, value));
 };
 
+/** Das Seitenverhaeltnis der Etage: wie viel breiter das Haus ist als
+ *  tief. 1,6 ist der Standard, wenn niemand etwas anderes gesagt hat. */
+const houseAspect = (floor) => {
+  const value = Number((floor || {}).aspect);
+  if (!Number.isFinite(value) || value <= 0) return 1.6;
+  return value;
+};
+
+/** Ein Anteil der Hausbreite, in Metern. */
+const metresAcross = (floor, share) => share * houseMetres(floor);
+
+/** Ein Anteil der Haus*tiefe*, in Metern.
+ *
+ *  Der Grundriss ist in beiden Achsen eine Einheit gross, aber eine
+ *  Einheit bedeutet nicht in beiden dasselbe: quer ist sie die ganze
+ *  Hausbreite, laengs nur die Tiefe -- und die ist um das
+ *  Seitenverhaeltnis kuerzer. Wer hier mit der Breite multipliziert,
+ *  bekommt bei Standard 1,6 eine Tiefe, die 60 % zu gross ist. Genau das
+ *  stand an jedem Raum und am Grundstueck.
+ *
+ *  Die Zeichnung war davon nie betroffen: die Buehne bekommt das
+ *  Seitenverhaeltnis als CSS-aspect-ratio und ist damit in beiden Achsen
+ *  masstaeblich. Gelogen haben nur die Zahlen daneben. */
+const metresDeep = (floor, share) =>
+  (share * houseMetres(floor)) / houseAspect(floor);
+
 const metre = (value) => value.toFixed(1).replace(".", ",");
 
 const houseWeight = (theme) => {
@@ -1233,6 +1259,9 @@ export {
   FRONT_WALL,
   BACK_WALL,
   houseMetres,
+  houseAspect,
+  metresAcross,
+  metresDeep,
   metre,
   houseWeight,
   snapReach,
