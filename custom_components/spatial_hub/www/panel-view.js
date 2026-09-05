@@ -26,6 +26,8 @@ import {
   drawsTheWall,
   hasShape,
   houseMetres,
+  metresAcross,
+  metresDeep,
   houseWeight,
   inFrame,
   inFrameY,
@@ -813,8 +815,8 @@ Aus lässt sich alles frei setzen.">
           const xs = plot.map((point) => point.x);
           const ys = plot.map((point) => point.y);
           return {
-            width: (Math.max(...xs) - Math.min(...xs)) * across,
-            height: (Math.max(...ys) - Math.min(...ys)) * across,
+            width: metresAcross(floor, Math.max(...xs) - Math.min(...xs)),
+            height: metresDeep(floor, Math.max(...ys) - Math.min(...ys)),
           };
         })()
       : null;
@@ -1189,9 +1191,9 @@ Aus lässt sich alles frei setzen.">
           ${
             this._meters && this._editRooms && area.size
               ? `<span class="area-dim">${metre(
-                  area.size.width * houseMetres(this._floor),
+                  metresAcross(this._floor, area.size.width),
                 )} × ${metre(
-                  area.size.height * houseMetres(this._floor),
+                  metresDeep(this._floor, area.size.height),
                 )} m</span>`
               : ""
           }

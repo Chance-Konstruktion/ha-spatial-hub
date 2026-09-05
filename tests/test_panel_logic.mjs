@@ -3591,6 +3591,37 @@ test("expert mode measures everything against one number", () => {
   assert.match(view._areasHtml(), /class="area-dim">\d+,\d × \d+,\d m</);
 });
 
+test("the depth is measured against the depth, not the width", () => {
+  // Der Fehler, den dieser Test festhaelt: die Tiefe eines Raumes wurde
+  // mit der HAUSBREITE multipliziert, als waere das Haus quadratisch.
+  // Der Grundriss ist in beiden Achsen eine Einheit gross, aber eine
+  // Einheit quer ist die ganze Breite, laengs nur die Tiefe -- und die
+  // ist um das Seitenverhaeltnis kuerzer.
+  //
+  // Haus 10 m breit, Seitenverhaeltnis 1,6 (der Standard) => 6,25 m tief.
+  // Ein Raum von 0,4 x 0,4 Einheiten ist damit 4,0 m breit und 2,5 m tief.
+  // Vorher stand dort "4,0 × 4,0 m" -- 60 % zu tief.
+  const view = panel(model(), { edit: true });
+  view._meters = true;
+  view._floor.metres = 10;
+
+  assert.match(view._areasHtml(), /class="area-dim">4,0 × 2,5 m</,
+               "die Tiefe rechnet wieder gegen die Hausbreite");
+});
+
+test("a square house measures the same in both directions", () => {
+  // Die Gegenprobe: bei Seitenverhaeltnis 1 sind quer und tief dasselbe.
+  // Ohne sie koennte die neue Rechnung einfach immer teilen und der Test
+  // darueber waere trotzdem gruen.
+  const view = panel(model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "", aspect: 1 }],
+  }), { edit: true });
+  view._meters = true;
+  view._floor.metres = 10;
+
+  assert.match(view._areasHtml(), /class="area-dim">4,0 × 4,0 m</);
+});
+
 test("a house with no stated width still measures something sane", () => {
   const view = panel(model(), { edit: true });
   view._meters = true;
