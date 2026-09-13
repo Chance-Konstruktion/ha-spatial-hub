@@ -28,6 +28,8 @@ import {
   flushSidesOf,
   hasShape,
   houseMetres,
+  metresAcross,
+  metresDeep,
   houseWeight,
   inFrame,
   inFrameY,
@@ -606,11 +608,11 @@ Aus lässt sich alles frei setzen.">
   /** Wo im Stapel welcher Raumname steht.
    *
    *  Dieselbe Rechnung wie beim Zeichnen, aus derselben Quelle
-   *  (`cornersOf`/`roomLabelSpot`, mit denselben Wandvierecken):
-   *  Zwei Rechnungen dafuer waeren zwei Stellen, an denen der Name
-   *  woanders steht, als das Entzerren ihn vermutet -- und ein
-   *  Entzerren, das gegen die falschen Kaesten prueft, ist schlimmer
-   *  als keines.
+   *  (`cornersOf`/`roomLabelSpot`, mit denselben Wandvierecken und
+   *  demselben Seitenversatz): Zwei Rechnungen dafuer waeren zwei
+   *  Stellen, an denen der Name woanders steht, als das Entzerren ihn
+   *  vermutet -- und ein Entzerren, das gegen die falschen Kaesten
+   *  prueft, ist schlimmer als keines.
    */
   _stackRoomLabels(floors, scale, floorWalls = null) {
     const labels = [];
@@ -629,8 +631,12 @@ Aus lässt sich alles frei setzen.">
         if (area.floor_id !== floor.id || !area.position) continue;
         if (!this._inSandwich(area)) continue;
         const corners = cornersOf((x, y) => this._project(at, x, y), area);
+        // Derselbe Versatz, den `_roomPolygon` beim Zeichnen setzt --
+        // und dieselbe Suche darueber: Zeichnung und Entzerren muessen
+        // sich auf eine Stelle einigen, nicht auf zwei.
         const spot = roomLabelSpot(corners, walls, area.name, size,
-                                   scale, crowded.has(area.id));
+                                   scale, crowded.has(area.id),
+                                   this._roomLabelSlide(at, area));
         labels.push({
           x: spot.x, y: spot.y, text: spot.text,
           size, scale, fixed: true,
@@ -834,8 +840,8 @@ Aus lässt sich alles frei setzen.">
           const xs = plot.map((point) => point.x);
           const ys = plot.map((point) => point.y);
           return {
-            width: (Math.max(...xs) - Math.min(...xs)) * across,
-            height: (Math.max(...ys) - Math.min(...ys)) * across,
+            width: metresAcross(floor, Math.max(...xs) - Math.min(...xs)),
+            height: metresDeep(floor, Math.max(...ys) - Math.min(...ys)),
           };
         })()
       : null;
@@ -1322,9 +1328,9 @@ Aus lässt sich alles frei setzen.">
           ${
             this._meters && this._editRooms && area.size
               ? `<span class="area-dim">${metre(
-                  area.size.width * houseMetres(this._floor),
+                  metresAcross(this._floor, area.size.width),
                 )} × ${metre(
-                  area.size.height * houseMetres(this._floor),
+                  metresDeep(this._floor, area.size.height),
                 )} m</span>`
               : ""
           }

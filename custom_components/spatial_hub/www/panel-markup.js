@@ -76,7 +76,7 @@ const cornersOf = (project, area) => {
 
 const roomPolygon = (
   { project, floor, counterScale, crowded = true, labelSize = null,
-    walls = null },
+    walls = null, slide = 0 },
   area, keep = () => true,
 ) => {
   const width = (area.size && area.size.width) || 0.3;
@@ -85,15 +85,17 @@ const roomPolygon = (
   const y0 = area.position.y - height / 2;
   const corners = cornersOf(project, area);
   const points = corners.map((point) => `${point.x},${point.y}`).join(" ");
-  // Wo der Name steht. Mit Waenden im Gepaeck sucht sich `roomLabelSpot`
-  // eine Stelle auf freiem Boden; ohne sie steht er, wo er immer stand.
-  // Beides kommt aus derselben Rechnung -- der Stapel ruft beide Seiten
-  // (Zeichnen und Entzerren) mit denselben Vierecken.
-  const label = walls
-    ? roomLabelSpot(corners, walls, area.name,
-                    labelSize === null ? ROOM_LABEL.size : labelSize,
-                    counterScale, crowded)
-    : labelPointOf(corners, crowded);
+  // Wo der Name steht. Erst zur Seite (der Versatz gegen einen
+  // Geraetepunkt in der Mitte, er bleibt in der eigenen Kontur), dann
+  // sucht `roomLabelSpot` von der verschobenen Stelle aus vertikal
+  // freien Boden -- mit Waenden im Gepaeck; ohne sie ist der Startort
+  // der Fundort. Der Traeger ist der letzte Ausweg derselben Suche.
+  // Beides, Versatz und Fundort, kommt aus derselben Rechnung -- der
+  // Stapel ruft beide Seiten (Zeichnen und Entzerren) mit denselben
+  // Vierecken und demselben Versatz.
+  const label = roomLabelSpot(corners, walls, area.name,
+                              labelSize === null ? ROOM_LABEL.size : labelSize,
+                              counterScale, crowded, slide);
 
   // Walls, and only for rooms. A garden has no walls, and the soil has
   // none either -- standing a terrace up on 26 units of masonry would say

@@ -558,6 +558,32 @@ const houseMetres = (floor) => {
   return Math.min(200, Math.max(1, value));
 };
 
+/** Das Seitenverhaeltnis der Etage: wie viel breiter das Haus ist als
+ *  tief. 1,6 ist der Standard, wenn niemand etwas anderes gesagt hat. */
+const houseAspect = (floor) => {
+  const value = Number((floor || {}).aspect);
+  if (!Number.isFinite(value) || value <= 0) return 1.6;
+  return value;
+};
+
+/** Ein Anteil der Hausbreite, in Metern. */
+const metresAcross = (floor, share) => share * houseMetres(floor);
+
+/** Ein Anteil der Haus*tiefe*, in Metern.
+ *
+ *  Der Grundriss ist in beiden Achsen eine Einheit gross, aber eine
+ *  Einheit bedeutet nicht in beiden dasselbe: quer ist sie die ganze
+ *  Hausbreite, laengs nur die Tiefe -- und die ist um das
+ *  Seitenverhaeltnis kuerzer. Wer hier mit der Breite multipliziert,
+ *  bekommt bei Standard 1,6 eine Tiefe, die 60 % zu gross ist. Genau das
+ *  stand an jedem Raum und am Grundstueck.
+ *
+ *  Die Zeichnung war davon nie betroffen: die Buehne bekommt das
+ *  Seitenverhaeltnis als CSS-aspect-ratio und ist damit in beiden Achsen
+ *  masstaeblich. Gelogen haben nur die Zahlen daneben. */
+const metresDeep = (floor, share) =>
+  (share * houseMetres(floor)) / houseAspect(floor);
+
 const metre = (value) => value.toFixed(1).replace(".", ",");
 
 const houseWeight = (theme) => {
@@ -1216,7 +1242,7 @@ const LABEL = Object.freeze({
  *  gegen das Rechteck geprueft wurde, steht dann trotzdem im Freien.
  *  Geschnitten wird die Kontur mit der Waagerechten durch den Namen.
  */
-const spanAt = (corners, y) => {
+const spanRangeAt = (corners, y) => {
   let lo = Infinity;
   let hi = -Infinity;
   for (let index = 0; index < corners.length; index += 1) {
@@ -1229,7 +1255,84 @@ const spanAt = (corners, y) => {
       hi = Math.max(hi, x);
     }
   }
-  return hi > lo ? hi - lo : 0;
+  return hi > lo ? { lo, hi } : null;
+};
+
+const spanAt = (corners, y) => {
+  const range = spanRangeAt(corners, y);
+  return range ? range.hi - range.lo : 0;
+};
+
+/** Wie weit ein Raumname **zur Seite** muss, um freizustehen.
+ *
+ *  Ein Raumname weicht einem Geraetepunkt nicht nach oben oder unten
+ *  aus: Er gehoert in seinen Raum, und ueber die Wand geschoben stuende
+ *  er im Raum des Nachbarn. Zur Seite ist er aber beweglich, solange er
+ *  in seiner eigenen Kontur bleibt -- und das ist genau die Richtung,
+ *  in der Platz ist. (Dem Mauerwerk gegenueber gilt die Schranke
+ *  nicht -- dort weicht der Name vertikal aus, `roomLabelSpot`, und
+ *  bleibt dabei ebenso in seinem Raum geklemmt.)
+ *
+ *  Der Fall, aus dem das entstanden ist: Auf der Terrasse standen Name
+ *  und Geraetepunkt bei **derselben** x-Koordinate, weil die Automatik
+ *  beide in die Mitte der Flaeche setzt. Das Band ist rund 35 Einheiten
+ *  tief, der Punkt 30 -- nach oben ging nichts. Seitwaerts lagen im
+ *  selben Band 620 Einheiten frei.
+ *
+ *  Gibt den kleinsten Versatz zurueck, der alle Hindernisse freistellt,
+ *  oder `null`, wenn es keinen gibt. Dann bleibt der Name, wo er ist:
+ *  Ein Raum ohne Namen ist schlimmer als einer, dessen Name einen Punkt
+ *  streift.
+ */
+const slideClear = (box, blockers, range, gap = 4) => {
+  const width = box.x1 - box.x0;
+  const middle = (box.x0 + box.x1) / 2;
+
+  // Alles in Mittelpunkten des Namens gerechnet: Wo darf seine Mitte
+  // liegen? Das macht aus zwei Kaesten eine Zahlenreihe, und aus dem
+  // Ausweichen ein Aufteilen.
+  const low = range.lo + width / 2 + ROOM_LABEL.pad;
+  const high = range.hi - width / 2 - ROOM_LABEL.pad;
+  if (high < low) return null;          // der Name passt ohnehin nicht hinein
+
+  const inTheWay = blockers.filter(
+    (other) => box.y0 < other.y1 && other.y0 < box.y1,
+  );
+  if (!inTheWay.some((other) => boxesOverlap(box, other))) return 0;
+
+  // Verbotene Mittelpunkte, zusammengelegt: zwei Punkte nebeneinander
+  // sind eine Sperre und nicht zwei.
+  const sperren = inTheWay
+    .map((other) => [other.x0 - gap - width / 2, other.x1 + gap + width / 2])
+    .sort((one, two) => one[0] - two[0])
+    .reduce((zusammen, [von, bis]) => {
+      const letzte = zusammen[zusammen.length - 1];
+      if (letzte && von <= letzte[1]) letzte[1] = Math.max(letzte[1], bis);
+      else zusammen.push([von, bis]);
+      return zusammen;
+    }, []);
+
+  // Was dazwischen frei bleibt.
+  const frei = [];
+  let von = low;
+  for (const [sperreVon, sperreBis] of sperren) {
+    if (sperreVon > von) frei.push([von, Math.min(sperreVon, high)]);
+    von = Math.max(von, sperreBis);
+  }
+  if (von < high) frei.push([von, high]);
+
+  const brauchbar = frei.filter(([a, b]) => b - a >= 0);
+  if (!brauchbar.length) return null;
+
+  // **Mittig in den freien Platz**, nicht knapp am Punkt vorbei. Ein Name,
+  // der an einem Symbol klebt, sieht aus wie ausgewichen; einer, der in
+  // seiner Luecke steht, sieht aus wie gesetzt. Von mehreren Luecken die,
+  // deren Mitte dem urspruenglichen Platz am naechsten liegt.
+  const mitte = ([a, b]) => (a + b) / 2;
+  const ziel = brauchbar
+    .slice()
+    .sort((a, b) => Math.abs(mitte(a) - middle) - Math.abs(mitte(b) - middle))[0];
+  return mitte(ziel) - middle;
 };
 
 /** Welche Groesse ein Raumname **braucht**, damit er hineinpasst.
@@ -1365,18 +1468,29 @@ const coveredAreaOf = (box, polygons) =>
  *  Nachgemessen am Stapel lag von 29 Beschriftungen jede zweite auf
  *  Mauerwerk: Die Mitte des Raumkastens ist bei schmalen Raeumen Wand,
  *  und der Name, der dort steht, liest sich nicht. Er weicht deshalb
- *  vertikal aus -- er bleibt ja in seinem Raum --, probiert dann einen
- *  gekuerzten Namen und erst wenn auch der nirgends hinpasst, bekommt
- *  die Schrift einen Traeger. Der verdeckt die Wand zwar trotzdem, aber
- *  ein Name, den man lesen kann, ist es wert.
+ *  vertikal aus -- geklemmt zwischen hinterer und vorderer Kante, er
+ *  bleibt ja in seinem Raum --, und wenn er nirgends freien Boden
+ *  findet, bekommt die Schrift einen Traeger. Der verdeckt die Wand
+ *  zwar trotzdem, aber ein Name, den man lesen kann, ist es wert.
+ *  Gekuerzt wird bewusst nicht: die Schriftgroesse einer Etage ist
+ *  eine eigene Entscheidung, und ein halber Name widerspricht ihr.
  *
- *  Die Waende sind die einzigen Hindernisse: Ein Geraetesymbol im Raum
- *  ist Sache des `crowded`-Mechanismus von `labelPointOf`, und ein
- *  Raumname, der fremden Symbolen ausweicht, verliesse die Mitte, die
- *  ihm zusteht. */
+ *  `slide` traegt den Seitenversatz entgegen, den der Aufrufer gegen
+ *  einen Geraetepunkt in der Mitte gerechnet hat (`_roomLabelSlide`).
+ *  Er greift vor der Suche: seitwaerts kostet er nichts, der Name
+ *  bleibt in seiner eigenen Kontur, und die vertikale Suche muss von
+ *  seiner Stelle aus freien Boden suchen -- nachtraeglich verschoben
+ *  wuerde er den Namen auf das Mauerwerk zurueckschieben, das die
+ *  Suche gerade vermieden hat, und der Traeger waere an der falschen
+ *  Stelle entschieden. Ohne Versatz verhaelt sich die Suche wie immer.
+ *
+ *  Die Waende sind hier die einzigen Hindernisse: Ein Geraetesymbol im
+ *  Raum ist Sache des Seitenversatzes und des `crowded`-Mechanismus
+ *  von `labelPointOf`. */
 const roomLabelSpot = (corners, walls, text, size, scale,
-                       crowded = true) => {
-  const start = labelPointOf(corners, crowded);
+                       crowded = true, slide = 0) => {
+  const middle = labelPointOf(corners, crowded);
+  const start = { x: middle.x + slide, y: middle.y };
   const name = String(text || "");
   const obstacles = Array.isArray(walls) ? walls : [];
   const height = size * LABEL.height;
@@ -1537,6 +1651,9 @@ export {
   FRONT_WALL,
   BACK_WALL,
   houseMetres,
+  houseAspect,
+  metresAcross,
+  metresDeep,
   metre,
   houseWeight,
   snapReach,
@@ -1586,6 +1703,8 @@ export {
   PIN,
   ROOM_LABEL,
   spanAt,
+  spanRangeAt,
+  slideClear,
   roomLabelSize,
   labelPointOf,
   labelBox,

@@ -2920,6 +2920,52 @@ test("findest keinen freien Boden, bekommst einen Traeger", () => {
   assert.equal(spot.text, "Kino", "und er ist nicht halb abgeschnitten");
 });
 
+test("der Seitenversatz setzt den Anfang der Wandsuche, nicht ihr Ende", () => {
+  // Beide Ausweichwege an einem Namen: der Versatz weicht einem Punkt in
+  // der Mitte zur Seite, die Suche danach dem Mauerwerk. Die Reihenfolge
+  // ist eine Entscheidung, und diese Stelle haelt sie fest: Die Suche
+  // muss von der *verschobenen* Stelle aus freien Boden suchen. Liefen
+  // sie umgekehrt (erst die Wand, dann der Versatz), stuende der Name
+  // am Ende woanders, als die Suche ihn geprueft hat -- und der Traeger
+  // waere entschieden worden, bevor der Versatz ihn ueberfluessig oder
+  // noetig gemacht hat.
+  const raum = [
+    { x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 200 }, { x: 0, y: 200 },
+  ];
+  // Ein Streifen Mauerwerk quer durch die Mitte; die Mitte des Raumes
+  // liegt darin, links und rechts davon ist Boden.
+  const streifen = [{ x: 220, y: 80 }, { x: 380, y: 80 },
+                    { x: 380, y: 120 }, { x: 220, y: 120 }];
+
+  // Ohne Versatz weicht der Name der Wand senkrecht aus -- die Mitte
+  // (y=100) liegt im Mauerwerk.
+  const ohne = geometry.roomLabelSpot(raum, [streifen], "Wohnzimmer",
+                                      16, 1, false);
+  assert.ok(Math.abs(ohne.y - 100) > 1,
+            "die Vorbedingung stimmt nicht: die Mitte ist wandfrei");
+
+  // Mit Versatz steht die verschobene Stelle wandfrei: die Suche hat
+  // nichts zu tun, und der Name bleibt genau dort, wohin der Versatz
+  // ihn gestellt hat -- senkrecht wurde nicht noch einmal gerueckt.
+  const frei = geometry.roomLabelSpot(raum, [streifen], "Wohnzimmer",
+                                      16, 1, false, 150);
+  assert.equal(frei.x, 450, "der Versatz ist verloren gegangen");
+  assert.equal(frei.y, 100, "gesucht wurde vom unverschobenen Ort aus");
+  assert.equal(frei.backdrop, false);
+
+  // Und steht die verschobene Stelle selbst auf Mauerwerk, sucht die
+  // Suche von dort weiter -- der Versatz bleibt erhalten, der Traeger
+  // wird erst am Ende entschieden.
+  const blockiert = geometry.roomLabelSpot(raum, [streifen], "Wohnzimmer",
+                                           16, 1, false, 100);
+  const box = geometry.labelBox({ x: blockiert.x, y: blockiert.y,
+                                  text: "Wohnzimmer", size: 16, scale: 1 });
+  assert.equal(blockiert.x, 400, "der Versatz ist verloren gegangen");
+  assert.equal(geometry.coveredAreaOf(box, [streifen]) < 0.01, true,
+               "der Name landete im Mauerwerk");
+  assert.equal(blockiert.backdrop, false);
+});
+
 test("Geraetenamen weichen den Waenden aus, solange es geht", () => {
   // Vorher haengte der Name 30 Einheiten unter seinem Punkt -- mitten in
   // die vordere Wandflaeche, wenn der Punkt im flachen Raum stand.
@@ -3918,6 +3964,37 @@ test("expert mode measures everything against one number", () => {
   assert.match(view._areasHtml(), /class="area-dim">\d+,\d × \d+,\d m</);
 });
 
+test("the depth is measured against the depth, not the width", () => {
+  // Der Fehler, den dieser Test festhaelt: die Tiefe eines Raumes wurde
+  // mit der HAUSBREITE multipliziert, als waere das Haus quadratisch.
+  // Der Grundriss ist in beiden Achsen eine Einheit gross, aber eine
+  // Einheit quer ist die ganze Breite, laengs nur die Tiefe -- und die
+  // ist um das Seitenverhaeltnis kuerzer.
+  //
+  // Haus 10 m breit, Seitenverhaeltnis 1,6 (der Standard) => 6,25 m tief.
+  // Ein Raum von 0,4 x 0,4 Einheiten ist damit 4,0 m breit und 2,5 m tief.
+  // Vorher stand dort "4,0 × 4,0 m" -- 60 % zu tief.
+  const view = panel(model(), { edit: true });
+  view._meters = true;
+  view._floor.metres = 10;
+
+  assert.match(view._areasHtml(), /class="area-dim">4,0 × 2,5 m</,
+               "die Tiefe rechnet wieder gegen die Hausbreite");
+});
+
+test("a square house measures the same in both directions", () => {
+  // Die Gegenprobe: bei Seitenverhaeltnis 1 sind quer und tief dasselbe.
+  // Ohne sie koennte die neue Rechnung einfach immer teilen und der Test
+  // darueber waere trotzdem gruen.
+  const view = panel(model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "", aspect: 1 }],
+  }), { edit: true });
+  view._meters = true;
+  view._floor.metres = 10;
+
+  assert.match(view._areasHtml(), /class="area-dim">4,0 × 4,0 m</);
+});
+
 test("a house with no stated width still measures something sane", () => {
   const view = panel(model(), { edit: true });
   view._meters = true;
@@ -4138,6 +4215,49 @@ test("the sheet only goes down: upwards there is nothing behind it", () => {
   view._onSheetMove({ pointerId: 1, clientY: 120, preventDefault() {} });
 
   assert.equal(sheet.style.transform, "translateY(0px)");
+});
+
+test("the outer walls of every storey land on the same line", () => {
+  // Die Zusage der Hausansicht: Das ist *ein* Gebaeude. Sie steht und
+  // faellt damit, dass die Aussenwaende uebereinander liegen -- ein
+  // Erdgeschoss mit Garten wuerde sonst schmaler gezeichnet als das
+  // Geschoss darueber, und das Haus saehe aus wie eine Hochzeitstorte.
+  //
+  // Der Fall, der es bricht, ist nicht das Demohaus (dort haben alle
+  // Etagen Aussenbereiche), sondern die **gemischte** Etagenliste.
+  const data = model({
+    floors: [
+      { id: "eg", name: "Erdgeschoss", level: 0, icon: "", has_outdoor: true,
+        outdoor_margin: 0.28 },
+      { id: "og", name: "Obergeschoss", level: 1, icon: "" },
+      { id: "dg", name: "Dachgeschoss", level: 2, icon: "" },
+    ],
+    areas: [
+      { id: "wz", name: "Wohnzimmer", floor_id: "eg",
+        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
+      { id: "garten", name: "Garten", floor_id: "eg", kind: "outdoor",
+        outdoor: true, position: at(0.5, -0.14),
+        size: { width: 1.4, height: 0.22 } },
+      { id: "sz", name: "Schlafzimmer", floor_id: "og",
+        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
+      { id: "ab", name: "Abstellraum", floor_id: "dg",
+        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
+    ],
+  });
+  const view = panel(data, { floor: null });
+  assert.ok(view._stackFloors.length >= 3, "die Vorbedingung stimmt nicht");
+
+  // Alle vier Ecken des Hauses, ueber alle Etagen.
+  for (const [x, y, wo] of [[0, 1, "vorne links"], [1, 1, "vorne rechts"],
+                            [0, 0, "hinten links"], [1, 0, "hinten rechts"]]) {
+    const stellen = view._stackFloors.map(
+      (floor, plane) => view._project(plane, x, y).x,
+    );
+    const versatz = Math.max(...stellen) - Math.min(...stellen);
+    assert.ok(versatz < 0.001,
+              `${wo} steht um ${versatz.toFixed(1)} Einheiten versetzt: `
+              + `${stellen.map((n) => n.toFixed(1)).join(", ")}`);
+  }
 });
 
 test("the widest storey sets the window, not the first one with a garden", () => {
@@ -5121,6 +5241,118 @@ test("decluttering is told the size every name is actually drawn at", () => {
   }
 });
 
+/** Der Fall aus dem echten Bild: ein breites Band, ein Punkt in seiner
+ *  Mitte -- und der Name steht dort auch, weil die Automatik beide
+ *  dorthin setzt. */
+const terraceLike = () =>
+  model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "",
+               has_outdoor: true, outdoor_margin: 0.28 }],
+    areas: [
+      { id: "wz", name: "Wohnzimmer", floor_id: "eg",
+        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
+      { id: "t", name: "Terrasse", floor_id: "eg", kind: "outdoor",
+        outdoor: true, position: at(0.5, -0.14),
+        size: { width: 1.4, height: 0.22 } },
+    ],
+    nodes: [node("a:licht", { area_id: "t", floor_id: "eg",
+                              label: "Licht", position: at(0.5, -0.14) })],
+  });
+
+const roomLabelAt = (view, name) => {
+  const svg = view._stackHtml();
+  // Kein Template-Literal fuer den Ausdruck: dort waere `\d` nur ein `d`.
+  const hit = new RegExp(
+    '<g data-at-x="([0-9.-]+)" data-at-y="([0-9.-]+)"[^]{0,160}?'
+    + '<text class="room-label"[^>]*>' + name + '<',
+  ).exec(svg);
+  assert.ok(hit, `${name} steht gar nicht in der Zeichnung`);
+  return { x: Number(hit[1]), y: Number(hit[2]) };
+};
+
+const pinsOf = (view) => {
+  const svg = view._stackHtml();
+  return [...svg.matchAll(
+    /data-at-x="([\d.-]+)"\s+data-at-y="([\d.-]+)"\s+transform="translate\([^)]*\) scale\(([\d.]+)\)">\s*<circle/g,
+  )].map((m) => ({ x: +m[1], y: +m[2], r: geometry.PIN.size * (+m[3]) / 2 }));
+};
+
+test("a room name steps aside for a pin instead of standing on it", () => {
+  // Nach oben geht ein Raumname nicht -- dort waere er im Raum des
+  // Nachbarn. Das Band der Terrasse ist rund 35 Einheiten tief, der Punkt
+  // 30: senkrecht ist da nichts zu holen. Seitwaerts liegen im selben
+  // Band ueber 600 Einheiten frei.
+  const view = panel(terraceLike(), { floor: null });
+  const name = roomLabelAt(view, "Terrasse");
+  const pin = pinsOf(view)[0];
+  assert.ok(pin, "die Vorbedingung stimmt nicht: kein Punkt gezeichnet");
+
+  assert.ok(Math.abs(name.x - pin.x) > pin.r,
+            `der Name steht auf dem Punkt (${name.x} gegen ${pin.x})`);
+});
+
+test("and it lands in the middle of the free space, not glued to the pin", () => {
+  // Ein Name, der an einem Symbol klebt, sieht aus wie ausgewichen; einer,
+  // der in seiner Luecke steht, sieht aus wie gesetzt. Geprueft wird
+  // deshalb nicht "weit genug weg", sondern **mittig** -- eine Schwelle
+  // waere geraten, die Mitte ist die Aussage.
+  const view = panel(terraceLike(), { floor: null });
+  const name = roomLabelAt(view, "Terrasse");
+  const pin = pinsOf(view)[0];
+  const scale = view._counterScale;
+
+  // Das Band der Terrasse reicht von -0,2 bis 1,2 in Etagenkoordinaten.
+  const kante = {
+    links: view._project(0, -0.2, -0.14).x,
+    rechts: view._project(0, 1.2, -0.14).x,
+  };
+  const breite = "Terrasse".length * geometry.ROOM_LABEL.size * scale
+    * geometry.LABEL.perChar;
+  const luft = geometry.ROOM_LABEL.pad + breite / 2;
+
+  // Die freie Strecke, in der die Mitte des Namens liegen darf -- links
+  // und rechts des Punktes.
+  const luecken = [
+    [kante.links + luft, pin.x - pin.r - 4 - breite / 2],
+    [pin.x + pin.r + 4 + breite / 2, kante.rechts - luft],
+  ].filter(([von, bis]) => bis > von);
+  assert.ok(luecken.length, "die Vorbedingung stimmt nicht: keine Luecke");
+
+  const mitten = luecken.map(([von, bis]) => (von + bis) / 2);
+  const naechste = mitten
+    .slice()
+    .sort((a, b) => Math.abs(a - name.x) - Math.abs(b - name.x))[0];
+  assert.ok(Math.abs(name.x - naechste) < 2,
+            `der Name steht bei ${name.x.toFixed(1)}, die Mitte seiner `
+            + `Luecke liegt bei ${naechste.toFixed(1)} -- er klebt am Punkt`);
+});
+
+test("the drawn name and the one decluttering knows about slide together", () => {
+  // Zwei Rechnungen fuer denselben Versatz waeren zwei Stellen, an denen
+  // er auseinanderlaeuft.
+  const view = panel(terraceLike(), { floor: null });
+  const drawn = roomLabelAt(view, "Terrasse");
+  const known = view._stackRoomLabels(view._stackFloors, view._counterScale)
+    .find((label) => label.text === "Terrasse");
+  assert.ok(known, "das Entzerren kennt den Namen gar nicht");
+  assert.ok(Math.abs(known.x - drawn.x) < 0.5,
+            `gezeichnet bei ${drawn.x}, bekannt als ${known.x}`);
+});
+
+test("a name that cannot get out of the way keeps its place", () => {
+  // Ein Raum ohne Namen ist schlimmer als einer, dessen Name einen Punkt
+  // streift. Wo kein Platz ist, wird nichts weggeblendet.
+  const eng = model({
+    areas: [{ id: "r", name: "Hauswirtschaftsraum", floor_id: "eg",
+              position: at(0.5, 0.5), size: { width: 0.2, height: 0.2 } }],
+    nodes: [node("a:x", { area_id: "r", floor_id: "eg", label: "X",
+                          position: at(0.5, 0.5) })],
+  });
+  const view = panel(eng, { floor: null });
+  const svg = view._stackHtml();
+  assert.match(svg, /Hauswirtschaftsraum/, "der Name ist verschwunden");
+});
+
 test("a flat gets its drawing, not a column with one word in it", () => {
   // Die Spalte links ist dazu da, Stockwerke untereinander lesbar zu
   // machen. Bei einem gibt es nichts zu sortieren -- und eine Wohnung ist
@@ -5285,4 +5517,127 @@ test("ein Provider ist so deutlich wie seine klarste sichtbare Ebene", () => {
   assert.equal(colour.providerOpacity(layers, "a:eins"), 0.8);
   // Kein Wort dazu heisst voll da, nicht unsichtbar.
   assert.equal(colour.providerOpacity(layers, "c:eins"), 1);
+});
+
+// ── Die Zusagen, die bis hierher niemand geprueft hat ──────
+//
+// Jede dieser sechs stand in docs/PRUEFUNGEN.md als `offen`: gebaut, aber
+// unbewacht. Eine Zusage ohne Pruefer ist Erzaehlung mit Grossbuchstaben --
+// sie haelt genau so lange, bis jemand ohne boese Absicht daneben greift.
+
+test("in room mode the devices step out of the way", () => {
+  // § Zwei Modi: "Im Raum-Modus SOLL ein Renderer die Geraete ausblenden.
+  // Sie sind nicht geloescht, nur nicht im Weg."
+  //
+  // Beide Haelften pruefen: die Klasse am Grundriss *und* die Regel im
+  // Stylesheet. Eine ohne die andere ist stumm -- wer die Klasse
+  // umbenennt, laesst die Regel als toten Buchstaben zurueck.
+  const view = panel(model(), { edit: true, what: "rooms" });
+  assert.match(view._stageHtml(), /class="stage[^"]*editing-rooms/,
+               "der Grundriss sagt gar nicht, dass Raum-Modus ist");
+
+  assert.match(styleSheet(), /\.stage\.editing-rooms \.node[^}]*display:none/,
+               "die Regel, die die Geraete ausblendet, fehlt");
+
+  // Und zurueck holt sie sofort wieder.
+  const geraete = panel(model(), { edit: true, what: "icons" });
+  assert.doesNotMatch(geraete._stageHtml(), /editing-rooms/);
+});
+
+test("the plot is drawn under everything else", () => {
+  // § Grundstueck: "Ein Renderer SOLL es unter allem anderen zeichnen. Es
+  // ist der Grund, auf dem das Haus steht."
+  const data = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "",
+               plot: [{ x: -1, y: -1 }, { x: 2, y: -1 }, { x: 2, y: 2 },
+                      { x: -1, y: 2 }] }],
+    areas: [{ id: "wz", name: "Wohnzimmer", floor_id: "eg",
+              position: at(0.5, 0.5), size: { width: 1, height: 1 } }],
+  });
+  const html = panel(data, { floor: "eg" })._stageHtml();
+
+  const grundstueck = html.indexOf("plot");
+  const raum = html.indexOf('class="area');
+  assert.ok(grundstueck >= 0, "das Grundstueck wird gar nicht gezeichnet");
+  assert.ok(raum >= 0, "die Vorbedingung stimmt nicht: kein Raum");
+  assert.ok(grundstueck < raum,
+            "das Grundstueck liegt ueber dem Haus statt darunter");
+});
+
+test("the popup stands over the plan, not at its edge", () => {
+  // § Popup: "Ein Renderer SOLL es mittig ueber dem Grundriss zeigen,
+  // nicht am Rand" -- der Grundriss bleibt dahinter sichtbar, und das
+  // geht nur mittig.
+  const style = styleSheet();
+  const regel = /\.popup\s*{[^}]*}/.exec(style);
+  assert.ok(regel, "die Regel fuer das Popup fehlt");
+  assert.match(regel[0], /position:fixed/);
+  assert.match(regel[0], /left:50%/);
+  assert.match(regel[0], /top:50%/);
+  assert.match(regel[0], /translate\(-50%,\s*-50%\)/,
+               "mittig heisst: um die eigene halbe Groesse zurueck");
+});
+
+test("a provider's own icon is keyed by the MDI name the node already says", () => {
+  // § Eigene Icons: "Als Schluessel SOLLEN MDI-Namen dienen, die der Node
+  // ohnehin nennt: Ein Renderer ohne Inline-SVG faellt damit auf dasselbe
+  // MDI-Icon zurueck, und nichts sieht falsch aus."
+  const saetze = { powerline: { "mdi:lan-connect": { svg: "<svg/>" } } };
+
+  assert.ok(colour.customIcon(saetze,
+    { id: "powerline:a", icon: "mdi:lan-connect" }),
+    "der Satz des Providers wird nicht ueber den MDI-Namen gefunden");
+
+  // Ein anderer Name faellt zurueck -- und der Rueckfall ist genau das
+  // MDI-Icon, das der Node nennt.
+  assert.equal(colour.customIcon(saetze,
+    { id: "powerline:b", icon: "mdi:lightbulb" }), null);
+
+  // Und der Satz eines fremden Providers gilt nicht.
+  assert.equal(colour.customIcon(saetze,
+    { id: "andere:a", icon: "mdi:lan-connect" }), null,
+    "der Icon-Satz eines Providers faerbt auf einen anderen ab");
+});
+
+test("the same four gestures are offered in both views", () => {
+  // § Anfassen: Mausrad, zwei Finger, Ziehen, Fit-to-Screen -- "in **allen**
+  // Ansichten", und "Das Verhalten MUSS in der Hausansicht identisch sein
+  // zu dem auf einer einzelnen Etage."
+  for (const [wo, sicht] of [["einzelne Etage", "eg"], ["Hausansicht", null]]) {
+    const view = panel(model(), { floor: sicht });
+    for (const geste of ["_onWheel", "_onPointerDown", "_onPointerMove",
+                         "_onTouchStart", "_fitToScreen"]) {
+      assert.equal(typeof view[geste], "function",
+                   `${wo}: ${geste} fehlt`);
+    }
+    assert.match(view._headerHtml(), /data-zoom="fit"/,
+                 `${wo}: kein Weg, wieder alles zu sehen`);
+  }
+});
+
+test("the soil is drawn as material, not as a room somebody forgot", () => {
+  // § Das Erdreich: "Ein Renderer SOLL ihn als Material zeichnen --
+  // schraffiert, wie eine Bauzeichnung Erde zeichnet -- und nicht als
+  // Flaeche mit Rahmen: ein Kasten neben dem Haus sieht aus wie ein Raum,
+  // den jemand vergessen hat."
+  const data = model({
+    floors: [{ id: "ug", name: "Untergeschoss", level: 0, icon: "" },
+             { id: "eg", name: "Erdgeschoss", level: 1, icon: "" }],
+    areas: [
+      { id: "keller", name: "Keller", floor_id: "ug",
+        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
+      { id: "vpn", name: "VPN", floor_id: "ug", kind: "virtual",
+        position: at(0.5, 1.14), size: { width: 1.4, height: 0.22 } },
+      { id: "wz", name: "Wohnzimmer", floor_id: "eg",
+        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
+    ],
+  });
+  const svg = panel(data, { floor: null })._stackHtml();
+
+  assert.match(svg, /class="soil"/, "das Erdreich ist kein Material");
+  assert.match(svg, /class="soil-hatch"/, "es ist nicht schraffiert");
+  // Und ausdruecklich kein Zimmer: die Raumkontur gehoert ihm nicht.
+  const alsRaum = new RegExp('class="room[^"]*"[^>]*/>[^]{0,400}?>VPN<');
+  assert.doesNotMatch(svg, alsRaum,
+                      "das Erdreich wird als Raum mit Rahmen gezeichnet");
 });

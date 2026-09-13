@@ -81,6 +81,30 @@ Zwei Zahlen, an denen das hängt:
   ~3.700 auf fünfzehn Module. Immerhin liegt er nicht mehr in *einer*
   Datei — Stylesheet und Geometrie sind heraus, die Klasse bleibt.
 
+**Eine dritte Zahl ist dazugekommen, und sie ist unangenehmer.** Die
+Spezifikation beruft sich auf RFC 2119 und stellt damit **49 Zusagen**
+auf. Bis hierher konnte niemand — auch wir nicht — sagen, welche davon
+geprüft werden und welche bloß Prosa sind. Jetzt steht das in
+[`docs/PRUEFUNGEN.md`](docs/PRUEFUNGEN.md), und ein Test erzwingt es:
+Jede normative Stelle braucht einen Eintrag, jeder genannte Test muss
+existieren, und die Zahl der ungeprüften darf nicht wachsen.
+
+Der Stand am Tag der Einführung: **6 von 49 ungeprüft**, dazu 6 bewusst
+als Prosa geführt. Weil sie eine Liste waren statt eines Gefühls, waren
+sie am selben Tag erledigt: **0 von 49 ungeprüft.**
+
+Alle sechs waren gebaut und nur unbewacht — Geräte im Raum-Modus,
+Grundstück unter allem, Popup mittig, MDI-Namen als Icon-Schlüssel, die
+vier Gesten in jeder Ansicht, Erdreich schraffiert. Das ist der Normalfall
+und genau der Grund, warum die Tabelle etwas taugt: Sie hat nicht sechs
+Fehler gefunden, sondern sechs Stellen, an denen ein Fehler unbemerkt
+hätte entstehen können.
+
+Beim Anlegen der Tabelle hat der Riegel sofort zugeschlagen: Fünf
+Testnamen, die ich aus dem Gedächtnis eingetragen hatte, gab es nicht.
+Eine Zeile, die auf einen erfundenen Test zeigt, ist schlimmer als
+`offen` — sie sagt, hier sei alles in Ordnung.
+
 Zwei eigene Provider sind eine Integration. Fünf fremde sind eine
 Plattform. Solange nur wir selbst die API benutzen, ist sie womöglich
 unbemerkt auf unsere Denkweise zugeschnitten — **der erste fremde
@@ -374,6 +398,19 @@ Falsche sogar ausdrücklich fest — er prüfte, dass das Gewollte
 geschieht, nicht ob es das Richtige ist. Dieselbe Lehre wie bei den
 Screenshots in [`tools/README.md`](tools/README.md), nur diesmal
 dreimal hintereinander.
+
+**Nachtrag: der Name, der nicht ausweichen konnte.** „Terrasse" lag unter
+einem Gerätepunkt, und beide standen bei derselben x-Koordinate — die
+Automatik setzt Name und erstes Gerät in die Mitte der Fläche. Das Band
+ist rund 35 Einheiten tief, der Punkt 30: senkrecht war nichts zu holen.
+Seitwärts lagen im selben Band über 600 Einheiten frei.
+
+Ein Raumname weicht jetzt **zur Seite** aus, solange er in seiner eigenen
+Kontur bleibt — und zwar **in die Mitte der Lücke**, nicht knapp am Punkt
+vorbei: 128 statt 54 Einheiten Abstand. Ein Name, der an einem Symbol
+klebt, sieht aus wie ausgewichen; einer, der in seiner Lücke steht, sieht
+aus wie gesetzt. Wo keine Lücke ist, bleibt er stehen; ein Raum ohne Namen
+wäre schlimmer.
 
 Danach kommt die Frage, die bewusst offen liegt: **wo der Zustand
 hingehört.** Die Referenz kennt kein „Licht an" — sie ist eine

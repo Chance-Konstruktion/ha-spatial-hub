@@ -33,6 +33,7 @@ REPO = "https://gitlab.schanz.ipv64.net/chance-konstruktion/ha-spatial-hub"
 SEITEN: list[tuple[str, str, str]] = [
     ("README.md", "index.html", "Start"),
     ("docs/SPECIFICATION.md", "SPECIFICATION.html", "Spezifikation"),
+    ("docs/PRUEFUNGEN.md", "PRUEFUNGEN.html", "Prüfungen"),
     ("docs/PROVIDER_API.md", "PROVIDER_API.html", "Provider-API"),
     ("docs/PROVIDERS.md", "PROVIDERS.html", "Provider"),
     ("docs/RENDERERS.md", "RENDERERS.html", "Renderer"),

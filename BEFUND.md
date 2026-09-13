@@ -143,12 +143,118 @@ gegen die alte Mechanik.
 
 ---
 
+## Zusammenführung: `main` nachholen (MR !16)
+
+**Der Stand.** Der Zweig war von `e6b58fd` (25. August) abgezweigt, und
+`main` war um fünfzehn Commits weitergezogen — zwei davon in diesem
+Gebiet: `83ea464`, der Raumname weicht einem Geraetepunkt **seitwärts**
+aus (`slide`, `_roomLabelSlide`), und `e019c2d`, die Tiefenangabe
+rechnet gegen die **Tiefe** (`metresDeep`). Vier Konfliktblöcke in drei
+Dateien, alle mit der Form „zwei fertige Lösungen für verwandte
+Probleme". Die Testdatei hat git selbst zusammengeführt — 364 + 13 =
+377 Tests ohne eine einzige Konfliktmarke, die gefährlichste Stelle des
+Auftrags, weil sie wie ein Erfolg aussieht.
+
+**Die Reihenfolge der Ausweichwege — Entscheidung und warum.** Die
+beiden Lösungen lösen *verschiedene* Kollisionen: der Versatz einen
+Geraetepunkt in der Raummitte, die Wandsuche das Mauerwerk. Sie greifen
+jetzt in dieser Ordnung: **erst seitwärts, dann senkrecht, dann der
+Träger.** Mechanisch heißt das: `roomLabelSpot()` hat einen Parameter
+`slide` bekommen und setzt ihn an den *Anfang* seiner Suche — der Name
+beginnt dort, wohin der Versatz ihn gestellt hat, und sucht von dieser
+Stelle aus vertikal den freien Boden. Der Versatz wird also nicht mehr,
+wie auf `main`, hinten ans Ergebnis geklebt. Drei Gründe:
+
+1. Die Wandsuche prüft dann die Stelle, an der der Name am Ende steht.
+   Käme der Versatz nach der Suche, könnte er den Namen auf das
+   Mauerwerk zurückschieben, das sie gerade vermieden hat — und der
+   Träger wäre an einer Stelle entschieden worden, an der der Name gar
+   nicht mehr steht. Genau der Fehler, der in keinem Test auffällt, der
+   nur eine der beiden Seiten liest.
+2. Der Versatz ist die billigere, kontursichere Weisung: `slideClear`
+   hält die Namensmitte innerhalb der eigenen Kontur — er kann der
+   Suche nichts Kaputtes vorlegen.
+3. Die Invariante bleibt gewahrt: Zeichnen und Entzerren rechnen
+   dieselbe Stelle. Beide Seiten (`_roomPolygon`, `_stackRoomLabels`)
+   rufen `roomLabelSpot` mit demselben Versatz aus `_roomLabelSlide`;
+   mains Test „the drawn name and the one decluttering knows about
+   slide together" gleicht die Stelle jetzt sogar schärfer ab, denn sie
+   enthält beide Mechanismen.
+
+Der Vertrag steht dreifach hingeschrieben (am Erzeuger
+`_roomLabelSlide`, an der Suche `roomLabelSpot`, am Zeichner
+`roomPolygon`), und ein neuer Test hält ihn fest: „der Seitenversatz
+setzt den Anfang der Wandsuche, nicht ihr Ende". Gegengeprobt: unter
+der umgekehrten Reihenfolge liefert dieselbe Rechnung y=148 statt
+y=100 — der Test schlägt an.
+
+**Ehrliche Grenze.** Der Versatz wird an der Ausgangshöhe gegen die
+Kontur geprüft (`spanRangeAt`). Wandert die Suche danach senkrecht,
+kann bei getaperten Konturen (Trapez, Nische) die verschobene x-Lage an
+der neuen Höhe enger sein als an der alten; die Suche prüft
+Wandbedeckung, nicht Konturzugehörigkeit — das tat sie vor der
+Zusammenführung genauso, denn auch die Raummitte liegt in einer Nische
+nicht auf jeder Höhe drin. Für Rechtecke ist es bedeutungslos; für das
+Auge vermerkt unten.
+
+**Das Seitenverhältnis aus `e019c2d` — nachgerechnet, nichts zu
+ändern.** Zweig und Commit rechnen am selben Verhältnis aus zwei
+Richtungen, und beide Rechnungen bleiben richtig:
+
+- Der Wand-ViewBox hebt die Streckung der Bühne exakt auf:
+  `viewHeight = 1000 · spanY / (houseAspect · span)` ist der Kehrwert
+  der Bühnen-Achse `houseAspect · span / spanY`. Eine Einheit im
+  Wand-Layer ist auf dem Schirm in beiden Achsen gleich lang: x-Einheit
+  W/1000 px, y-Einheit H/viewHeight mit H = W·spanY/(houseAspect·span)
+  — beides W/1000. (Zahlenbeispiel: Haus 1,6 × 1, Bühne 2000 × 1000 px,
+  ViewBox 1000 × 500 — 2 px je Einheit in beiden Achsen.)
+- `e019c2d` korrigiert nur die Zahlen *neben* der Zeichnung. Die
+  Wanddicke ist ein Anteil der Haus*breite* (`PLAN.wall`), und weil der
+  Layer maßstäblich ist, liest sich derselbe Anteil in beiden Achsen
+  als dieselbe physische Dicke — eine Dicke, die mit der Richtung
+  schwankte, wäre der Fehler von `e019c2d` nur in die Zeichnung
+  verlagert.
+- Die Raummaße stehen nach der Zusammenführung auf
+  `metresAcross`/`metresDeep`; die beiden Nachrechne-Tests von
+  `e019c2d` laufen grün. Übrig gebliebene direkte
+  `houseMetres`-Verwendungen: die Maßkette quer zur Vorderkante (die
+  misst Breite — richtig so) und das Hausbreiten-Eingabefeld selbst.
+
+**Die dreizehn Tests aus `main`: keiner hat etwas zu beanstanden.**
+Alle liefen nach der Zusammenführung ohne Anpassung grün. Die vier
+Versatz-Tests spielen auf der Terrasse — einem Deck ohne Mauerwerk,
+`_stackWallPolys` sammelt nur für INDOOR —, dort greift der Versatz
+allein, und sein Ergebnis stimmt mit der neuen Ordnung: die Suche
+startet an der verschobenen Stelle, findet sie wandfrei und rückt
+nicht senkrecht. Der angepasste Zweig-Test „die Hausansicht setzt keine
+zwei Namen aufeinander" hat seinen ersten Lauf gegen das seitliche
+Ausweichen bestanden (drei Kästen, keine Überlappung). Gelöscht oder
+abgeschwächt wurde kein Test.
+
+**Neu in der Suite.** Ein Test (siehe oben) — 378 statt der als
+Messlatte genannten 377; der zusätzliche hält die
+Reihenfolge-Entscheidung als Vertrag fest, sie lebte sonst nur in
+Kommentaren. Dazu zwei Kommentar-Reparaturen ohne Code-Änderung:
+`roomLabelSpot` behauptete, der Name probiere „einen gekürzten Namen"
+— gekürzt wird bewusst nie (Entscheidung in Teil 2); `slideClear`
+behauptete pauschal, ein Raumname weiche „nicht nach oben oder unten"
+aus — das gilt für den Versatz gegen Punkte, nicht für die Wandsuche.
+
+---
+
 ## Was nur ein Mensch beurteilen kann
 
 Playwright läuft hier nicht — das Panel wurde nie gerendert gesehen.
-Geprüft ist, *was* gezeichnet wird (364 Node-Tests, darunter 13 neue,
-rechnen die SVG-Strings nach); wie es *aussieht*, steht in diesen
-Punkten auf Probe:
+Geprüft ist, *was* gezeichnet wird (378 Node-Tests, darunter 13 neue aus
+`main` und einer für die Ausweich-Reihenfolge, rechnen die SVG-Strings
+nach); wie es *aussieht*, steht in diesen Punkten auf Probe:
+
+- **Ein Raumname, der beide Ausweichwege zugleich braucht:** seitwärts
+  eng, weil ein Geraetepunkt in der Mitte steht, *und* auf Mauerwerk an
+  der verschobenen Stelle. Der Name muss seitwärts ausrücken und von
+  dort senkrecht weiter; genau dieser Fall existierte vor der
+  Zusammenführung in keiner der beiden Lösungen. Der neue Test prüft
+  die Reihenfolge — den Anblick sieht er nicht.
 
 - **Etagenansicht, Ansichtsmodus:** Lesen die Wände sich als Mauerwerk
   (Bandfarbe = Mauerkrone des Stapels, Fallback-Kette
