@@ -309,6 +309,11 @@ main { flex:0 0 auto; min-width:0; }
 .stack .room-label { font-size:16px; fill:var(--fp-ink, currentColor);
                      opacity:.92; letter-spacing:.06em;
                      text-anchor:middle; dominant-baseline:middle; }
+/* Der Traeger hinter einem Namen, fuer den kein freier Boden uebrig
+   war. Das Blatt des Planes, nicht eine Sprechblase: dieselbe Farbe wie
+   die Platte, ruhig und ohne Kontur. */
+.room-label-backdrop { fill:var(--fp-surface, var(--card-background-color,#fff));
+                       opacity:.92; pointer-events:none; }
 /* Ein Balkon ist kein Zimmer: die Deckflaeche bekommt einen eigenen Ton
    statt der Zimmerfarbe, das Gelaender bleibt niedrig. */
 .stack .room.deck { fill:var(--fp-deck, var(--fp-house-line, currentColor));
@@ -384,6 +389,32 @@ main { flex:0 0 auto; min-width:0; }
          box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); overflow:hidden; }
 .stage.placing { cursor:crosshair; outline:2px dashed var(--primary-color,#03a9f4); }
 .edges { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+/* Die Waende der Etagenansicht. Ein Band je Wand, Tueren ausgespart,
+ * ueber den Raeumen und unantastbar fuer den Zeiger: ein Raum ist ein
+ * div mit Griffen, die Waende liegen als Zeichnung darueber. Dieselben
+ * zwei Farben wie die Mauerkrone im Stapel -- von oben sieht man den
+ * Wandabschluss, nicht die Wandflaeche. */
+.walls { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.plan-wall { fill:var(--fp-wall-top, var(--fp-surface, var(--card-background-color,#fff)));
+             stroke:var(--fp-shell-line, currentColor);
+             stroke-width:calc(1.1px * var(--fp-house,1));
+             stroke-opacity:calc(.95 * var(--fp-house,1));
+             stroke-linejoin:round;
+             vector-effect:non-scaling-stroke; }
+/* Beim Arrangieren tritt das Mauerwerk zurueck: Kanten, Griffe und
+ * Regler muessen sichtbar bleiben, und die gestrichelte Kante des
+ * Raumkastens ist dort das Arbeitsinstrument. Volle Waende gibt es,
+ * wenn angeschaut wird. */
+.stage.editing .walls { opacity:.3; }
+.stage.rooms-none .walls { display:none; }
+/* Der Raumname rueckt hinter die Wand vor seiner Ecke -- um wie viel,
+ * sagt der Renderer dem Raum als Variable; ohne Wand gilt der alte
+ * Abstand. */
+.area-name { position:absolute;
+             top:calc(var(--wall-band-top, 0%) + 6px);
+             left:calc(var(--wall-band-left, 0%) + 8px);
+             font-size:12px;
+             color:var(--secondary-text-color,#727272); display:flex; align-items:center; gap:4px; }
 .edge { pointer-events:stroke; cursor:pointer;
         opacity:calc(var(--layer-opacity,1) * .85); }
 .edge.on { opacity:var(--layer-opacity,1); stroke-width:5; }
@@ -632,34 +663,18 @@ select { font:inherit; padding:6px; border-radius:8px;
 .handle-se { bottom:-5px; right:-5px; cursor:nwse-resize; }
 .handle-ne { top:-5px; right:-5px; cursor:nesw-resize; }
 .handle-sw { bottom:-5px; left:-5px; cursor:nesw-resize; }
-/* Oeffnungen im Grundriss. Eine Tuer ist eine Luecke -- also wird die
-   Wand darunter weggewischt, in der Farbe des Blattes; ein Fenster ist
-   eine duennere Wand, also bleibt ein Strich stehen. Genau der
-   Unterschied, den auch die Hausansicht zeichnet. */
-.opening { position:absolute; pointer-events:auto; cursor:grab; }
-/* Eine Tuer wischt die Wand weg -- und setzt an beide Enden einen
-   Laibungsstrich. Ohne die ist eine Luecke im Grundriss nichts, und
-   "nichts" war genau der Zustand, aus dem hier herausgekommen werden
-   soll: die Tuer war da, man sah sie nur nicht.
-
-   Als Verlauf und nicht als zwei Pseudoelemente: der Streifen ist sechs
-   Pixel schmal, und zwei absolute Kinder darin sind mehr Bauteil als
-   Zeichnung. */
-.opening.door { background:var(--card-background-color,#fff);
-                box-shadow:0 0 0 1px var(--card-background-color,#fff); }
-.opening.door.flat {
-  background-image:linear-gradient(to right,
-    var(--fp-wall, rgba(0,0,0,.55)) 0 1px, transparent 1px calc(100% - 1px),
-    var(--fp-wall, rgba(0,0,0,.55)) calc(100% - 1px) 100%); }
-.opening.door.upright {
-  background-image:linear-gradient(to bottom,
-    var(--fp-wall, rgba(0,0,0,.55)) 0 1px, transparent 1px calc(100% - 1px),
-    var(--fp-wall, rgba(0,0,0,.55)) calc(100% - 1px) 100%); }
-/* Ein Fenster laesst die Wand stehen: der Rahmen ist die Wand, die
-   durchlaeuft, und das Weisse darin die Scheibe. */
-.opening.window { background:var(--card-background-color,#fff);
-                  border:1px solid var(--fp-wall, rgba(0,0,0,.55));
-                  box-sizing:border-box; }
+/* Oeffnungen im Grundriss. Die Wand ist seit dem Wand-Layer eine echte
+   Zeichnung: Eine Tuer ist dort eine Luecke mit Schwelle und Schwenk,
+   ein Fenster eine helle Scheibe im durchlaufenden Band. Diese Kaesten
+   sind nur noch die Griffe -- durchsichtig, ziehen zum Verschieben,
+   Alt-Klick entfernt. */
+.opening { position:absolute; pointer-events:auto; cursor:grab;
+           background:transparent; }
+/* Die Schwelle unter einer Tuer: Bodenfarbe, wo die Wand fehlt. Sie
+   liegt im Wand-Layer und wischt darum auch die gestrichelte Kante des
+   Raumkastens an der Luecke weg -- die Tuer durchbricht die Kante,
+   statt von ihr zerschnitten zu werden. */
+.door-sill { fill:var(--secondary-background-color,#fafafa); pointer-events:none; }
 /* Der Schwenk und die Bruestung in der Hausansicht. Beides Linien, kein
    Fuellwerk: eine ausgemalte Tuer waere ein Moebelstueck. */
 .door-swing { fill:none; stroke:var(--fp-wall, rgba(0,0,0,.45));

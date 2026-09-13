@@ -83,6 +83,17 @@ const { ROOM_LABEL } = await import(
   ).href
 );
 
+/** Die reinen Geometrie-Funktionen. Hier oben und nicht weiter unten,
+ *  weil Tests, die sie brauchen, schon vor dieser Stelle laufen -- nach
+ *  einem top-level await ist die Datei angehalten, und der Testlaeufer
+ *  holt sich derweil die gemeldeten Tests ab. */
+const geometry = await import(
+  pathToFileURL(
+    join(here, "..", "custom_components", "spatial_hub", "www",
+         "panel-geometry.js"),
+  ).href
+);
+
 const at = (x, y) => ({ x, y, z: 0 });
 
 const node = (id, extra = {}) => ({
@@ -2433,6 +2444,165 @@ test("eine Oeffnung ohne Breite bekommt kein Zeichen", () => {
     "");
 });
 
+// ── Die Etagenansicht: Waende, die aussehen wie Waende ─────
+//
+// Der Grundriss ist der Blick senkrecht von oben; was man von einer Wand
+// sieht, ist ihre Oberkante. Dieselben Vierecke wie im Stapel, nur ohne
+// die Scherung -- und ohne dass die Raeume ihre Griffe verlieren.
+
+const roomAt = (x, y, width = 0.4, height = 0.4, extra = {}) => ({
+  id: "r", name: "Raum", floor_id: "eg", kind: "indoor",
+  position: at(x, y), size: { width, height }, ...extra,
+});
+
+/** Das Waende-SVG der Etagenansicht, samt seinen Polygonen. */
+const stageWalls = (data) => {
+  const html = panel(data)._stageHtml();
+  const svg = /<svg class="walls"[^>]*>([\s\S]*?)<\/svg>/.exec(html);
+  return { html, svg: svg ? svg[1] : "" };
+};
+
+const planPolys = (svg) =>
+  [...svg.matchAll(/class="plan-wall" points="([^"]+)"/g)]
+    .map((m) => m[1].split(/\s+/).map((pair) => {
+      const [x, y] = pair.split(",").map(Number);
+      return { x, y };
+    }));
+
+/** Die Dicke eines Bandes: der Abstand von Aussen- zu Innenkante an
+ *  derselben Ecke. */
+const bandThickness = (quad) =>
+  Math.hypot(quad[3].x - quad[0].x, quad[3].y - quad[0].y);
+
+test("die Etagenansicht zeichnet Mauerwerk, keinen Rand", () => {
+  // Vorher war eine Wand der Rand eines div: 1px gestrichelt, in der
+  // Farbe, die beim hellen Thema zufaellig nach Grau aussieht.
+  const { svg } = stageWalls(model({ areas: [roomAt(0.5, 0.5)] }));
+  assert.equal(planPolys(svg).length, 4, "vier Waende, vier Baender");
+
+  // Ein Garten ist kein Mauerwerk.
+  const draussen = stageWalls(model({
+    areas: [{ id: "g", name: "Garten", floor_id: "eg", kind: "outdoor",
+              position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 } }],
+  }));
+  assert.equal(draussen.svg, "", "ein Garten hat keine Waende");
+});
+
+test("im Grundriss ist eine Tuer eine Luecke und ein Fenster ein Zeichen", () => {
+  const door = stageWalls(model({
+    areas: [roomAt(0.5, 0.5, 0.4, 0.4,
+             { doors: [{ side: 0, at: 0.5, width: 0.2 }] })],
+  }));
+  assert.equal(planPolys(door.svg).length, 5,
+               "die Luecke teilt die Vorderwand in zwei Stuecke");
+  assert.match(door.svg, /class="door-sill"/, "die Luecke zeigt Boden");
+  assert.match(door.svg, /class="door-swing"/, "und der Schwenk steht da");
+
+  const window_ = stageWalls(model({
+    areas: [roomAt(0.5, 0.5, 0.4, 0.4,
+             { doors: [{ side: 1, at: 0.5, width: 0.3, kind: "window" }] })],
+  }));
+  assert.equal(planPolys(window_.svg).length, 4,
+               "die Wand laeuft unter dem Fenster durch");
+  assert.match(window_.svg, /class="window-pane"/, "die Scheibe liegt im Band");
+  assert.match(window_.svg, /class="window-bar"/, "mit ihrer Fassung");
+  assert.doesNotMatch(window_.svg, /door-swing/,
+                      "ein Fenster ist keine Tuer");
+});
+
+test("Aussenwand dicker, Innenwand leiser -- wie auf Papier", () => {
+  // Ein Raum, der oben an der Bauflucht liegt und unten frei endet: das
+  // eine Band traegt das Haus, das andere teilt nur.
+  const data = model({ areas: [roomAt(0.5, 0.3, 0.4, 0.6)] });
+  const { svg } = stageWalls(data);
+  const quads = planPolys(svg);
+  assert.ok(quads.length >= 4);
+  const oben = quads.filter((q) => q[0].y === Math.min(...quads.map((q2) => q2[0].y)));
+  const unten = quads.filter((q) => q[0].y === Math.max(...quads.map((q2) => q2[0].y)));
+  const top = Math.max(...oben.map(bandThickness));
+  const bottom = Math.max(...unten.map(bandThickness));
+  assert.ok(top > bottom, `oben ${top} wie unten ${bottom}`);
+  assert.ok(
+    Math.abs(top / bottom - geometry.PLAN.outerWall / geometry.PLAN.wall) < 0.01,
+    `das Verhaeltnis ist geraten: ${top / bottom}`);
+});
+
+test("zwei Raeume, die sich eine Wand teilen, bekommen eine Wand", () => {
+  const zwei = (extra = {}) => model({
+    areas: [
+      { ...roomAt(0.25, 0.5, 0.5, 0.5), id: "a" },
+      { ...roomAt(0.75, 0.5, 0.5, 0.5), id: "b" },
+      ...[],
+    ],
+    ...extra,
+  });
+  assert.equal(planPolys(stageWalls(zwei()).svg).length, 7,
+               "einer zeichnet die gemeinsame Wand, der andere laesst sie aus");
+  // Und wer sich getrennt hat, hat wieder zwei.
+  const getrennt = model({
+    areas: [
+      { ...roomAt(0.25, 0.5, 0.5, 0.5), id: "a", unjoined: ["b"] },
+      { ...roomAt(0.75, 0.5, 0.5, 0.5), id: "b" },
+    ],
+  });
+  assert.equal(planPolys(stageWalls(getrennt).svg).length, 8);
+});
+
+test("die Waende liegen ueber den Raeumen und unter den Verbindungen", () => {
+  // Unter den Raeumen wuerde der halbtransparente Grund sie zudecken --
+  // genau die Andeutung, die der Stapel abgeschafft hat.
+  const html = panel(model({ areas: [roomAt(0.5, 0.5)] }))._stageHtml();
+  const areas = html.indexOf('data-area=');
+  const walls = html.indexOf('<svg class="walls"');
+  const edges = html.indexOf('<svg class="edges"');
+  assert.ok(areas < walls && walls < edges, "die Reihenfolge stimmt nicht");
+});
+
+test("der Zeiger erreicht den Raum durch die Waende hindurch", () => {
+  // Der Layer hat pointer-events:none -- aber der Test uebernimmt die
+  // Zusage: Selbst wenn er im Weg stunde, ginge der Griff an den Raum.
+  const quelltext = rendererSource();
+  assert.match(quelltext, /\.walls \{[^}]*pointer-events:none/,
+               "der Layer faengt keine Zeiger");
+  const view = panel(model({ areas: [roomAt(0.5, 0.5)] }), { edit: true });
+  view._onPointerDown(pointer(500, 500, {
+    target: [element({ _class: "walls" }),
+             element({ "data-area": "r" }),
+             stage()],
+  }));
+  assert.equal(view._drag.mode, "area", "der Griff ging in die Leere");
+  assert.equal(view._drag.key, "r");
+});
+
+test("der Raumname rueckt hinter die Wand, die vor ihm steht", () => {
+  // Ohne Versatz laege der Name auf dem Band: er haengt 6px unter der
+  // Raumkante, und das Band ist dicker.
+  const data = model({ areas: [roomAt(0.5, 0.3, 0.4, 0.6)] });
+  const { html } = stageWalls(data);
+  const band = /--wall-band-top:([0-9.]+)%/.exec(html);
+  assert.ok(band, "der Raum erfaehrt dem Namen keinen Versatz");
+  assert.ok(Number(band[1]) > 0, "der Versatz ist null");
+
+  // Der Garten hat keine Wand, also auch keinen Versatz.
+  const garten = stageWalls(model({
+    areas: [{ id: "g", name: "Garten", floor_id: "eg", kind: "outdoor",
+              position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 } }],
+  })).html;
+  assert.doesNotMatch(garten, /--wall-band-top:/);
+});
+
+test("die Waende folgen dem Thema, auch dem dunklen", () => {
+  // Keine eigenen Farben: das Panel sitzt in Home Assistants Thema, die
+  // Wand erbt die Mauerkrone des Stapels. Die Hexwerte in den Klammern
+  // sind Rueckfallwerte, wie ueberall im Stylesheet.
+  const quelltext = rendererSource();
+  const regel = /\.plan-wall \{[^}]*\}/.exec(quelltext);
+  assert.ok(regel, "die Wandregel fehlt");
+  assert.match(regel[0], /fill:var\(--fp-wall-top/, "die Fuellung ist fest");
+  assert.match(regel[0], /stroke:var\(--fp-shell-line/, "die Kante ist fest");
+});
+
+
 test("a staircase is drawn as steps, by whatever the user called it", () => {
   const stair = (id, name, icon = "") => ({
     id, name, icon, floor_id: "eg",
@@ -2619,23 +2789,36 @@ test("die Hausansicht setzt keine zwei Namen aufeinander", () => {
   const html = panel(dicht, { floor: null })._stackHtml();
 
   // Die Namen samt Stelle aus dem gezeichneten SVG zurueckholen und
-  // nachrechnen -- geprueft wird das Bild, nicht die Absicht.
+  // nachrechnen -- geprueft wird das Bild, nicht die Absicht. Weggeblendet
+  // (crowded) bleibt ausgenommen: Ein unsichtbarer Name belegt keinen
+  // sichtbaren Platz -- seit die Namen auch den Waenden ausweichen,
+  // blendet das Entzerren in einem so vollen Raum einen aus, statt ihn
+  // aufs Mauerwerk zu setzen; der Schwester-Test weiter unten rechnet
+  // mit weggeblendeten Namen genauso.
   const boxes = [];
-  const g = /<g[^>]*data-at-x="([\d.eE+-]+)"[^>]*data-at-y="([\d.eE+-]+)"[^>]*>([\s\S]*?)<\/g>/g;
+  const g = /<g class="stack-node([^"]*)"[\s\S]*?data-at-x="([\d.eE+-]+)"\s+data-at-y="([\d.eE+-]+)"[^>]*>([\s\S]*?)<\/g>|<g[^>]*data-at-x="([\d.eE+-]+)"[^>]*data-at-y="([\d.eE+-]+)"[^>]*>([\s\S]*?)<\/g>/g;
   let m;
   while ((m = g.exec(html))) {
-    const raum = m[3].match(/class="room-label">([^<]*)</);
-    const dot = m[3].match(/class="stack-label" y="([\d.-]+)">([^<]*)</);
-    if (raum) {
-      boxes.push(geometry.labelBox(
-        { x: +m[1], y: +m[2], text: raum[1], size: 16 }));
-    } else if (dot) {
-      boxes.push(geometry.labelBox(
-        { x: +m[1], y: +m[2] + Number(dot[1]), text: dot[2], size: 18 }));
+    if (m[1] !== undefined) {
+      if (/crowded/.test(m[1])) continue;
+      const dot = m[4].match(/class="stack-label" y="([\d.-]+)">([^<]*)</);
+      if (dot) {
+        boxes.push(geometry.labelBox(
+          { x: +m[2], y: +m[3] + Number(dot[1]), text: dot[2], size: 18 }));
+      }
+    } else {
+      const raum = m[7].match(/class="room-label">([^<]*)</);
+      if (raum) {
+        boxes.push(geometry.labelBox(
+          { x: +m[5], y: +m[6], text: raum[1], size: 16 }));
+      }
     }
   }
 
-  assert.equal(boxes.length, 4, "ein Raum, drei Geraete");
+  // Der Raumname und die zwei sichtbaren Geraetenamen -- das dritte
+  // Geraet findet keinen Platz ohne Wand und wird ausgeblendet, seine
+  // Karte zaehlt hier nicht mit.
+  assert.equal(boxes.length, 3, "ein Raum, drei Geraete, eins davon weg");
   for (let i = 0; i < boxes.length; i += 1) {
     for (let j = i + 1; j < boxes.length; j += 1) {
       const a = boxes[i], b = boxes[j];
@@ -2697,6 +2880,196 @@ test("kein sichtbarer Name liegt auf einem fremden Geraetesymbol", () => {
     });
   });
   assert.deepEqual(auf, [], `Namen auf fremden Symbolen: ${auf.join(", ")}`);
+});
+
+// ── Beschriftungen auf Waenden ────────────────────────────
+//
+// Nachgemessen am Stapel lag von 29 Beschriftungen jede zweite auf
+// Mauerwerk. Was dagegen hilft, in dieser Reihenfolge: ausweichen,
+// wegblenden, und erst als allerletztes einen Traeger hinter die
+// Schrift.
+
+test("ein Raumname weicht der Wand aus, wenn die Mitte darauf liegt", () => {
+  // Ein flacher Raum: die vordere Wandflaeche steht im Bild im unteren
+  // Drittel des Raumes, und genau dort sass der Name.
+  const raum = [
+    { x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 60 }, { x: 0, y: 60 },
+  ];
+  const front = [{ x: 0, y: 60 }, { x: 300, y: 60 },
+                 { x: 300, y: 34 }, { x: 0, y: 34 }];
+  const spot = geometry.roomLabelSpot(raum, [front], "Wohnzimmer", 16, 1, false);
+
+  const box = geometry.labelBox({ x: spot.x, y: spot.y, text: "Wohnzimmer",
+                                  size: 16, scale: 1 });
+  assert.equal(geometry.coveredAreaOf(box, [front]) < 0.01, true,
+               `der Name liegt weiter auf der Wand: ${JSON.stringify(box)}`);
+  assert.ok(spot.y < 30, "er ist nicht aus dem Mauerwerk gerutscht");
+  assert.equal(spot.backdrop, false, "der Traeger ist nicht noetig");
+});
+
+test("findest keinen freien Boden, bekommst einen Traeger", () => {
+  // Der Raum ist flacher als die Schrift hoch ist: jede Stelle ist Wand.
+  const flach = [
+    { x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 30 }, { x: 0, y: 30 },
+  ];
+  const band = [{ x: 0, y: 30 }, { x: 200, y: 30 },
+                { x: 200, y: 4 }, { x: 0, y: 4 }];
+  const spot = geometry.roomLabelSpot(flach, [band], "Kino", 16, 1, false);
+
+  assert.equal(spot.backdrop, true, "der Name steht unlesbar im Mauerwerk");
+  assert.equal(spot.text, "Kino", "und er ist nicht halb abgeschnitten");
+});
+
+test("der Seitenversatz setzt den Anfang der Wandsuche, nicht ihr Ende", () => {
+  // Beide Ausweichwege an einem Namen: der Versatz weicht einem Punkt in
+  // der Mitte zur Seite, die Suche danach dem Mauerwerk. Die Reihenfolge
+  // ist eine Entscheidung, und diese Stelle haelt sie fest: Die Suche
+  // muss von der *verschobenen* Stelle aus freien Boden suchen. Liefen
+  // sie umgekehrt (erst die Wand, dann der Versatz), stuende der Name
+  // am Ende woanders, als die Suche ihn geprueft hat -- und der Traeger
+  // waere entschieden worden, bevor der Versatz ihn ueberfluessig oder
+  // noetig gemacht hat.
+  const raum = [
+    { x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 200 }, { x: 0, y: 200 },
+  ];
+  // Ein Streifen Mauerwerk quer durch die Mitte; die Mitte des Raumes
+  // liegt darin, links und rechts davon ist Boden.
+  const streifen = [{ x: 220, y: 80 }, { x: 380, y: 80 },
+                    { x: 380, y: 120 }, { x: 220, y: 120 }];
+
+  // Ohne Versatz weicht der Name der Wand senkrecht aus -- die Mitte
+  // (y=100) liegt im Mauerwerk.
+  const ohne = geometry.roomLabelSpot(raum, [streifen], "Wohnzimmer",
+                                      16, 1, false);
+  assert.ok(Math.abs(ohne.y - 100) > 1,
+            "die Vorbedingung stimmt nicht: die Mitte ist wandfrei");
+
+  // Mit Versatz steht die verschobene Stelle wandfrei: die Suche hat
+  // nichts zu tun, und der Name bleibt genau dort, wohin der Versatz
+  // ihn gestellt hat -- senkrecht wurde nicht noch einmal gerueckt.
+  const frei = geometry.roomLabelSpot(raum, [streifen], "Wohnzimmer",
+                                      16, 1, false, 150);
+  assert.equal(frei.x, 450, "der Versatz ist verloren gegangen");
+  assert.equal(frei.y, 100, "gesucht wurde vom unverschobenen Ort aus");
+  assert.equal(frei.backdrop, false);
+
+  // Und steht die verschobene Stelle selbst auf Mauerwerk, sucht die
+  // Suche von dort weiter -- der Versatz bleibt erhalten, der Traeger
+  // wird erst am Ende entschieden.
+  const blockiert = geometry.roomLabelSpot(raum, [streifen], "Wohnzimmer",
+                                           16, 1, false, 100);
+  const box = geometry.labelBox({ x: blockiert.x, y: blockiert.y,
+                                  text: "Wohnzimmer", size: 16, scale: 1 });
+  assert.equal(blockiert.x, 400, "der Versatz ist verloren gegangen");
+  assert.equal(geometry.coveredAreaOf(box, [streifen]) < 0.01, true,
+               "der Name landete im Mauerwerk");
+  assert.equal(blockiert.backdrop, false);
+});
+
+test("Geraetenamen weichen den Waenden aus, solange es geht", () => {
+  // Vorher haengte der Name 30 Einheiten unter seinem Punkt -- mitten in
+  // die vordere Wandflaeche, wenn der Punkt im flachen Raum stand.
+  const wand = [{ x: 0, y: 90 }, { x: 200, y: 90 },
+                { x: 200, y: 64 }, { x: 0, y: 64 }];
+  const [aufWand] = geometry.declutter(
+    [{ x: 100, y: 100, text: "Adapter Kinderzimmer", size: 18, scale: 1 }],
+    [wand],
+  );
+  const box = geometry.labelBox(
+    { x: 100, y: 130 + aufWand.shift, text: "Adapter Kinderzimmer",
+      size: 18, scale: 1 });
+  assert.equal(geometry.coveredAreaOf(box, [wand]) < 0.01, true,
+               "der Name blieb im Mauerwerk stehen");
+  assert.equal(aufWand.hidden, false);
+
+  // Und nur, wenn nicht einmal die Wand neben den anderen Namen Platz
+  // bietet, wird weggeblendet -- sichtbar auf dem Band ist lesbarer als
+  // gar kein Name.
+  const [verdeckt] = geometry.declutter(
+    [{ x: 100, y: 130, text: "N", size: 18, scale: 1, fixed: true },
+     { x: 100, y: 145, text: "Adapter Kinderzimmer", size: 18, scale: 1 }],
+    [wand],
+  );
+  assert.equal(verdeckt.hidden, false, "er verschwand lieber");
+});
+
+test("der Traeger steht in der Zeichnung, wenn er gebraucht wird", () => {
+  // Ein Raum so flach, dass jede Stelle Wand ist: der Name bleibt, wo er
+  // hingehoert, und bekommt das Blatt hinter sich.
+  const flach = model({
+    areas: [{ id: "kino", name: "Kino", floor_id: "eg", kind: "indoor",
+              position: at(0.5, 0.5), size: { width: 0.4, height: 0.08 } }],
+  });
+  const html = panel(flach, { floor: null })._stackHtml();
+  assert.match(html, /class="room-label-backdrop"/,
+               "kein Traeger hinter dem Namen");
+  assert.match(html, /class="room-label"[^>]*>Kino</, "und der Name ist da");
+});
+
+/** Die Ueberdeckung der Beschriftungen durch das Mauerwerk, aus dem
+ *  gezeichneten SVG nachgerechnet: Wandflaechen und Namenskaesten
+ *  herauslesen, Schnittflaechen summieren. */
+const coverage = (data) => {
+  const html = panel(data, { floor: null })._stackHtml();
+  const walls = [...html.matchAll(
+    /class="room-(?:wall|cap)" points="([^"]+)"/g,
+  )].map((m) => m[1].split(/\s+/).map((pair) => {
+    const [x, y] = pair.split(",").map(Number);
+    return { x, y };
+  }));
+
+  let total = 0;
+  let count = 0;
+  // Raumnamen: Punkt aus data-at, Groesse so, wie sie gesetzt wurde.
+  const raum = /<g[^>]*data-at-x="([\d.eE+-]+)"[^>]*data-at-y="([\d.eE+-]+)"[^>]*>\s*<text class="room-label"(?: style="font-size:([\d.]+)px")?>([^<]*)</g;
+  let m;
+  while ((m = raum.exec(html))) {
+    const box = geometry.labelBox({
+      x: +m[1], y: +m[2], text: m[4], size: m[3] ? +m[3] : 16, scale: 1 });
+    const auf = geometry.coveredAreaOf(box, walls);
+    total += auf;
+    if (auf > 1) count += 1;
+  }
+  // Geraetenamen: Punkt, Abstand und Sichtbarkeit aus dem Knoten.
+  const knoten = /<g class="stack-node([^"]*)"[\s\S]*?data-at-x="([\d.eE+-]+)"\s+data-at-y="([\d.eE+-]+)"\s+transform="translate\([^)]*\) scale\(([\d.]+)\)">[\s\S]*?<text class="stack-label" y="([\d.-]+)">([^<]*)</g;
+  while ((m = knoten.exec(html))) {
+    if (/crowded/.test(m[1])) continue;
+    const box = geometry.labelBox({
+      x: +m[2], y: +m[3] + Number(m[5]) * (+m[4]),
+      text: m[6], size: 18, scale: +m[4] });
+    const auf = geometry.coveredAreaOf(box, walls);
+    total += auf;
+    if (auf > 1) count += 1;
+  }
+  return { total, count };
+};
+
+test("Beschriftungen liegen auf Boden, nicht auf Mauerwerk", () => {
+  // Der gemessene Fall, aufs Wesentliche gekuerzt: Ein Geraet steht
+  // unter der Raummitte, sein Name haengt 30 Einheiten unter dem Punkt
+  // -- mitten in die vordere Wandflaeche. Vor der Aenderung blieb er
+  // dort stehen (die Stelle war ja frei von anderen Namen); jetzt weicht
+  // er auf den freien Boden darueber aus. Der Test zaehlt die
+  // Ueberdeckung aus dem gezeichneten SVG nach -- Obergrenze, kein
+  // Sollwert, damit Rauschen an einer Kante nicht rot schlaegt.
+  const haus = model({
+    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
+    areas: [
+      { id: "kinder", name: "Kinderzimmer", floor_id: "eg", kind: "indoor",
+        position: at(0.5, 0.5), size: { width: 0.5, height: 0.4 } },
+    ],
+    nodes: [
+      node("p:1", { area_id: "kinder", floor_id: "eg",
+                    label: "Adapter Kinderzimmer",
+                    position: at(0.5, 0.6) }),
+    ],
+  });
+  const { total, count } = coverage(haus);
+
+  assert.ok(total < 400,
+            `${Math.round(total)} px^2 Beschriftung liegt auf Wand`);
+  assert.ok(count <= 1,
+            `${count} Beschriftungen liegen messbar auf Wand`);
 });
 
 test("ein Kasten darf auch etwas sein, das kein Text ist", () => {
@@ -5059,14 +5432,8 @@ test("one storey stands on nothing; a stack stands on slabs", () => {
 // entscheiden, wo im Bild etwas landet und welche Farbe es bekommt, und
 // keine davon brauchte je ein Custom Element. In der Panel-Klasse waren
 // sie zwischen 5000 Zeilen Interaktion nur ueber die fertige Zeichnung
-// zu erreichen.
+// zu erreichen. Der Import selbst steht oben bei den anderen.
 
-const geometry = await import(
-  pathToFileURL(
-    join(here, "..", "custom_components", "spatial_hub", "www",
-         "panel-geometry.js"),
-  ).href
-);
 const colour = await import(
   pathToFileURL(
     join(here, "..", "custom_components", "spatial_hub", "www",

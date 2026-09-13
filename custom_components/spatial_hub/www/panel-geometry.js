@@ -195,25 +195,32 @@ const wallRuns = (doors, side) => {
 };
 
 const capsOf = (corners, thickness, className, keep = () => true,
-                doors = null) => {
+                doors = null) => capQuadsOf(corners, thickness, keep, doors)
+  .map((quad) => `<polygon class="${className}" points="${
+    quad.map((point) => `${point.x},${point.y}`).join(" ")}"/>`)
+  .join("");
+
+/** The top of a wall as quads of points -- what `capsOf` draws.
+ *
+ *  Als Punkte und nicht als Zeichenketten: Das Entzerren des Stapels
+ *  prueft gegen dieselben Vierecke (`wallPolygonsOf`), und eine
+ *  Abschrift der Rechnung waere eine zweite, die um ein Pixel daneben
+ *  liegen lernen wuerde. */
+const capQuadsOf = (corners, thickness, keep = () => true, doors = null) => {
   const inner = insetOf(corners, thickness);
   return corners
     .map((corner, index) => {
-      if (!keep(index)) return "";
+      if (!keep(index)) return [];
       const next = (index + 1) % corners.length;
       return wallRuns(doors, index)
-        .map(([from, to]) => {
-          const outerA = along(corner, corners[next], from);
-          const outerB = along(corner, corners[next], to);
-          const innerA = along(inner[index], inner[next], from);
-          const innerB = along(inner[index], inner[next], to);
-          return `<polygon class="${className}" points="${outerA.x},${outerA.y} ` +
-            `${outerB.x},${outerB.y} ` +
-            `${innerB.x},${innerB.y} ${innerA.x},${innerA.y}"/>`;
-        })
-        .join("");
+        .map(([from, to]) => [
+          along(corner, corners[next], from),
+          along(corner, corners[next], to),
+          along(inner[index], inner[next], to),
+          along(inner[index], inner[next], from),
+        ]);
     })
-    .join("");
+    .flat();
 };
 
 /** Fenster und Tuerschwenk: was eine Oeffnung ausser einer Luecke ist.
@@ -278,29 +285,246 @@ const openingMarksOf = (corners, rise, doors, keep = () => true) =>
     })
     .join("");
 
-/** Standing walls along a projected outline.
+/** Standing walls along a projected outline, as quads of points.
  *
  *  `rise` upwards for a room's walls, negative for the slab a storey
  *  stands on. One quad per edge, in the outline's own order -- the
  *  projection shears x and y together, so a wall is a parallelogram and
  *  needs no trigonometry beyond "the same points, higher up".
+ *
+ *  Als Punkte und nicht als Zeichenketten, damit dieselben Vierecke
+ *  ein zweites Mal gebraucht werden koennen: das Entzerren der
+ *  Beschriftungen muss gegen genau die Flachen pruefen, die hier
+ *  gezeichnet werden. Zwei Rechnungen fuer dieselbe Wand sind genau
+ *  der Fehler, vor dem der Kommentar bei `openingMarksOf` warnt.
  */
-const wallsOf = (corners, rise, className, keep = () => true, doors = null) =>
+const wallQuadsOf = (corners, rise, keep = () => true, doors = null) =>
   corners
     .map((corner, index) => {
-      if (!keep(index)) return "";
+      if (!keep(index)) return [];
       const next = corners[(index + 1) % corners.length];
       return wallRuns(doors, index)
         .map(([from, to]) => {
           const start = along(corner, next, from);
           const end = along(corner, next, to);
-          return `<polygon class="${className}" points="${start.x},${start.y} ` +
-            `${end.x},${end.y} ${end.x},${end.y - rise} ` +
-            `${start.x},${start.y - rise}"/>`;
+          return [start, end, { x: end.x, y: end.y - rise },
+                  { x: start.x, y: start.y - rise }];
+        });
+    })
+    .flat();
+
+const wallsOf = (corners, rise, className, keep = () => true, doors = null) =>
+  wallQuadsOf(corners, rise, keep, doors)
+    .map((quad) => `<polygon class="${className}" points="${
+      quad.map((point) => `${point.x},${point.y}`).join(" ")}"/>`)
+    .join("");
+
+/** Die Waende eines Raumes im Stapel, als Vierecke statt als Zeichen.
+ *
+ *  Genau die Flachen, die `wallsOf` und `capsOf` zeichnen: die stehenden
+ *  Wandflaechen und die Mauerkrone darueber. Das Entzerren der
+ *  Beschriftungen prueft gegen sie -- eine Beschriftung, die auf
+ *  Mauerwerk landet, ist unlesbar, und gegen eine Abschrift der Waende
+ *  zu pruefen hiesse, sie um ein Pixel danebenlegen zu lernen. */
+const wallPolygonsOf = (corners, rise, thickness, keep = () => true,
+                        doors = null) => {
+  const crown = corners.map((corner) => ({ x: corner.x, y: corner.y - rise }));
+  return [
+    ...wallQuadsOf(corners, rise, keep, doors),
+    ...capQuadsOf(crown, thickness, keep, doors),
+  ];
+};
+
+// ── Der flache Grundriss: die Etagenansicht ───────────────
+//
+// Die Etagenansicht ist der Blick senkrecht von oben. Was man dabei von
+// einer Wand sieht, ist ihre Oberkante -- genau das Band, das `capsOf`
+// fuer den Stapel rechnet, nur ohne die Scherung. Deshalb stehen die
+// Funktionen fuer den flachen Grundriss direkt neben denjenigen fuer den
+// Stapel und teilen mit ihm, was dasselbe ist: `wallRuns` fuer die
+// Tueren, `along` fuer die Punkte, `openingsOn` fuer die Oeffnungen.
+// Nicht geteilt wird der Versatz: der Stapel schreitet zur Mitte
+// (`insetOf`), der Grundriss rueckt senkrecht zur Kante ein, denn was im
+// Stapel eine lehnte Flaeche ist, ist von oben ein Mauerwerk mit einer
+// Dicke, die auf dem Papier ueberall dieselbe ist.
+
+/** How thick a wall is drawn in the flat plan, as a share of the house.
+ *
+ *  Dieselben Proportionen wie der Stapel (STACK.wall und STACK.outerWall
+ *  von 620 Hausbreiten), hier als Anteil der Hausbreite statt in
+ *  Bildeinheiten: die Etagenansicht skaliert mit dem Fenster, eine Dicke
+ *  in festen Einheiten wuerde mit ihr mitwachsen oder verschwinden. */
+const PLAN = Object.freeze({
+  wall: STACK.wall / STACK.width,
+  outerWall: STACK.outerWall / STACK.width,
+});
+
+/** Die Flaeche einer Kontur mit Vorzeichen. Faellt sie negativ aus, laeuft
+ *  die Kontur gegen den Uhrzeigersinn des Bildes -- und "nach innen" ist
+ *  dann die andere Seite. */
+const shoelace = (corners) =>
+  corners.reduce((sum, corner, index) => {
+    const next = corners[(index + 1) % corners.length];
+    return sum + corner.x * next.y - next.x * corner.y;
+  }, 0);
+
+/** Die Normale einer Kante, die ins Innere der Kontur zeigt.
+ *
+ *  Die Konturen laufen im Uhrzeigersinn des Bildes, und dort zeigt
+ *  (-dy, dx) nach innen -- bei der umgekehrten Laufrichtung wird
+ *  gedreht. Ein Zeichner, der eine Ecke gegen den Uhrzeigersinn gesetzt
+ *  hat, bekommt so trotzdem Mauerwerk im Raum und nicht im Garten. */
+const inwardNormal = (from, to, turn) => {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return { x: (-dy * turn) / len, y: (dx * turn) / len };
+};
+
+/** The walls of the flat plan: one band per edge, masonry seen from above.
+ *
+ *  `thicknessAt` entscheidet je Kante, wie dick das Band wird -- und ob
+ *  es ueberhaupt eins gibt: eine Seite, die der Nachbar zeichnet, kriegt
+ *  0 und damit kein Viereck. Das ist dieselbe Entscheidung, die
+ *  `drawsTheWall` fuer den Stapel trifft, nur hier je Kante statt je
+ *  Raum, weil ein Raum im flachen Grundriss auf der einen Seite teilt
+ *  und auf der anderen nicht.
+ *
+ *  Die Tueren kommen aus `wallRuns`, derselben Rechnung wie im Stapel:
+ *  eine Tuer ist eine Luecke, ein Fenster laesst das Band durchlaufen. */
+const planWallsOf = (corners, thicknessAt, className, keep = () => true,
+                     doors = null) => {
+  const turn = shoelace(corners) >= 0 ? 1 : -1;
+  return corners
+    .map((corner, index) => {
+      const thickness = thicknessAt(index);
+      if (!keep(index) || !(thickness > 0)) return "";
+      const next = corners[(index + 1) % corners.length];
+      const normal = inwardNormal(corner, next, turn);
+      return wallRuns(doors, index)
+        .map(([from, to]) => {
+          const outerA = along(corner, next, from);
+          const outerB = along(corner, next, to);
+          const innerA = { x: outerA.x + normal.x * thickness,
+                           y: outerA.y + normal.y * thickness };
+          const innerB = { x: outerB.x + normal.x * thickness,
+                           y: outerB.y + normal.y * thickness };
+          return `<polygon class="${className}" points="${outerA.x},${outerA.y} ` +
+            `${outerB.x},${outerB.y} ${innerB.x},${innerB.y} ` +
+            `${innerA.x},${innerA.y}"/>`;
         })
         .join("");
     })
     .join("");
+};
+
+/** Was eine Oeffnung im flachen Grundriss ausser einer Luecke ist.
+ *
+ *  Dieselben Oeffnungen, dieselben Kanten, dieselbe Dicke wie
+ *  `planWallsOf` -- Wand und Zeichen kommen aus einer Rechnung und
+ *  koennen sich um kein Pixel verfehlen. Nur das Zeichen selbst ist ein
+ *  anderes als im Stapel: von oben gibt es keine Wandhoehe, das Fenster
+ *  liegt als helle Scheibe im durchlaufenden Band, die Tuer bekommt
+ *  eine Schwelle aus Bodenfarbe, und ihr Schwenk steht als Viertelkreis
+ *  auf dem Boden.
+ *
+ *  Der Schwenk hat hier den anderen Bogen-Zaehler: im Stapel schwingt
+ *  das Blatt auf der Mauerkrone, hier auf der Kante selbst -- der
+ *  Viertelkreis muss in den Raum bulgen, nicht hinaus.
+ */
+const planOpeningMarksOf = (corners, thicknessAt, doors,
+                            keep = () => true) => {
+  const turn = shoelace(corners) >= 0 ? 1 : -1;
+  return corners
+    .map((corner, index) => {
+      if (!keep(index)) return "";
+      const thickness = thicknessAt(index);
+      if (!(thickness > 0)) return "";
+      const next = corners[(index + 1) % corners.length];
+      const normal = inwardNormal(corner, next, turn);
+      return openingsOn(doors, index)
+        .map(({ door, run: [from, to] }) => {
+          const start = along(corner, next, from);
+          const end = along(corner, next, to);
+          if (openingKind(door) === OPENING.WINDOW) {
+            // Die Scheibe: das Band laeuft unter dem Fenster durch, die
+            // helle Flaeche darin und ein Strich in seiner Mitte sagen
+            // Glas statt Oeffnung.
+            const innerA = { x: start.x + normal.x * thickness,
+                             y: start.y + normal.y * thickness };
+            const innerB = { x: end.x + normal.x * thickness,
+                             y: end.y + normal.y * thickness };
+            const midA = { x: start.x + normal.x * thickness / 2,
+                           y: start.y + normal.y * thickness / 2 };
+            const midB = { x: end.x + normal.x * thickness / 2,
+                           y: end.y + normal.y * thickness / 2 };
+            return `<polygon class="window-pane" points="${start.x},${start.y} ` +
+              `${end.x},${end.y} ${innerB.x},${innerB.y} ` +
+              `${innerA.x},${innerA.y}"/>` +
+              `<polyline class="window-bar" points="${midA.x},${midA.y} ` +
+              `${midB.x},${midB.y}"/>`;
+          }
+          const span = Math.hypot(end.x - start.x, end.y - start.y);
+          if (span < 1.5) return "";
+          // Die Schwelle: die Luecke zeigt Boden, und zwar bis ueber die
+          // gestrichelte Kante des Raumkastens hinaus, die hier noch
+          // durchlaeuft. Ohne sie waere die Tuer von der Kante
+          // zerschnitten, die sie gerade durchbricht.
+          const sillA = { x: start.x - normal.x * 1.5,
+                          y: start.y - normal.y * 1.5 };
+          const sillB = { x: end.x - normal.x * 1.5,
+                          y: end.y - normal.y * 1.5 };
+          const innerA = { x: start.x + normal.x * thickness,
+                           y: start.y + normal.y * thickness };
+          const innerB = { x: end.x + normal.x * thickness,
+                           y: end.y + normal.y * thickness };
+          const hinge = start;
+          const leaf = { x: hinge.x + normal.x * span,
+                         y: hinge.y + normal.y * span };
+          return `<polygon class="door-sill" points="${sillA.x.toFixed(2)},${
+            sillA.y.toFixed(2)
+          } ${sillB.x.toFixed(2)},${sillB.y.toFixed(2)} ${
+            innerB.x.toFixed(2)
+          },${innerB.y.toFixed(2)} ${innerA.x.toFixed(2)},${
+            innerA.y.toFixed(2)
+          }"/>` +
+            `<path class="door-swing" d="M${hinge.x.toFixed(2)},${
+              hinge.y.toFixed(2)
+            } L${leaf.x.toFixed(2)},${leaf.y.toFixed(2)} A${span.toFixed(2)},${
+              span.toFixed(2)
+            } 0 0 0 ${end.x.toFixed(2)},${end.y.toFixed(2)}"/>`;
+        })
+        .join("");
+    })
+    .join("");
+};
+
+/** Welche Seiten eines Raumes an der Aussenwand des Hauses liegen.
+ *
+ *  Die Aussenwand ist dort, wo der Raum die Bauflucht erreicht --
+ *  `floor.outline` ist der Kasten, den der Hub daraus ableitet, und ein
+ *  Rand des Raumes, der auf einem Rand des Kastens liegt, traegt das
+ *  Haus. Nur ganze Kanten: eine Ecke, die zufaellig die Linie streift,
+ *  ist keine Aussenwand.
+ */
+const flushSidesOf = (corners, outline, gap = JOIN_GAP) => {
+  const box = outline || { x: 0, y: 0, width: 1, height: 1 };
+  const right = box.x + box.width;
+  const bottom = box.y + box.height;
+  const on = (point) => ({
+    top: Math.abs(point.y - box.y) <= gap,
+    bottom: Math.abs(point.y - bottom) <= gap,
+    left: Math.abs(point.x - box.x) <= gap,
+    right: Math.abs(point.x - right) <= gap,
+  });
+  return corners.map((corner, index) => {
+    const next = corners[(index + 1) % corners.length];
+    const a = on(corner);
+    const b = on(next);
+    return (a.top && b.top) || (a.bottom && b.bottom) ||
+      (a.left && b.left) || (a.right && b.right);
+  });
+};
 
 /** Which of the four outer walls stand between the viewer and the rooms.
  *
@@ -1041,11 +1265,13 @@ const spanAt = (corners, y) => {
 
 /** Wie weit ein Raumname **zur Seite** muss, um freizustehen.
  *
- *  Ein Raumname weicht nicht nach oben oder unten aus: Er gehoert in
- *  seinen Raum, und ueber die Wand geschoben stuende er im Raum des
- *  Nachbarn. Zur Seite ist er aber beweglich, solange er in seiner
- *  eigenen Kontur bleibt -- und das ist genau die Richtung, in der Platz
- *  ist.
+ *  Ein Raumname weicht einem Geraetepunkt nicht nach oben oder unten
+ *  aus: Er gehoert in seinen Raum, und ueber die Wand geschoben stuende
+ *  er im Raum des Nachbarn. Zur Seite ist er aber beweglich, solange er
+ *  in seiner eigenen Kontur bleibt -- und das ist genau die Richtung,
+ *  in der Platz ist. (Dem Mauerwerk gegenueber gilt die Schranke
+ *  nicht -- dort weicht der Name vertikal aus, `roomLabelSpot`, und
+ *  bleibt dabei ebenso in seinem Raum geklemmt.)
  *
  *  Der Fall, aus dem das entstanden ist: Auf der Terrasse standen Name
  *  und Geraetepunkt bei **derselben** x-Koordinate, weil die Automatik
@@ -1139,6 +1365,39 @@ const roomLabelSize = (corners, text, scale, at) => {
   return Math.max(ROOM_LABEL.min, ROOM_LABEL.size * (span / natural));
 };
 
+/** Wo der Name eines Raumes steht: in der Mitte, solange dort Platz ist.
+ *
+ *  In der Mitte stand er einmal immer -- und damit genau dort, wo auch
+ *  die Geraete stehen: Die Automatik setzt ein Geraet ohne eigene Angabe
+ *  in die Raummitte, und dessen Beschriftung haengt darunter. Auf dem
+ *  ersten Bild fuer die README las man deshalb "Adapter Arbeitszimmer"
+ *  quer durch das Wort "Arbeitszimmer".
+ *
+ *  Die Antwort darauf war, ihn *immer* nach hinten zu schieben, und das
+ *  war ein Tausch und keine Loesung: In einem Raum, in dem nichts steht,
+ *  klebt der Name seither an der Hinterwand, obwohl der ganze Raum frei
+ *  ist -- und in einer Reihe schmaler Raeume laufen die Namen dort
+ *  ineinander, wo sie in der Mitte nebeneinander gepasst haetten.
+ *
+ *  Deshalb entscheidet das jetzt der Raum und nicht die Regel: `crowded`
+ *  sagt, ob in der Mitte wirklich etwas liegt. Und zwar etwas
+ *  **Sichtbares** -- wer die Geraeteebene ausschaltet, sieht eine leere
+ *  Zeichnung, und ein Name, der darin vor einem unsichtbaren Geraet
+ *  ausweicht, weicht vor nichts aus.
+ *
+ *  Die Verschiebung geht nach oben statt auf einen festen Punkt im
+ *  Raumkasten, damit sie fuer jede Kontur gilt und nicht nur fuer das
+ *  Rechteck. Die hintere Kante ist im Bild waagerecht -- die Schraege
+ *  des Sandwiches verschiebt nur x --, also liegt alles zwischen Mitte
+ *  und dieser Kante sicher noch im Raum.
+ */
+const labelPointOf = (corners, crowded = true) => {
+  const middle = centreOf(corners);
+  if (!crowded) return middle;
+  const back = Math.min(...corners.map((corner) => corner.y));
+  return { x: middle.x, y: middle.y - (middle.y - back) * 0.55 };
+};
+
 const labelBox = (label, shift = 0) => {
   const size = (label.size || 16) * (label.scale || 1);
   // `width`/`height` direkt angeben kann, was gar kein Text ist: Ein
@@ -1161,6 +1420,107 @@ const labelBox = (label, shift = 0) => {
 const boxesOverlap = (a, b) =>
   a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
 
+/** Ein konvexes Viereck, auf den Kasten einer Beschriftung beschnitten.
+ *
+ *  Sutherland-Hodgman, Kante fuer Kante des Kastens. Die Waende sind
+ *  Parallelogramme und damit konvex; der Kasten ist ein Rechteck. Was
+ *  nach vier Schnitten uebrig bleibt, ist genau die Flaeche, die auf
+ *  der Wand liegt. */
+const clippedToBox = (points, box) => {
+  let out = points;
+  for (const [axis, limit, keepLower] of [
+    ["x", box.x0, false], ["x", box.x1, true],
+    ["y", box.y0, false], ["y", box.y1, true],
+  ]) {
+    const next = [];
+    for (let index = 0; index < out.length; index += 1) {
+      const a = out[index];
+      const b = out[(index + 1) % out.length];
+      const inA = keepLower ? a[axis] <= limit : a[axis] >= limit;
+      const inB = keepLower ? b[axis] <= limit : b[axis] >= limit;
+      if (inA) next.push(a);
+      if (inA !== inB) {
+        const t = (limit - a[axis]) / (b[axis] - a[axis]);
+        next.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      }
+    }
+    out = next;
+    if (!out.length) break;
+  }
+  return out;
+};
+
+/** Wie viel von einem Beschriftungskasten auf den Polygonen liegt.
+ *
+ *  Nicht "liegt darauf oder nicht": ein Name, der eine Wand an einer
+ *  Ecke um ein Quadratpixel streift, ist lesbar geblieben, und ihn
+ *  wegzublenden waere Panik. Gezaehlt wird die Flaeche, und der Aufrufer
+ *  entscheidet, was sie ihm noch wert ist. */
+const coveredAreaOf = (box, polygons) =>
+  (Array.isArray(polygons) ? polygons : []).reduce(
+    (sum, polygon) =>
+      sum + Math.abs(shoelace(clippedToBox(polygon, box))) / 2,
+    0,
+  );
+
+/** Wo ein Raumname steht, damit er auf Boden liegt und nicht auf Wand.
+ *
+ *  Nachgemessen am Stapel lag von 29 Beschriftungen jede zweite auf
+ *  Mauerwerk: Die Mitte des Raumkastens ist bei schmalen Raeumen Wand,
+ *  und der Name, der dort steht, liest sich nicht. Er weicht deshalb
+ *  vertikal aus -- geklemmt zwischen hinterer und vorderer Kante, er
+ *  bleibt ja in seinem Raum --, und wenn er nirgends freien Boden
+ *  findet, bekommt die Schrift einen Traeger. Der verdeckt die Wand
+ *  zwar trotzdem, aber ein Name, den man lesen kann, ist es wert.
+ *  Gekuerzt wird bewusst nicht: die Schriftgroesse einer Etage ist
+ *  eine eigene Entscheidung, und ein halber Name widerspricht ihr.
+ *
+ *  `slide` traegt den Seitenversatz entgegen, den der Aufrufer gegen
+ *  einen Geraetepunkt in der Mitte gerechnet hat (`_roomLabelSlide`).
+ *  Er greift vor der Suche: seitwaerts kostet er nichts, der Name
+ *  bleibt in seiner eigenen Kontur, und die vertikale Suche muss von
+ *  seiner Stelle aus freien Boden suchen -- nachtraeglich verschoben
+ *  wuerde er den Namen auf das Mauerwerk zurueckschieben, das die
+ *  Suche gerade vermieden hat, und der Traeger waere an der falschen
+ *  Stelle entschieden. Ohne Versatz verhaelt sich die Suche wie immer.
+ *
+ *  Die Waende sind hier die einzigen Hindernisse: Ein Geraetesymbol im
+ *  Raum ist Sache des Seitenversatzes und des `crowded`-Mechanismus
+ *  von `labelPointOf`. */
+const roomLabelSpot = (corners, walls, text, size, scale,
+                       crowded = true, slide = 0) => {
+  const middle = labelPointOf(corners, crowded);
+  const start = { x: middle.x + slide, y: middle.y };
+  const name = String(text || "");
+  const obstacles = Array.isArray(walls) ? walls : [];
+  const height = size * LABEL.height;
+  const back = Math.min(...corners.map((corner) => corner.y)) + height / 2;
+  const front = Math.max(...corners.map((corner) => corner.y)) - height / 2;
+  // Ein Raum, der flacher ist als die Schrift, hat keinen Spielraum --
+  // dann bleibt der Name, wo `labelPointOf` ihn hinlegt.
+  const clampY = (y) => (front > back
+    ? Math.min(Math.max(y, back), front)
+    : start.y);
+  const step = size * LABEL.step;
+  for (let ring = 0; ring <= LABEL.tries; ring += 1) {
+    for (const offset of ring === 0 ? [0] : [ring * step, -ring * step]) {
+      const y = clampY(start.y + offset);
+      if (coveredAreaOf(
+        labelBox({ x: start.x, y, text: name, size, scale }),
+        obstacles,
+      ) < 0.01) {
+        return { x: start.x, y, text: name, backdrop: false };
+      }
+    }
+  }
+  // Kein freier Boden im ganzen Raum: Der Name bleibt, wo er hingehoert,
+  // und bekommt einen Traeger. Gekuerzt wird hier bewusst nicht -- die
+  // Schriftgroesse einer Etage ist eine eigene Entscheidung (eine
+  // Groesse, Mindestgrenze, und was dann noch uebersteht, ist die
+  // ehrliche Auskunft), und ein halber Name widerspricht ihr.
+  return { x: start.x, y: start.y, text: name, backdrop: true };
+};
+
 /** Beschriftungen so verschieben, dass sie sich nicht mehr decken.
  *
  *  `fixed` heisst "diese steht, wo sie steht": ein Raumname gehoert in
@@ -1168,6 +1528,14 @@ const boxesOverlap = (a, b) =>
  *  Nachbarn zu schieben. Verschoben wird also, was beweglich ist, und
  *  das sind die Namen der Geraete -- die haengen ohnehin schon unter
  *  ihrem Punkt und nicht darin.
+ *
+ *  `walls` sind die Wandflaechen des Bildes, als Vierecke, dieselben,
+ *  die gezeichnet werden. Ein Name weicht ihnen aus wie einem anderen
+ *  Namen -- aber sie sind ein weiches Hindernis: Finde ich keinen Platz
+ *  neben den anderen Namen, weiche ich auf den mit dem wenigsten
+ *  Mauerwerk aus, statt zu verschwinden. Erst wenn nicht einmal die
+ *  Wand neben den anderen Namen Platz hat, wird weggeblendet -- ein
+ *  fehlender Name ist ehrlicher als einer, der einen anderen verdeckt.
  *
  *  Abwechselnd nach unten und nach oben, in wachsendem Abstand. Nur nach
  *  unten waere eine Reihe von fuenf Geraeten am Ende eine Spalte, die
@@ -1180,7 +1548,7 @@ const boxesOverlap = (a, b) =>
  *  Die Reihenfolge der Rueckgabe ist die der Eingabe, damit der Aufrufer
  *  sie neben seine eigene Liste legen kann.
  */
-const declutter = (labels) => {
+const declutter = (labels, walls = []) => {
   const list = Array.isArray(labels) ? labels : [];
   const taken = [];
   const answer = new Array(list.length);
@@ -1204,16 +1572,31 @@ const declutter = (labels) => {
     const size = (label.size || 16) * (label.scale || 1);
     const step = size * LABEL.step;
     let placed = null;
+    let chosen = null;
+    // Der zweitbeste Platz: von keinem Namen belegt, aber auf Wand.
+    // Lieber dort sichtbar bleiben -- verdeckt ist der Name dort nicht,
+    // und die Alternative ist gar keiner.
+    let onWall = null;
     for (let ring = 0; ring <= LABEL.tries && placed === null; ring += 1) {
       for (const shift of ring === 0 ? [0] : [ring * step, -ring * step]) {
         const box = labelBox(label, shift);
-        if (!taken.some((other) => boxesOverlap(box, other))) {
-          taken.push(box);
+        if (taken.some((other) => boxesOverlap(box, other))) continue;
+        const covered = coveredAreaOf(box, walls);
+        if (covered < 0.01) {
           placed = shift;
+          chosen = box;
           break;
+        }
+        if (!onWall || covered < onWall.covered) {
+          onWall = { shift, covered, box };
         }
       }
     }
+    if (placed === null && onWall !== null) {
+      placed = onWall.shift;
+      chosen = onWall.box;
+    }
+    if (chosen) taken.push(chosen);
     answer[index] = placed === null
       ? { shift: 0, hidden: true }
       : { shift: placed, hidden: false };
@@ -1255,7 +1638,16 @@ export {
   wallRuns,
   openingMarksOf,
   capsOf,
+  capQuadsOf,
   wallsOf,
+  wallQuadsOf,
+  wallPolygonsOf,
+  PLAN,
+  shoelace,
+  inwardNormal,
+  planWallsOf,
+  planOpeningMarksOf,
+  flushSidesOf,
   FRONT_WALL,
   BACK_WALL,
   houseMetres,
@@ -1314,7 +1706,11 @@ export {
   spanRangeAt,
   slideClear,
   roomLabelSize,
+  labelPointOf,
   labelBox,
+  clippedToBox,
+  coveredAreaOf,
+  roomLabelSpot,
   declutter,
   DIM,
   dimension,
