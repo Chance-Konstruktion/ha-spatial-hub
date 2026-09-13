@@ -19,11 +19,13 @@ import {
   AREA_KIND,
   BACK_WALL,
   FRONT_WALL,
+  PLAN,
   SIDE_NAME,
   STACK,
   capsOf,
   centreOf,
   drawsTheWall,
+  flushSidesOf,
   hasShape,
   houseMetres,
   houseWeight,
@@ -35,6 +37,9 @@ import {
   OPENING,
   openingKind,
   openingRun,
+  planOpeningMarksOf,
+  planWallsOf,
+  roomLabelSpot,
   declutter,
   PIN,
   roomLabelSize,
@@ -48,6 +53,7 @@ import {
   shapeOf,
   snapReach,
   spanY,
+  wallPolygonsOf,
   wallsOf,
 } from "./panel-geometry.js";
 import {
@@ -56,7 +62,6 @@ import {
   escapeHtml,
   sparklineHtml,
   cornersOf,
-  labelPointOf,
 } from "./panel-markup.js";
 import { ALL_FLOORS, formatValue, pretty } from "./panel-const.js";
 
@@ -237,13 +242,12 @@ Aus lässt sich alles frei setzen.">
 
   _stackHtml() {
     const floors = this._stackFloors;
-    const index = new Map(floors.map((floor, at) => [floor.id, at]));
-    const last = Math.max(0, floors.length - 1);
     // A node with no storey at all still exists. Drawn on the front plane
     // and marked, rather than quietly missing from the one view that is
-    // supposed to show the whole house.
-    const planeOf = (node) =>
-      index.has(node.floor_id) ? index.get(node.floor_id) : last;
+    // supposed to show the whole house. Die Regel liegt auf dem Panel
+    // (`_planeOf`), damit Symbole, Namen und Entzerren dieselbe Ebene
+    // rechnen.
+    const planeOf = (node) => this._planeOf(node);
 
     const spots = new Map(
       this._visibleNodes.map((node) => [
@@ -270,7 +274,13 @@ Aus lässt sich alles frei setzen.">
     // eingesammelt -- die Namen der Geraete kommen erst danach und
     // koennen dann allen ausweichen.
     const scale = this._counterScale;
-    const fixed = this._stackRoomLabels(floors, scale);
+    // Die Waende jedes Geschosses als Vierecke -- dieselben, die die
+    // Planes unten zeichnen. Raumnamen weichen ihnen aus wie den anderen
+    // Namen, bevor irgendetwas im Dokument haengt; das Entzerren der
+    // Geraetenamen prueft gegen alle Ebenen zugleich, denn ein Name
+    // wandert ueber die ganze Zeichnung, nicht nur ueber seine Etage.
+    const floorWalls = floors.map((floor, at) => this._stackWallPolys(at));
+    const fixed = this._stackRoomLabels(floors, scale, floorWalls);
 
     const plans = floors.map((floor, at) => {
       const frame = this._frame;
@@ -332,14 +342,8 @@ Aus lässt sich alles frei setzen.">
         .slice()
         .sort((a, b) => a.position.y - b.position.y)
         .map((area) => {
-          const shared = joins.get(area.id);
-          const keep = shared
-            ? (side) => {
-                const other = byId.get(shared.get(side));
-                return !other || drawsTheWall(area, other);
-              }
-            : undefined;
-          return this._roomPolygon(at, area, keep);
+          const keep = this._wallKeeper(joins, byId, area);
+          return this._roomPolygon(at, area, keep, floorWalls[at]);
         })
         .join("");
       // The storey is a floor slab, not a sheet of paper: a thin band of
@@ -419,7 +423,9 @@ Aus lässt sich alles frei setzen.">
     // Raumnamen sind fest: ein Raumname gehoert in seinen Raum, und ihn
     // zu verschieben hiesse, ihn ueber die Wand des Nachbarn zu schieben.
     // Beweglich sind die Geraetenamen -- die haengen ohnehin schon unter
-    // ihrem Punkt und nicht darin.
+    // ihrem Punkt und nicht darin. Gegen die Waende auszuweichen ist die
+    // zweite Haelfte derselben Regel: Ein Name auf Mauerwerk ist nicht
+    // besser als ein Name auf einem anderen Namen.
     const nodeLabels = this._visibleNodes.map((node) => {
       const at = spots.get(node.id);
       return {
@@ -447,7 +453,11 @@ Aus lässt sich alles frei setzen.">
       };
     });
 
-    const placed = declutter([...fixed, ...pins, ...nodeLabels])
+    // Gegen die Waende aller Etagen zu pruefen ist der zweite Teil der
+    // Rechnung: ein Name wandert ueber die ganze Zeichnung, nicht nur
+    // ueber seine Etage.
+    const placed = declutter([...fixed, ...pins, ...nodeLabels],
+                             floorWalls.flat())
       .slice(fixed.length + pins.length);
 
     const nodes = this._visibleNodes
@@ -596,12 +606,13 @@ Aus lässt sich alles frei setzen.">
   /** Wo im Stapel welcher Raumname steht.
    *
    *  Dieselbe Rechnung wie beim Zeichnen, aus derselben Quelle
-   *  (`cornersOf`/`labelPointOf`): Zwei Rechnungen dafuer waeren zwei
-   *  Stellen, an denen ein Name um ein paar Einheiten danebenliegt --
-   *  und ein Entzerren, das gegen die falschen Kaesten prueft, ist
-   *  schlimmer als keines.
+   *  (`cornersOf`/`roomLabelSpot`, mit denselben Wandvierecken):
+   *  Zwei Rechnungen dafuer waeren zwei Stellen, an denen der Name
+   *  woanders steht, als das Entzerren ihn vermutet -- und ein
+   *  Entzerren, das gegen die falschen Kaesten prueft, ist schlimmer
+   *  als keines.
    */
-  _stackRoomLabels(floors, scale) {
+  _stackRoomLabels(floors, scale, floorWalls = null) {
     const labels = [];
     // Einmal fuer alle Etagen: dieselbe Auskunft, die `_roomPolygon`
     // beim Zeichnen benutzt. Zwei Rechnungen waeren zwei Stellen, an
@@ -611,13 +622,17 @@ Aus lässt sich alles frei setzen.">
       // Eine Groesse fuer die ganze Etage -- dieselbe, die `_roomPolygon`
       // beim Zeichnen setzt.
       const size = this._roomLabelSizeOn(at);
+      const walls = floorWalls === null
+        ? this._stackWallPolys(at)
+        : floorWalls[at];
       for (const area of this._model.areas || []) {
         if (area.floor_id !== floor.id || !area.position) continue;
         if (!this._inSandwich(area)) continue;
         const corners = cornersOf((x, y) => this._project(at, x, y), area);
-        const point = labelPointOf(corners, crowded.has(area.id));
+        const spot = roomLabelSpot(corners, walls, area.name, size,
+                                   scale, crowded.has(area.id));
         labels.push({
-          x: point.x, y: point.y, text: area.name,
+          x: spot.x, y: spot.y, text: spot.text,
           size, scale, fixed: true,
         });
       }
@@ -706,6 +721,12 @@ Aus lässt sich alles frei setzen.">
     ).toFixed(4);
     const background = floor && floor.background;
     const edges = this._visibleEdges;
+    // Die Waende der Etagenansicht samt dem Versatz, den die
+    // Raumnamen brauchen, um neben dem Mauerwerk zu stehen. Beides
+    // aus einer Rechnung: `_stageWalls` entscheidet je Kante, was
+    // gezeichnet wird, und die Namen versetzen sich nach dem, was
+    // vor ihrer Ecke steht.
+    const walls = this._stageWalls();
 
     const stage = `
       <div class="stage ${this._placing ? "placing" : ""} ${
@@ -723,7 +744,8 @@ Aus lässt sich alles frei setzen.">
         ${this._buildingLineHtml()}
         ${this._ghostsHtml()}
         ${this._shapesHtml()}
-        ${this._areasHtml()}
+        ${this._areasHtml(walls.bands)}
+        ${walls.svg}
         <svg class="edges" viewBox="0 0 1000 1000" preserveAspectRatio="none">
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -923,19 +945,17 @@ Aus lässt sich alles frei setzen.">
 
   /** Die Oeffnungen eines Raumes im Grundriss, auf seinen Kanten.
    *
-   *  Das hier war der eigentliche Fehler an den Tueren: sie wurden nur
-   *  in der Hausansicht gezeichnet. Angelegt werden sie aber hier, in
-   *  der Einzelansicht -- man klickte also "+ hinten", schob zwei Regler
-   *  und auf dem Bild passierte nichts. Eine Oeffnung, die man beim
-   *  Setzen nicht sieht, kann man auch nicht setzen.
-   *
-   *  Nicht im SVG, sondern als Kaesten auf dem Kasten: ein Raum ist in
-   *  dieser Ansicht ein `div` mit Rahmen, und ein SVG daneben muesste
-   *  jede Verschiebung noch einmal nachrechnen.
+   *  Das Zeichnen haben die uebernommen: Der Wand-Layer (`_stageWalls`)
+   *  laesst die Tuer samt Schwelle aus dem Mauerwerk heraus und malt
+   *  die Scheibe ins durchlaufende Fensterband. Diese Kaesten sind nur
+   *  noch die Griffe: ohne sie waere eine Oeffnung nicht zu verschieben
+   *  und nicht zu entfernen -- eine Oeffnung, die man beim Anfassen
+   *  nicht trifft, kann man auch nicht pflegen.
    *
    *  Nur Rechtecke. Eine freie Kontur hat Kanten, die quer im Kasten
    *  liegen, und die traefe ein Streifen an dessen Rand nicht -- lieber
-   *  nichts zeigen als etwas Falsches an der falschen Stelle.
+   *  nichts zeigen als etwas Falsches an der falschen Stelle; ihre
+   *  Oeffnungen pflegt der Dialog.
    */
   _openingsHtml(area) {
     if (kindOf(area) !== AREA_KIND.INDOOR || hasShape(area)) return "";
@@ -1135,7 +1155,115 @@ Aus lässt sich alles frei setzen.">
       .join("");
   },
 
-  _areasHtml() {
+  /** Die Waende der Etagenansicht, als SVG-Layer ueber den Raeumen.
+   *
+   *  Ein Grundriss ist der Blick senkrecht von oben, und was man dabei
+   *  von einer Wand sieht, ist ihre Oberkante -- das Band zwischen
+   *  Umriss und Innenkante, das `capsOf` fuer den Stapel rechnet. Hier
+   *  faellt nur die Scherung weg: `planWallsOf` baut dieselben Vierecke
+   *  je Kante, mit den Tueren aus `wallRuns` herausgerechnet und den
+   *  Fenstern als Zeichen im durchlaufenden Band. Die Raeume selbst
+   *  bleiben `div`s -- Ziehen, Groessenaendern und die Nischen sitzen
+   *  an `data-area` und lassen sich nicht auf ein SVG umziehen.
+   *
+   *  Der Layer liegt **ueber** den Raum-divs und nicht darunter (wo die
+   *  Anordnung ihn vorschlug): die Raeume haben einen zu 70 %
+   *  durchscheinenden Grund, und darunter gezeichnete Waende waeren
+   *  genau die Andeutung, die die Stapelansicht abgeschafft hat --
+   *  der Stapel zeichnet Mauerwerk deckend, damit ein Grundriss aus zwei
+   *  Metern Entfernung lesbar bleibt. `pointer-events:none` haelt die
+   *  Bedienung unangetastet, darueber gezeichnet kostet sie nichts.
+   *  Der Preis ist, dass der Layer auch ueber dem Raumnamen und den
+   *  Griffen liegt: die Namen versetzen sich darum um die Dicke der
+   *  Wand vor ihrer Ecke (`bands`, als CSS-Variablen an den Raum), und
+   *  waehrend des Arrangierens tritt der Layer im Stylesheet zurueck,
+   *  damit Griffe und Kanten sichtbar bleiben.
+   *
+   *  Das SVG fuehrt dieselbe normierte Flaeche wie das `edges`-SVG,
+   *  aber mit eigenem Seitenverhaeltnis: die Buehne wird gestreckt,
+   *  damit das Haus sein echtes Verhaeltnis haelt, und ein Band mit
+   *  gleicher Dicke in x und y waere auf dem Schirm um genau diesen
+   *  Faktor dicker auf den einen als auf den anderen Achsen. Der
+   *  ViewBox hier rechnet die Streckung wieder heraus, dann ist eine
+   *  Einheit eine Einheit und die Wand ist rundum gleich dick.
+   *
+   *  Zwei Raeume, die sich eine Wand teilen, bekommen sie einmal --
+   *  `drawsTheWall` entscheidet wie im Stapel, nur je Kante, denn ein
+   *  Raum kann auf der einen Seite teilen und auf der anderen nicht.
+   *  Die Aussenwand ist die Seite eines Raumes, die an der Bauflucht
+   *  liegt (`floor.outline`, den Kasten leitet der Hub her) und dicker
+   *  gezeichnet, wie auf Papier.
+   *
+   *  Zurueckkommen das SVG (oder "", wenn nichts zu zeichnen ist) und
+   *  `bands`: je Raum der Versatz fuer Namen, in Prozent der Kiste.
+   */
+  _stageWalls() {
+    const floor = this._floor;
+    const frame = this._frame;
+    const areas = this._visibleAreas.filter((area) => area.position);
+    const rooms = areas.filter((area) => kindOf(area) === AREA_KIND.INDOOR);
+    if (!rooms.length) return { svg: "", bands: new Map() };
+
+    const joins = joinsOf(areas);
+    const byId = new Map(areas.map((area) => [area.id, area]));
+    const outline = (floor && floor.outline) ||
+      { x: 0, y: 0, width: 1, height: 1 };
+    const houseAspect = (floor && floor.aspect) || 1.6;
+    // Die Hoehe des ViewBox: eine Einheit hier soll auf dem Schirm
+    // genauso lang sein wie eine in x. Die Buehne ist um
+    // houseAspect * span/spanY gestreckt -- genau der Kehrwert hebt
+    // das wieder auf.
+    const viewHeight = (1000 * spanY(frame)) / (houseAspect * frame.span);
+    const project = (x, y) => ({
+      x: inFrame(x, frame) * 10,
+      y: (inFrameY(y, frame) * viewHeight) / 100,
+    });
+    const span = frame.span;
+    const inner = (PLAN.wall * 1000) / span;
+    const outer = (PLAN.outerWall * 1000) / span;
+
+    const shapes = [];
+    const bands = new Map();
+    for (const area of rooms) {
+      const corners = cornersOf(project, area);
+      // Wie dick die Wand an jeder Kante ist -- und ob sie dieser Raum
+      // ueberhaupt zeichnet. Eine geteilte Wand gehoert dem Raum davor;
+      // eine Aussenkante traegt und ist dicker.
+      const floorCorners = cornersOf((x, y) => ({ x, y }), area);
+      const flush = flushSidesOf(floorCorners, outline);
+      const thicknessAt = (side) => {
+        const shared = (joins.get(area.id) || new Map()).get(side);
+        if (shared !== undefined && byId.has(shared)) {
+          return drawsTheWall(area, byId.get(shared)) ? inner : 0;
+        }
+        return flush[side] ? outer : inner;
+      };
+      const doors = doorsOf(area, corners.length);
+      shapes.push(planWallsOf(corners, thicknessAt, "plan-wall",
+                              () => true, doors));
+      shapes.push(planOpeningMarksOf(corners, thicknessAt, doors));
+
+      // Wie weit der Raumname von seiner Ecke ruecken muss, damit er
+      // neben dem Band steht und nicht darauf: die Dicke der Wand vor
+      // der oberen bzw. linken Ecke, umgerechnet in Prozent der Kiste.
+      const size = area.size || { width: 0.3, height: 0.3 };
+      bands.set(area.id, {
+        top: (thicknessAt(0) * houseAspect * span) / (10 * size.height),
+        left: (thicknessAt(3) * span) / (10 * size.width),
+      });
+    }
+
+    const drawn = shapes.join("");
+    return {
+      svg: drawn
+        ? `<svg class="walls" viewBox="0 0 1000 ${viewHeight.toFixed(2)}"
+             preserveAspectRatio="none" aria-hidden="true">${drawn}</svg>`
+        : "",
+      bands,
+    };
+  },
+
+  _areasHtml(bands = new Map()) {
     const frame = this._frame;
     return this._visibleAreas
       .filter((area) => area.position)
@@ -1169,6 +1297,7 @@ Aus lässt sich alles frei setzen.">
                 : ""
             }"></div>`
           : "";
+        const band = bands.get(area.id);
         return `
         <div class="area ${
           kindOf(area) === AREA_KIND.OUTDOOR ? "outdoor" : ""
@@ -1178,7 +1307,12 @@ Aus lässt sich alles frei setzen.">
               left:${inFrame(area.position.x, frame)}%;
               top:${inFrameY(area.position.y, frame)}%;
               width:${(size.width / frame.span) * 100}%;
-              height:${(size.height / spanY(frame)) * 100}%;">
+              height:${(size.height / spanY(frame)) * 100}%;${
+                band
+                  ? `--wall-band-top:${band.top.toFixed(3)}%;` +
+                    `--wall-band-left:${band.left.toFixed(3)}%;`
+                  : ""
+              }">
           ${areaBackground}
           ${fill}
           <span class="area-name">

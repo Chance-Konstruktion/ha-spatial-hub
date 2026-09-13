@@ -69,6 +69,7 @@ import {
   flushWith,
   panRange,
   touchSpan,
+  wallPolygonsOf,
 } from "./panel-geometry.js";
 import {
   HA_COLOURS,
@@ -1186,8 +1187,11 @@ class SpatialHubPanel extends HTMLElement {
 
 
   /** Ein Raum als Zeichnung. Die Formen stehen in `panel-markup.js`;
-   *  hier wird nur die Projektion dieser Etage hineingereicht. */
-  _roomPolygon(plane, area, keep = () => true) {
+   *  hier wird nur die Projektion dieser Etage hineingereicht -- und die
+   *  Wandvierecke dieser Etage, damit der Name sich eine Stelle auf
+   *  freiem Boden sucht. Wer sie mitgibt, erspart dem Raum dieselbe
+   *  Rechnung noch einmal; ohne sie rechnet der Raum selbst. */
+  _roomPolygon(plane, area, keep = () => true, walls = null) {
     return roomPolygon(
       {
         project: (x, y) => this._project(plane, x, y),
@@ -1195,10 +1199,67 @@ class SpatialHubPanel extends HTMLElement {
         counterScale: this._counterScale,
         crowded: this._crowdedAreas.has(area.id),
         labelSize: this._roomLabelSizeOn(plane),
+        walls: walls === null ? this._stackWallPolys(plane) : walls,
       },
       area,
       keep,
     );
+  }
+
+  /** Wer eine gemeinsame Wand zeichnet -- als Funktion ueber die Kanten.
+   *
+   *  Eine einzige Entscheidung, an zwei Stellen benutzt: beim Zeichnen
+   *  der Planes und beim Sammeln der Wandvierecke fuer das Entzerren.
+   *  Zweimal abgeschrieben waeren es zwei Entscheidungen, die sich beim
+   *  naechsten Umbau auseinanderleben. */
+  _wallKeeper(joins, byId, area) {
+    const shared = joins.get(area.id);
+    if (!shared) return undefined;
+    return (side) => {
+      const other = byId.get(shared.get(side));
+      return !other || drawsTheWall(area, other);
+    };
+  }
+
+  /** Die Waende einer Ebene des Stapels, als Vierecke im Bild.
+   *
+   *  Genau die Flachen, die `_roomPolygon` zeichnet -- stehende Wände
+   *  und Mauerkrone, Tueren herausgerechnet, geteilte Waende dem Raum
+   *  davor zugeschlagen (`_wallKeeper`, dieselbe Entscheidung wie beim
+   *  Zeichnen). Sie sind die Hindernisse, denen Raumnamen und
+   *  Geraetenamen ausweichen; gegen eine Abschrift der Waende zu
+   *  pruefen hiesse, sie um ein Pixel danebenlegen zu lernen. */
+  _stackWallPolys(plane) {
+    const floor = this._stackFloors[plane];
+    if (!floor) return [];
+    const onThisFloor = (this._model.areas || []).filter(
+      (area) =>
+        area.floor_id === floor.id && area.position && this._inSandwich(area),
+    );
+    const joins = joinsOf(onThisFloor);
+    const byId = new Map(onThisFloor.map((area) => [area.id, area]));
+    const polys = [];
+    for (const area of onThisFloor) {
+      if (kindOf(area) !== AREA_KIND.INDOOR) continue;
+      const corners = cornersOf((x, y) => this._project(plane, x, y), area);
+      const doors = doorsOf(area, corners.length);
+      polys.push(...wallPolygonsOf(corners, STACK.rise, STACK.wall,
+                                   this._wallKeeper(joins, byId, area), doors));
+    }
+    return polys;
+  }
+
+  /** Auf welcher Ebene des Stapels ein Knoten liegt.
+   *
+   *  Ein Knoten ohne eigene Etage steht auf der untersten -- dieselbe
+   *  Regel wie beim Zeichnen der Planes, wo sie bisher nur lokal
+   *  galt. */
+  _planeOf(node) {
+    const floors = this._stackFloors;
+    const index = new Map(floors.map((floor, at) => [floor.id, at]));
+    return index.has(node.floor_id)
+      ? index.get(node.floor_id)
+      : Math.max(0, floors.length - 1);
   }
 
   /** Die Raeume, in deren Mitte wirklich etwas liegt.
