@@ -12,6 +12,7 @@ Desktop, meinetwegen im Terminal — der Hub fragt nicht nach, wer da liest.
 |---|---|---|---|---|
 | Spatial Hub Panel | `panel` | [in diesem Repo](../custom_components/spatial_hub/www/) | Home Assistant | lesen und bearbeiten |
 | Zweiter Renderer | `second_renderer` | [in diesem Repo](../examples/second_renderer/) | Desktop-Browser | nur lesen |
+| ASCII-Renderer | `ascii_renderer` | [super-z/spatial-hub-ascii-renderer](https://gitlab.schanz.ipv64.net/super-z/spatial-hub-ascii-renderer) | Terminal | nur lesen |
 
 ## Diese Liste ist Dokumentation, sonst nichts
 
