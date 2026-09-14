@@ -277,19 +277,35 @@ def test_the_readme_names_a_way_that_actually_works():
     )
 
 
-def test_hacs_is_not_offered_as_the_way_in():
-    """Ein Weg, den es nicht gibt, ist schlimmer als kein Weg genannt.
+def test_hacs_is_offered_only_with_its_caveat():
+    """Der HACS-Weg ist seit dem GitHub-Spiegel offen -- aber ungeprüft.
 
-    HACS darf erwähnt werden -- es *soll* sogar erklärt werden, warum es
-    nicht geht. Was es nicht darf, ist als Anleitung dastehen.
+    Bis zum 14.09.2026 stand hier das Gegenteil: „HACS kann dieses
+    Repository nicht installieren." Das war richtig, solange es keinen
+    öffentlichen Spiegel gab, und es war falsch, sobald es ihn gab -- nur
+    hat es monatelang niemand nachgesehen. Nachgeprüft am 14.09.2026:
+    Der Spiegel existiert, ist öffentlich, ist aktuell und trägt die
+    ``hacs.json`` in seiner Wurzel.
+
+    Was NICHT nachgeprüft ist: ob HACS ihn am Ende wirklich annimmt. Das
+    kann nur eine laufende Home-Assistant-Installation sagen. Genau davor
+    schützt dieser Test -- ein ungeprüfter Weg darf genannt werden, aber
+    nicht ohne den Satz, dass er ungeprüft ist. Der erste Fehler dieses
+    Abschnitts war ein Weg, den es nicht gab; der zweite wäre ein Weg,
+    von dem niemand weiß, ob es ihn gibt, erzählt als Tatsache.
     """
     abschnitt = _installation()
-    anleitung = abschnitt.split("### Why not HACS")[0]
 
-    assert "HACS" not in anleitung, (
-        "HACS steht in der Installationsanleitung -- es kann dieses "
-        "Repository nicht installieren, siehe den Abschnitt darunter"
+    assert "github.com/chance-konstruktion/ha-spatial-hub" in abschnitt, (
+        "der HACS-Weg führt über den Spiegel -- ohne seine Adresse ist "
+        "der Abschnitt keine Anleitung"
     )
-    assert "Why not HACS" in abschnitt, (
-        "die Frage kommt garantiert, also gehört die Antwort dorthin"
+    assert "not been tested" in abschnitt, (
+        "der HACS-Weg ist gegen kein laufendes HACS geprüft; steht das "
+        "nicht dabei, verkauft die README eine Vermutung als Tatsache"
+    )
+    kopierweg = abschnitt.split("### HACS")[0]
+    assert "custom_components/spatial_hub" in kopierweg, (
+        "der bewiesene Weg (kopieren) muss vor dem ungeprüften stehen "
+        "bleiben -- er ist der, der heute sicher funktioniert"
     )
