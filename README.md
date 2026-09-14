@@ -385,17 +385,32 @@ integration* → **Spatial Hub**. There is nothing to configure.
 
 To update, copy the folder again and restart.
 
-### Why not HACS
+### HACS, via the mirror
 
-HACS is the usual way, and it cannot install this. Its documentation is
-explicit: *"Only public repositories on GitHub will work with HACS."* This
-project lives on GitLab, so HACS has no way to reach it — no custom
-repository, no URL, no zip.
+HACS is the usual way, and its documentation is explicit: *"Only public
+repositories on GitHub will work with HACS."* This project is developed on
+GitLab — but it is mirrored to GitHub, and the mirror is public:
 
-The `hacs.json` in this repository is still correct and the CI still checks
-it. It costs nothing and it is ready for the day there is a mirror
-somewhere HACS can see. Until then the two lines above are the whole
-installation, and they work today.
+```
+https://github.com/chance-konstruktion/ha-spatial-hub
+```
+
+So the custom-repository route is open: in HACS, *Custom repositories* →
+paste that URL → category **Integration**. The `hacs.json` this repository
+has always carried sits in the mirror's root, where HACS looks for it.
+
+Two honest notes, because this section was wrong for a while and should not
+become wrong in the other direction:
+
+1. **This has not been tested against a live HACS.** What is verified is
+   that the mirror exists, is public, is current, and carries a valid
+   `hacs.json`. Whether HACS accepts it end to end is unconfirmed — if you
+   try it, please say so in an issue either way.
+2. **The mirror is a shop window, not the workshop.** Development, issues
+   and merge requests live on GitLab. The mirror is pushed to; nothing is
+   pulled back from it.
+
+The `git clone` above stays the route that is proven to work today.
 
 ## Tests
 
