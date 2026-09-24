@@ -1087,26 +1087,6 @@ test("the front edge keeps the full width, so nothing is drawn past it", () => {
   assert.ok(widest <= view._stackWidth, "die Zeichnung laeuft aus dem Bild");
 });
 
-test("many storeys get more drawing, not less air between them", () => {
-  // They used to be squeezed into a fixed 1000-unit box: six floors and
-  // the spacing collapsed below a storey's own depth, so every floor was
-  // drawn through the one under it. That was the porridge.
-  const data = model();
-  data.floors = ["a", "b", "c", "d", "e", "f"].map((id, level) => ({
-    id, name: id.toUpperCase(), level, icon: "",
-  }));
-  const view = panel(data, { floor: null });
-
-  const height = view._stackHeight;
-  assert.ok(view._project(5, 1, 1).y <= height, "the bottom storey is off-canvas");
-  assert.match(view._stackHtml(), new RegExp(
-    `viewBox="0 0 ${Math.round(view._stackWidth)} ${Math.round(height)}"`));
-
-  // A storey is 300 units deep. Two neighbours must not interleave.
-  const step = view._project(1, 0, 0).y - view._project(0, 0, 0).y;
-  assert.ok(step > 300, `storeys ${step} apart is less than one storey deep`);
-});
-
 test("a node on no storey at all lands in the tray, not silently missing", () => {
   const data = model({ nodes: [node("a:lost", { floor_id: null })] });
   const view = panel(data, { floor: null });
@@ -1881,44 +1861,6 @@ test("a ghost is placed through the same window as the rooms", () => {
 
 // ── The building around the storeys ────────────────────────
 
-test("nothing is drawn across the storeys any more", () => {
-  // Translucent walls, a roof, corner posts: each of them spanned the
-  // whole picture and lay over the plan. What holds the house together
-  // now is the walls of the storeys themselves.
-  const html = panel(model(), { floor: null })._stackHtml();
-
-  assert.doesNotMatch(html, /shell-wall|shell-post|shell-roof/);
-  assert.match(html, /shell-face/, "but every storey has its own outer wall");
-  assert.match(html, /shell-cap/, "and that wall has two sides");
-});
-
-test("the outer wall is split around the rooms", () => {
-  // All four faces in front and the back wall paints over the plan; all
-  // four behind and the rooms sit on a slab shaped like a house instead
-  // of standing inside one.
-  const html = panel(model(), { floor: null })._stackHtml();
-  const plane = html.slice(html.indexOf('<g class="plane">'));
-
-  assert.ok(plane.indexOf("shell-face") < plane.indexOf("room-wall"),
-            "the back wall is behind the rooms");
-  assert.ok(plane.lastIndexOf("shell-face") > plane.indexOf("room-wall"),
-            "the front wall is in front of them");
-});
-
-test("a storey stands on a slab instead of being a sheet of paper", () => {
-  const view = panel(model(), { floor: null });
-  const html = view._stackHtml();
-
-  // One band per edge of the outline, and it hangs *below* the storey.
-  const sides = [...html.matchAll(/class="storey-side" points="([^"]+)"/g)];
-  assert.equal(sides.length, 8, "four edges on each of the two storeys");
-  const [x0, y0, , , , y2] = sides[0][1]
-    .split(/[ ,]/)
-    .map(Number);
-  assert.ok(y2 > y0, "the slab hangs down, it does not float up");
-  assert.equal(typeof x0, "number");
-});
-
 test("a room has standing walls, a garden does not", () => {
   const data = model({
     areas: [
@@ -1937,110 +1879,6 @@ test("a room has standing walls, a garden does not", () => {
   assert.doesNotMatch(terrace, /room-wall/, "a terrace is not a room with a roof off");
 });
 
-test("rooms are drawn back to front, or the storey turns inside out", () => {
-  // With height, whoever is drawn last is in front. Storage order is not
-  // depth order, so the sandwich has to sort.
-  const data = model({
-    areas: [
-      { id: "vorne", name: "Vorne", floor_id: "eg", kind: "indoor",
-        position: { x: 0.5, y: 0.8 }, size: { width: 0.3, height: 0.2 } },
-      { id: "hinten", name: "Hinten", floor_id: "eg", kind: "indoor",
-        position: { x: 0.5, y: 0.2 }, size: { width: 0.3, height: 0.2 } },
-    ],
-  });
-  const html = panel(data, { floor: null })._stackHtml();
-
-  assert.ok(
-    html.indexOf("Hinten") < html.indexOf("Vorne"),
-    "the room at the back is painted first",
-  );
-});
-
-test("a single storey is a house too", () => {
-  // It used to get no body at all, because a shell around one sheet said
-  // nothing that the sheet did not. Walls are not a shell -- a bungalow
-  // has them.
-  const data = model({
-    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
-  });
-
-  assert.match(panel(data, { floor: null })._stackHtml(), /shell-face/);
-});
-
-test("the wall is hung off the house, never off the garden", () => {
-  // The apron reaches outside 0..1. A wall that followed it would put the
-  // front door somewhere in the lawn.
-  const view = panel(
-    model({
-      floors: [
-        { id: "eg", name: "Erdgeschoss", level: 0, icon: "", has_outdoor: true },
-        { id: "og", name: "Obergeschoss", level: 1, icon: "" },
-      ],
-    }),
-    { floor: null },
-  );
-  const html = view._stackHtml();
-
-  assert.equal((html.match(/class="shell-face"/g) || []).length, 8,
-               "four faces on each of the two storeys");
-  const house = view._project(0, 0, 0);
-  assert.ok(html.includes(`points="${house.x},${house.y} `),
-            "a face starts on the building line, not on the lawn");
-});
-
-test("only the ground floor gets grass, a balcony upstairs just gets a room", () => {
-  // has_outdoor is true on both storeys -- eg for the garden, og for a
-  // balcony -- but only eg is the actual ground. The balcony still has to
-  // be editable and drawn as a room; it must not turn the whole first
-  // floor into a second lawn.
-  const data = model({
-    floors: [
-      { id: "eg", name: "Erdgeschoss", level: 0, icon: "",
-        has_outdoor: true, outdoor_margin: 0.28, ground: true },
-      { id: "og", name: "Obergeschoss", level: 1, icon: "",
-        has_outdoor: true, outdoor_margin: 0.28 },
-    ],
-    areas: [
-      { id: "garten", name: "Garten", floor_id: "eg", kind: "outdoor",
-        position: at(1.15, 0.5), size: { width: 0.2, height: 0.6 } },
-      { id: "balkon", name: "Balkon", floor_id: "og", kind: "outdoor",
-        position: at(1.15, 0.5), size: { width: 0.2, height: 0.3 } },
-    ],
-  });
-  const html = panel(data, { floor: null })._stackHtml();
-  const planes = html.split('class="plane').slice(1);
-  // Der Etagenname steht in Versalien im Rand, wie in einer
-  // Schnittzeichnung -- danach wird hier gesucht.
-  const eg = planes.find((plane) => plane.includes("ERDGESCHOSS"));
-  const og = planes.find((plane) => plane.includes("OBERGESCHOSS"));
-
-  assert.match(eg, /class="apron"/, "the ground floor gets the field");
-  assert.doesNotMatch(og, /class="apron"/, "the storey above does not");
-  assert.match(og, /Balkon/, "the balcony is still drawn as a room");
-});
-
-test("a balcony gets a railing to see over, not a wall to hide behind", () => {
-  // Ein Zimmer muss mit im Modell stehen: ohne eines gaebe es ohnehin
-  // keine einzige room-wall und die letzte Zusicherung waere geschenkt.
-  const data = model({
-    areas: [
-      { id: "wohnzimmer", name: "Wohnzimmer", floor_id: "og",
-        position: at(0.3, 0.5), size: { width: 0.4, height: 0.6 } },
-      { id: "balkon", name: "Balkon", floor_id: "og", kind: "outdoor",
-        position: at(0.85, 0.5), size: { width: 0.2, height: 0.6 } },
-    ],
-  });
-  const html = panel(data, { floor: null })._stackHtml();
-
-  assert.match(html, /class="room deck"/, "the deck floor is marked as one");
-  assert.match(html, /class="deck-rail"/, "a low rail stands on it");
-  assert.match(html, /class="room-wall"/, "the room next to it still has walls");
-  // Vier Wandflaechen, und zwar die des Wohnzimmers: haette der Balkon
-  // welche beigesteuert, stuenden hier acht.
-  assert.equal((html.match(/class="room-wall"/g) || []).length, 4,
-               "the balcony contributed no masonry of its own");
-});
-
 const walled = (area) =>
   ((panel(model({ areas: [area] }), { floor: null })._stackHtml()
     .match(/class="room-wall"/g)) || []).length;
@@ -2048,78 +1886,6 @@ const walled = (area) =>
 const roomWith = (doors) => ({
   id: "r", name: "Raum", floor_id: "eg",
   position: at(0.5, 0.5), size: { width: 0.4, height: 0.4 }, doors,
-});
-
-test("a door is a gap in a wall, not a wall with a door drawn on it", () => {
-  // Vier Wandflaechen ohne Tuer. Eine Tuer mitten in einer Wand laesst
-  // links und rechts je ein Stueck stehen -- also fuenf.
-  assert.equal(walled(roomWith(undefined)), 4, "no doors, four walls");
-  assert.equal(walled(roomWith([{ side: 0, at: 0.5, width: 0.2 }])), 5,
-               "a door in the middle leaves a wall either side");
-});
-
-test("a door at the very end of a wall leaves only one stretch", () => {
-  // Am Anfang der Kante gibt es kein Stueck davor, das stehen bleiben
-  // koennte -- sonst stuende dort eine Wand der Laenge null.
-  assert.equal(walled(roomWith([{ side: 0, at: 0, width: 0.2 }])), 4,
-               "flush with the corner, so nothing before it");
-  assert.equal(walled(roomWith([{ side: 0, at: 1, width: 0.2 }])), 4,
-               "and the same at the other corner");
-});
-
-test("two doors that touch are one opening, not two", () => {
-  // Ueberlappende Oeffnungen duerfen kein Wandstueck negativer Laenge
-  // zwischen sich erzeugen.
-  assert.equal(
-    walled(roomWith([
-      { side: 0, at: 0.4, width: 0.2 },
-      { side: 0, at: 0.5, width: 0.2 },
-    ])),
-    5,
-    "one merged gap, so one wall either side",
-  );
-  // Und in verkehrter Reihenfolge dasselbe: gespeichert wird in der
-  // Reihenfolge, in der jemand sie angelegt hat, und das ist keine.
-  assert.equal(
-    walled(roomWith([
-      { id: "b", side: 0, at: 0.5, width: 0.2 },
-      { id: "a", side: 0, at: 0.4, width: 0.2 },
-    ])),
-    5,
-    "the order they were stored in must not matter",
-  );
-});
-
-test("a door on a wall that does not exist is left out, not guessed", () => {
-  for (const door of [
-    { side: 9, at: 0.5, width: 0.2 },
-    { side: -1, at: 0.5, width: 0.2 },
-    { side: 1.5, at: 0.5, width: 0.2 },
-    { side: 0, at: 0.5, width: 0 },
-    { side: 0, at: "irgendwo", width: 0.2 },
-  ]) {
-    assert.equal(walled(roomWith([door])), 4,
-                 `nonsense is dropped: ${JSON.stringify(door)}`);
-  }
-});
-
-test("a doorway goes through the masonry, not just its outside face", () => {
-  // Wand und Mauerkrone muessen dieselbe Luecke haben. Nur die Aussenseite
-  // zu unterbrechen liesse eine Tuer entstehen, ueber der die Krone
-  // durchlaeuft -- das waere ein Fenster, und zwar ein zugemauertes.
-  const html = panel(model({ areas: [roomWith([{ side: 0, at: 0.5, width: 0.2 }])] }),
-                     { floor: null })._stackHtml();
-  assert.equal((html.match(/class="room-wall"/g) || []).length, 5, "wall split");
-  assert.equal((html.match(/class="room-cap"/g) || []).length, 5, "crown split too");
-});
-
-test("the outer shell of the house is unaffected by a room's doors", () => {
-  // wallsOf zeichnet auch die Aussenwaende. Die kennen keine Tueren und
-  // duerfen von dieser Aenderung nichts merken.
-  const html = panel(model({ areas: [roomWith([{ side: 0, at: 0.5, width: 0.2 }])] }),
-                     { floor: null })._stackHtml();
-  assert.equal((html.match(/class="shell-face"/g) || []).length, 8,
-               "four faces on each of the two storeys, as before");
 });
 
 /** Der Raumdialog, offen, mit einem Raum darin. */
@@ -2603,24 +2369,6 @@ test("die Waende folgen dem Thema, auch dem dunklen", () => {
 });
 
 
-test("a staircase is drawn as steps, by whatever the user called it", () => {
-  const stair = (id, name, icon = "") => ({
-    id, name, icon, floor_id: "eg",
-    position: at(0.5, 0.5), size: { width: 0.1, height: 0.4 },
-  });
-  const treads = (area) =>
-    ((panel(model({ areas: [area] }), { floor: null })._stackHtml()
-      .match(/class="tread"/g)) || []).length;
-
-  // Acht Striche fuer neun Stufen: die Kanten sind die Wandenden.
-  assert.equal(treads(stair("t", "Treppe")), 8, "German, plainly");
-  assert.equal(treads(stair("t", "Treppenhaus")), 8, "and as a compound");
-  assert.equal(treads(stair("t", "Stairs")), 8, "English too");
-  assert.equal(treads(stair("t", "Diele", "mdi:stairs")), 8,
-               "or said with the icon rather than the name");
-  assert.equal(treads(stair("t", "Wohnzimmer")), 0, "a living room is not one");
-});
-
 test("a garden called Treppe still gets no steps", () => {
   // Aussen und Virtuell haben keine Stufen -- eine Gartentreppe ist
   // Gelaende, kein Bauteil, und die Wolke schon gar nicht.
@@ -2630,45 +2378,6 @@ test("a garden called Treppe still gets no steps", () => {
   };
   const html = panel(model({ areas: [outside] }), { floor: null })._stackHtml();
   assert.doesNotMatch(html, /class="tread"/, "no steps outdoors");
-});
-
-test("the lawn is not a balcony: no railing around the garden", () => {
-  // Erdgeschoss-Aussenflaeche ist Grundstueck, kein Anbau. Ein Gelaender
-  // um den Rasen sagt das Gegenteil von dem, was ein Garten ist.
-  const data = model({
-    floors: [
-      { id: "eg", name: "Erdgeschoss", level: 0, icon: "", ground: true,
-        has_outdoor: true, outdoor_margin: 0.28 },
-    ],
-    areas: [
-      { id: "garten", name: "Garten", floor_id: "eg", kind: "outdoor",
-        position: at(1.15, 0.5), size: { width: 0.2, height: 0.6 } },
-    ],
-  });
-  const html = panel(data, { floor: null })._stackHtml();
-
-  assert.doesNotMatch(html, /class="deck-rail"/, "no railing round the lawn");
-  assert.doesNotMatch(html, /class="room deck"/, "and it is not a deck either");
-  assert.match(html, /Garten/, "the garden is still drawn");
-});
-
-test("das Erdreich bekommt keine Waende", () => {
-  // The internet has no masonry. Und eine Etage, auf der ausser dem
-  // Anschluss nichts liegt, ist trotzdem eine Etage -- die Waende
-  // gehoeren ihr, nicht dem, was im Ring darum liegt.
-  const data = model({
-    floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "",
-               has_outdoor: true, has_soil: true }],
-    areas: [
-      { id: "lan", name: "LAN", floor_id: "eg", kind: "virtual",
-        position: at(0.5, -0.14), size: { width: 0.3, height: 0.2 } },
-    ],
-  });
-  const html = panel(data, { floor: null })._stackHtml();
-
-  assert.equal((html.match(/class="shell-face"/g) || []).length, 4,
-               "one real storey, one set of walls");
-  assert.doesNotMatch(html, /class="room-wall"/, "und kein Mauerwerk im Boden");
 });
 
 // ── Beschriftungen, die sich nicht decken ─────────────────
@@ -2993,19 +2702,6 @@ test("Geraetenamen weichen den Waenden aus, solange es geht", () => {
   assert.equal(verdeckt.hidden, false, "er verschwand lieber");
 });
 
-test("der Traeger steht in der Zeichnung, wenn er gebraucht wird", () => {
-  // Ein Raum so flach, dass jede Stelle Wand ist: der Name bleibt, wo er
-  // hingehoert, und bekommt das Blatt hinter sich.
-  const flach = model({
-    areas: [{ id: "kino", name: "Kino", floor_id: "eg", kind: "indoor",
-              position: at(0.5, 0.5), size: { width: 0.4, height: 0.08 } }],
-  });
-  const html = panel(flach, { floor: null })._stackHtml();
-  assert.match(html, /class="room-label-backdrop"/,
-               "kein Traeger hinter dem Namen");
-  assert.match(html, /class="room-label"[^>]*>Kino</, "und der Name ist da");
-});
-
 /** Die Ueberdeckung der Beschriftungen durch das Mauerwerk, aus dem
  *  gezeichneten SVG nachgerechnet: Wandflaechen und Namenskaesten
  *  herauslesen, Schnittflaechen summieren. */
@@ -3193,127 +2889,6 @@ test("ein Mass steht mit dem Zentimeter da", () => {
   // und genau dieser Unterschied ist der Grund, eine Kette einzublenden.
   assert.equal(geometry.dimension(3), "3,00 m");
   assert.equal(geometry.dimension(5.404), "5,40 m");
-});
-
-test("ohne den Schalter keine Kette", () => {
-  const aus = panel(withMetres(), { floor: null, edit: true })._stackHtml();
-  assert.doesNotMatch(aus, /class="dims"/);
-  assert.match(withMetresOn()._stackHtml(), /class="dims"/);
-});
-
-test("die Kette rechnet mit dem Massstab ihrer eigenen Etage", () => {
-  // Ein Keller, den jemand schmaler eingetragen hat, ist schmaler. Eine
-  // Kette, die das verschweigt, ist falsch und nicht nur ungenau.
-  const html = withMetresOn()._stackHtml();
-
-  assert.match(html, /6,00 m/, "zwei Raeume auf zwoelf Metern");
-  assert.match(html, /12,00 m/, "und das Gesamtmass darunter");
-});
-
-test("ein einziger Abschnitt bekommt keine zweite Reihe", () => {
-  // Dort stuende dieselbe Zahl zweimal untereinander.
-  const einer = withMetres({
-    areas: [
-      { id: "a", name: "Halle", floor_id: "eg",
-        position: at(0.5, 0.5), size: { width: 1, height: 0.6 }, auto: false },
-    ],
-  });
-  const html = withMetresOn(einer)._stackHtml();
-  const masse = [...html.matchAll(/class="dim-text">([^<]*)</g)].map((m) => m[1]);
-
-  assert.deepEqual(masse, ["12,00 m"]);
-});
-
-test("ein Mass, das nicht unter seinen Strich passt, entfaellt", () => {
-  // Die Begrenzungsstriche bleiben: dass dort geteilt ist, sagen die
-  // auch, und die Reihe darunter sagt weiter die Summe. Der Normalfall,
-  // solange Raeume noch nicht Wand an Wand liegen.
-  const fugen = withMetres({
-    areas: [
-      { id: "a", name: "Küche", floor_id: "eg",
-        position: at(0.24, 0.5), size: { width: 0.46, height: 0.6 }, auto: false },
-      { id: "b", name: "Wohnzimmer", floor_id: "eg",
-        position: at(0.76, 0.5), size: { width: 0.46, height: 0.6 }, auto: false },
-    ],
-  });
-  const html = withMetresOn(fugen)._stackHtml();
-  const masse = [...html.matchAll(/class="dim-text">([^<]*)</g)].map((m) => m[1]);
-
-  assert.ok(!masse.some((text) => text.startsWith("0,")),
-            `eine Fuge wurde beschriftet: ${masse}`);
-  assert.ok(masse.includes("12,00 m"), "die Summe steht trotzdem da");
-  // Die Fuge ist gezeichnet, nur nicht beschriftet: vier Teilungen in
-  // der oberen Reihe heissen sechs Begrenzungsstriche und mehr.
-  assert.ok((html.match(/class="dim-tick"/g) || []).length >= 8);
-});
-
-test("die Zeichnung waechst, damit die unterste Kette darauf passt", () => {
-  // Sonst ist die Kette gezeichnet und trotzdem nicht zu sehen, und zwar
-  // nur bei der untersten Etage.
-  const ohne = geometry.stackHeight([{ id: "eg" }]);
-  const mit = geometry.stackHeight([{ id: "eg" }], 100);
-
-  assert.equal(mit - ohne, 100);
-
-  const html = withMetresOn()._stackHtml();
-  const hoehe = Number(html.match(/viewBox="0 0 \d+ (\d+)"/)[1]);
-  let tiefste = 0;
-  for (const m of html.matchAll(
-    /class="dim-[a-z]+"[^>]*y1="([\d.-]+)"[^>]*y2="([\d.-]+)"/g)) {
-    tiefste = Math.max(tiefste, Number(m[1]), Number(m[2]));
-  }
-  assert.ok(tiefste > 0, "es gibt ueberhaupt eine Kette");
-  assert.ok(tiefste <= hoehe,
-            `die Kette bei ${tiefste} liegt unter dem Blattrand ${hoehe}`);
-});
-
-test("die Massketten draengen keinen Namen unter einen anderen", () => {
-  // Sie kommen dazwischen: die Kette haengt genau dort, wo auf der Etage
-  // darunter die Geraetenamen stehen. Ohne sie im Entzerren steht
-  // "Adapter Wohnzimmer" auf "3,60 m", und beide sind weg.
-  const voll = withMetres({
-    nodes: [
-      node("p:1", { area_id: "a", floor_id: "eg", label: "Adapter Küche",
-                    position: at(0.25, 0.78) }),
-      node("p:2", { area_id: "b", floor_id: "eg", label: "Thermostat",
-                    position: at(0.75, 0.78) }),
-    ],
-  });
-  const html = withMetresOn(voll)._stackHtml();
-
-  const boxes = [];
-  const g = /<g([^>]*data-at-x="([\d.eE+-]+)"[^>]*data-at-y="([\d.eE+-]+)"[^>]*)>([\s\S]*?)<\/g>/g;
-  let m;
-  while ((m = g.exec(html))) {
-    // Weggeblendete Namen stehen nicht im Bild, also stoeren sie auch
-    // keinen -- geprueft wird, was zu sehen ist.
-    if (/crowded/.test(m[1])) continue;
-    const inner = m[4];
-    const raum = inner.match(/class="room-label">([^<]*)</);
-    const dot = inner.match(/class="stack-label" y="([\d.-]+)">([^<]*)</);
-    const mass = inner.match(/class="dim-text">([^<]*)</);
-    if (raum) {
-      boxes.push(geometry.labelBox(
-        { x: Number(m[2]), y: Number(m[3]), text: raum[1], size: 16 }));
-    } else if (dot) {
-      boxes.push(geometry.labelBox({
-        x: Number(m[2]), y: Number(m[3]) + Number(dot[1]),
-        text: dot[2], size: 18,
-      }));
-    } else if (mass) {
-      boxes.push(geometry.labelBox(
-        { x: Number(m[2]), y: Number(m[3]), text: mass[1], size: 13 }));
-    }
-  }
-
-  assert.ok(boxes.length >= 5, `zu wenig zu pruefen: ${boxes.length}`);
-  for (let i = 0; i < boxes.length; i += 1) {
-    for (let j = i + 1; j < boxes.length; j += 1) {
-      const a = boxes[i], b = boxes[j];
-      assert.ok(!(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1),
-                "zwei Beschriftungen liegen aufeinander");
-    }
-  }
 });
 
 test("der Massband-Schalter ist auch in der Hausansicht da", () => {
@@ -3743,24 +3318,6 @@ test("das Erdreich bekommt denselben Ring, den ein Garten bekommt", () => {
 
   assert.ok(view._frame.min < 0);
   assert.ok(view._frame.span > 1);
-});
-
-test("die unterste Etage bekommt ein Erdband, das Erdgeschoss seinen Rasen", () => {
-  const html = panel(withSoil(), { floor: null })._stackHtml();
-
-  assert.match(html, /class="soil-plane"/, "Erde um den Keller");
-  assert.match(html, /class="apron"/, "Rasen ums Erdgeschoss");
-});
-
-test("ein virtueller Bereich ist schraffiert und hat keine Waende", () => {
-  // Erde wird in einer Bauzeichnung schraffiert. Waende haette sie nur,
-  // wenn sie ein Raum waere -- und genau das soll sie nicht sein.
-  const html = panel(withSoil(), { floor: null })._stackHtml();
-  const soil = html.slice(html.indexOf('class="soil"'));
-  const bis = soil.slice(0, soil.indexOf("LAN"));
-
-  assert.match(bis, /class="soil-hatch"/, "Schraffur");
-  assert.doesNotMatch(bis, /class="room-wall"/, "aber kein Mauerwerk");
 });
 
 test("die Schraffur bleibt im Kasten", () => {
@@ -4291,17 +3848,6 @@ const twoRooms = (extra = {}) =>
     ],
   });
 
-test("two rooms that touch share the wall between them", () => {
-  const data = twoRooms();
-  const html = panel(data, { floor: null })._stackHtml();
-
-  // Four walls each would be eight. One of them is shared, so seven --
-  // otherwise two walls are drawn in the same place and the partition
-  // comes out twice as thick as every other one.
-  assert.equal((html.match(/class="room-wall"/g) || []).length, 7);
-  assert.equal((html.match(/class="room-cap"/g) || []).length, 7);
-});
-
 test("rooms that only meet at a corner do not share anything", () => {
   const data = model({
     floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }],
@@ -4314,19 +3860,6 @@ test("rooms that only meet at a corner do not share anything", () => {
   });
 
   assert.equal(joinsOf(data.areas).size, 0, "a point is not a wall");
-});
-
-test("a wall can be broken apart, and the break holds from both sides", () => {
-  const fromMine = twoRooms();
-  fromMine.areas[0].unjoined = ["bad"];
-  const fromTheirs = twoRooms({ unjoined: ["kueche"] });
-
-  for (const data of [fromMine, fromTheirs]) {
-    assert.equal(joinsOf(data.areas).size, 0);
-    const html = panel(data, { floor: null })._stackHtml();
-    assert.equal((html.match(/class="room-wall"/g) || []).length, 8,
-                 "a party wall between two flats really is two walls");
-  }
 });
 
 test("the room in front draws the shared wall, not the one behind", () => {
@@ -4612,28 +4145,6 @@ test("the stack is a line drawing, not four grey plates", () => {
   }
   // Der Boden im Raum bleibt der Hintergrund.
   assert.match(style, /\.stack \.room \{[^}]*fill:none/);
-});
-
-test("every storey says its name, in the margin and out of the plan", () => {
-  const data = model({
-    floors: [{ id: "kg", name: "Keller", level: -1, icon: "" },
-             { id: "eg", name: "EG", level: 0, icon: "" }],
-  });
-  const view = panel(data, { floor: null });
-  const html = view._stackHtml();
-
-  // Versalien, wie in einer Schnittzeichnung.
-  assert.match(html, /KELLER/);
-
-  // Und links neben der Etage, nicht auf ihr: der Name steht weiter
-  // links als der linkeste Punkt der Platte. Vorher wurde er am Bildrand
-  // abgeschnitten, weil es dort keinen Rand gab.
-  const leftmost = view._project(0, 0, 1).x;
-  const name = /translate\((-?[\d.]+),/.exec(
-    html.slice(html.indexOf("storey-name") - 300),
-  );
-  assert.ok(Number(name[1]) < leftmost, "der Name klebt an der Platte");
-  assert.ok(Number(name[1]) > 0, "der Name faellt aus dem Bild");
 });
 
 test("the plan is centred once, not twice into the right-hand half", () => {
@@ -5066,29 +4577,6 @@ test("the drawing grows with the gutter instead of cutting it off", () => {
             "the house ran off the right edge while the name got its room");
 });
 
-test("the room's name gets out of the way of what is in the room", () => {
-  // Beides stand in der Mitte: die Automatik setzt ein Geraet ohne eigene
-  // Angabe in die Raummitte, und der Raumname stand dort auch. Auf dem
-  // ersten Bild fuer die README lag "Adapter Arbeitszimmer" quer ueber
-  // "Arbeitszimmer".
-  const view = panel(
-    model({
-      areas: [{ id: "r", name: "Wohnzimmer", floor_id: "eg",
-                position: at(0.5, 0.5), size: { width: 0.6, height: 0.6 } }],
-      nodes: [node("a:lamp", { area_id: "r", position: at(0.5, 0.5) })],
-    }),
-    { floor: null },
-  );
-  const svg = view._stackHtml();
-  const nameY = Number(/translate\([\d.-]+,([\d.-]+)\)[^>]*>\s*<text class="room-label"/
-    .exec(svg)[1]);
-  const plane = view._stackFloors.findIndex((floor) => floor.id === "eg");
-  const middle = view._project(plane, 0.5, 0.5).y;
-  const back = view._project(plane, 0.5, 0.2).y;
-  assert.ok(nameY < middle, "the name is still sitting on the devices");
-  assert.ok(nameY >= back, "and it has not climbed out through the back wall");
-});
-
 /** Wie tief der Raumname in seinem Raum sitzt: 0 = Hinterkante, 1 = vorn. */
 const nameDepth = (view, floorId) => {
   const svg = view._stackHtml();
@@ -5108,54 +4596,6 @@ const oneRoom = (extra = {}) =>
               position: at(0.5, 0.5), size: { width: 0.6, height: 0.6 } }],
     ...extra,
   });
-
-test("a room with nothing in it keeps its name in the middle", () => {
-  // Das Ausweichen nach hinten war die Antwort auf ein Geraet in der
-  // Raummitte. Wo keines steht, war es ein Tausch und keine Loesung: Der
-  // Name klebte an der Hinterwand, obwohl der ganze Raum frei ist.
-  const leer = panel(oneRoom(), { floor: null });
-  const voll = panel(
-    oneRoom({ nodes: [node("a:lamp", { area_id: "r", position: at(0.5, 0.5) })] }),
-    { floor: null },
-  );
-  assert.ok(nameDepth(leer, "eg") > 0.4,
-            "der Name klebt an der Hinterwand, obwohl nichts im Raum steht");
-  assert.ok(nameDepth(voll, "eg") < 0.3,
-            "der Name sitzt auf dem Geraet, das in der Mitte steht");
-});
-
-test("a name does not dodge a device that is switched off", () => {
-  // Wer die Ebene eines Providers ausblendet, sieht eine leerere
-  // Zeichnung. Ein Name, der darin vor einem unsichtbaren Geraet
-  // ausweicht, weicht vor nichts aus.
-  const daten = oneRoom({
-    nodes: [node("a:lamp", { area_id: "r", position: at(0.5, 0.5) })],
-  });
-  for (const layer of daten.layers) {
-    if ((layer.provider_id || "") === "a") layer.visible = false;
-  }
-  const view = panel(daten, { floor: null });
-  assert.equal(view._visibleNodes.length, 0, "die Vorbedingung stimmt nicht");
-  assert.ok(nameDepth(view, "eg") > 0.4,
-            "der Name weicht einem Geraet aus, das gar nicht gezeichnet wird");
-});
-
-test("the drawn name and the one decluttering knows about are the same", () => {
-  // Zwei Rechnungen fuer denselben Punkt waeren zwei Stellen, an denen
-  // er auseinanderlaeuft -- und ein Entzerren, das gegen den falschen
-  // Punkt prueft, ist schlimmer als keines.
-  const view = panel(oneRoom(), { floor: null });
-  const svg = view._stackHtml();
-  const drawn = Number(
-    /translate\([\d.-]+,([\d.-]+)\)[^>]*>\s*<text class="room-label"/
-      .exec(svg)[1],
-  );
-  const known = view._stackRoomLabels(view._stackFloors, view._counterScale)
-    .find((label) => label.text === "Wohnzimmer");
-  assert.ok(known, "das Entzerren kennt den Raumnamen gar nicht");
-  assert.ok(Math.abs(known.y - drawn) < 0.5,
-            `gezeichnet bei ${drawn}, bekannt als ${known.y}`);
-});
 
 /** Die Schriftgroesse, mit der ein Raumname gezeichnet wurde.
  *
@@ -5183,63 +4623,6 @@ const rowOf = (namen) =>
 
 const NARROW = ["Diele", "Hauswirtschaftsraum", "Esszimmer",
                 "Abstellkammer", "Bad", "Gästezimmer"];
-
-test("a name too wide for its room is set smaller, not left to run over", () => {
-  // Nachgemessen im gezeichneten SVG, nicht geschaetzt: Sechs Raeume
-  // nebeneinander, und "Hauswirtschaftsraum" stand ueber zwei Nachbarn.
-  const view = panel(rowOf(NARROW), { floor: null });
-  assert.ok(drawnSize(view, "Hauswirtschaftsraum") < ROOM_LABEL.size,
-            "der lange Name wurde nicht verkleinert");
-});
-
-test("one type size per storey, the way a drawing is lettered", () => {
-  // Je Raum gerechnet stand "Diele" in 16 px neben "Hauswirtschaftsraum"
-  // in 10 -- angesehen liest sich das als Rangfolge zwischen Raeumen,
-  // die gleichrangig sind.
-  const view = panel(rowOf(NARROW), { floor: null });
-  const sizes = new Set(NARROW.map((name) => drawnSize(view, name)));
-  assert.equal(sizes.size, 1,
-               `die Etage traegt ${sizes.size} Schriftgroessen: `
-               + `${[...sizes].join(", ")}`);
-});
-
-test("a storey with room to spare keeps the full size", () => {
-  // Sonst kostete die Regel ueberall Groesse und nicht nur dort, wo
-  // sie gebraucht wird -- am Demohaus aendert sich nichts.
-  const view = panel(rowOf(["Bad", "Flur", "Küche"]), { floor: null });
-  assert.equal(drawnSize(view, "Bad"), ROOM_LABEL.size);
-});
-
-test("a shrunk name never goes below the size at which it is still writing", () => {
-  // Eine Schrift, die weiter schrumpft, ist keine Beschriftung mehr,
-  // sondern ein grauer Strich, der so tut als waere er eine.
-  const view = panel(
-    rowOf(["A", "Hauswirtschaftsraumzugangsflur", "B", "C", "D", "E"]),
-    { floor: null },
-  );
-  assert.equal(drawnSize(view, "Hauswirtschaftsraumzugangsflur"),
-               ROOM_LABEL.min);
-});
-
-test("decluttering is told the size every name is actually drawn at", () => {
-  // Ein Kasten, der groesser ist als seine Schrift, laesst Geraetenamen
-  // ausweichen, die gepasst haetten -- und ein zu kleiner laesst sie
-  // stehen, wo sie sich decken.
-  //
-  // Ueber *alle* Raeume und nicht nur einen: Als das Zeichnen auf eine
-  // Groesse je Etage umgestellt wurde und das Entzerren noch je Raum
-  // rechnete, fielen die beiden Zahlen fuer den laengsten Namen zufaellig
-  // zusammen -- eine Wache, die nur ihn ansah, blieb gruen.
-  const view = panel(rowOf(NARROW), { floor: null });
-  const known = view._stackRoomLabels(view._stackFloors, view._counterScale);
-  for (const name of NARROW) {
-    const label = known.find((entry) => entry.text === name);
-    assert.ok(label, `das Entzerren kennt ${name} gar nicht`);
-    assert.ok(Math.abs(label.size - drawnSize(view, name)) < 0.01,
-              `${name}: gezeichnet mit ${drawnSize(view, name)}, `
-              + `bekannt als ${label.size}`);
-  }
-});
 
 /** Der Fall aus dem echten Bild: ein breites Band, ein Punkt in seiner
  *  Mitte -- und der Name steht dort auch, weil die Automatik beide
@@ -5277,82 +4660,6 @@ const pinsOf = (view) => {
   )].map((m) => ({ x: +m[1], y: +m[2], r: geometry.PIN.size * (+m[3]) / 2 }));
 };
 
-test("a room name steps aside for a pin instead of standing on it", () => {
-  // Nach oben geht ein Raumname nicht -- dort waere er im Raum des
-  // Nachbarn. Das Band der Terrasse ist rund 35 Einheiten tief, der Punkt
-  // 30: senkrecht ist da nichts zu holen. Seitwaerts liegen im selben
-  // Band ueber 600 Einheiten frei.
-  const view = panel(terraceLike(), { floor: null });
-  const name = roomLabelAt(view, "Terrasse");
-  const pin = pinsOf(view)[0];
-  assert.ok(pin, "die Vorbedingung stimmt nicht: kein Punkt gezeichnet");
-
-  assert.ok(Math.abs(name.x - pin.x) > pin.r,
-            `der Name steht auf dem Punkt (${name.x} gegen ${pin.x})`);
-});
-
-test("and it lands in the middle of the free space, not glued to the pin", () => {
-  // Ein Name, der an einem Symbol klebt, sieht aus wie ausgewichen; einer,
-  // der in seiner Luecke steht, sieht aus wie gesetzt. Geprueft wird
-  // deshalb nicht "weit genug weg", sondern **mittig** -- eine Schwelle
-  // waere geraten, die Mitte ist die Aussage.
-  const view = panel(terraceLike(), { floor: null });
-  const name = roomLabelAt(view, "Terrasse");
-  const pin = pinsOf(view)[0];
-  const scale = view._counterScale;
-
-  // Das Band der Terrasse reicht von -0,2 bis 1,2 in Etagenkoordinaten.
-  const kante = {
-    links: view._project(0, -0.2, -0.14).x,
-    rechts: view._project(0, 1.2, -0.14).x,
-  };
-  const breite = "Terrasse".length * geometry.ROOM_LABEL.size * scale
-    * geometry.LABEL.perChar;
-  const luft = geometry.ROOM_LABEL.pad + breite / 2;
-
-  // Die freie Strecke, in der die Mitte des Namens liegen darf -- links
-  // und rechts des Punktes.
-  const luecken = [
-    [kante.links + luft, pin.x - pin.r - 4 - breite / 2],
-    [pin.x + pin.r + 4 + breite / 2, kante.rechts - luft],
-  ].filter(([von, bis]) => bis > von);
-  assert.ok(luecken.length, "die Vorbedingung stimmt nicht: keine Luecke");
-
-  const mitten = luecken.map(([von, bis]) => (von + bis) / 2);
-  const naechste = mitten
-    .slice()
-    .sort((a, b) => Math.abs(a - name.x) - Math.abs(b - name.x))[0];
-  assert.ok(Math.abs(name.x - naechste) < 2,
-            `der Name steht bei ${name.x.toFixed(1)}, die Mitte seiner `
-            + `Luecke liegt bei ${naechste.toFixed(1)} -- er klebt am Punkt`);
-});
-
-test("the drawn name and the one decluttering knows about slide together", () => {
-  // Zwei Rechnungen fuer denselben Versatz waeren zwei Stellen, an denen
-  // er auseinanderlaeuft.
-  const view = panel(terraceLike(), { floor: null });
-  const drawn = roomLabelAt(view, "Terrasse");
-  const known = view._stackRoomLabels(view._stackFloors, view._counterScale)
-    .find((label) => label.text === "Terrasse");
-  assert.ok(known, "das Entzerren kennt den Namen gar nicht");
-  assert.ok(Math.abs(known.x - drawn.x) < 0.5,
-            `gezeichnet bei ${drawn.x}, bekannt als ${known.x}`);
-});
-
-test("a name that cannot get out of the way keeps its place", () => {
-  // Ein Raum ohne Namen ist schlimmer als einer, dessen Name einen Punkt
-  // streift. Wo kein Platz ist, wird nichts weggeblendet.
-  const eng = model({
-    areas: [{ id: "r", name: "Hauswirtschaftsraum", floor_id: "eg",
-              position: at(0.5, 0.5), size: { width: 0.2, height: 0.2 } }],
-    nodes: [node("a:x", { area_id: "r", floor_id: "eg", label: "X",
-                          position: at(0.5, 0.5) })],
-  });
-  const view = panel(eng, { floor: null });
-  const svg = view._stackHtml();
-  assert.match(svg, /Hauswirtschaftsraum/, "der Name ist verschwunden");
-});
-
 test("a flat gets its drawing, not a column with one word in it", () => {
   // Die Spalte links ist dazu da, Stockwerke untereinander lesbar zu
   // machen. Bei einem gibt es nichts zu sortieren -- und eine Wohnung ist
@@ -5379,51 +4686,6 @@ test("a flat gets its drawing, not a column with one word in it", () => {
   assert.ok(share(alone) > share(stacked),
     "das Haus hat nichts vom kleineren Rand");
   assert.ok(share(alone) > 0.85, "immer noch zu viel Luft daneben");
-});
-
-test("the lone storey's name sits above the drawing, not beside it", () => {
-  const view = panel(model({ floors: [{ id: "eg", name: "Erdgeschoss", level: 0, icon: "" }] }),
-                     { floor: null });
-  const markup = view._stackHtml();
-
-  // Ueber der Mauerkrone, sonst laege der Name auf der Rueckwand.
-  assert.match(markup, /class="storey-name alone"/);
-  const top = Math.min(
-    ...[0, 1].map((x) => view._project(0, x, 0).y - 26),
-  );
-  // Die letzte data-at-y *vor* der Beschriftung -- Knoten tragen
-  // dieselbe Angabe, und die erste im Dokument ist nicht diese.
-  const before = markup.slice(0, markup.indexOf('class="storey-name alone"'));
-  const all = [...before.matchAll(/data-at-y="([-\d.]+)"/g)];
-  const at = Number(all[all.length - 1][1]);
-  assert.ok(at < top, "der Name liegt auf der Zeichnung statt darueber");
-  assert.ok(at > 0, "und faellt oben aus dem Bild");
-});
-
-test("one storey stands on nothing; a stack stands on slabs", () => {
-  // Die Bodenplatte trennt Etagen voneinander -- vier Zeichnungen
-  // uebereinander werden dadurch vier Stockwerke eines Hauses. Steht dort
-  // nur eine, gibt es nichts zu trennen, und was bleibt, ist eine Wanne:
-  // ein Sockel mit dicker Vorderkante unter einem Grundriss, der auf gar
-  // nichts steht. Eine Bauzeichnung zeichnet den Boden nicht.
-  const floors = [
-    { id: "eg", name: "Erdgeschoss", level: 0, icon: "" },
-    { id: "og", name: "Obergeschoss", level: 1, icon: "" },
-  ];
-  const alone = panel(model({ floors: [floors[0]] }), { floor: null });
-  const stacked = panel(model({ floors }), { floor: null });
-  const count = (markup, what) => (markup.match(new RegExp(what, "g")) || []).length;
-
-  assert.equal(count(alone._stackHtml(), 'class="storey"'), 0, "die Wanne ist noch da");
-  assert.equal(count(alone._stackHtml(), "storey-side"), 0);
-
-  assert.equal(count(stacked._stackHtml(), 'class="storey"'), 2,
-    "im Stapel traegt jede Etage eine Platte");
-  assert.ok(count(stacked._stackHtml(), "storey-side") >= 8);
-
-  // Die Aussenwand bleibt in beiden Faellen: sie ist das, was den
-  // Grundriss zu einem Stockwerk macht, und nicht die Platte darunter.
-  assert.ok(count(alone._stackHtml(), "shell-face") >= 4);
 });
 
 // ── Die reinen Bausteine, ohne Panel drumherum ─────────────
@@ -5615,29 +4877,257 @@ test("the same four gestures are offered in both views", () => {
   }
 });
 
-test("the soil is drawn as material, not as a room somebody forgot", () => {
-  // § Das Erdreich: "Ein Renderer SOLL ihn als Material zeichnen --
-  // schraffiert, wie eine Bauzeichnung Erde zeichnet -- und nicht als
-  // Flaeche mit Rahmen: ein Kasten neben dem Haus sieht aus wie ein Raum,
-  // den jemand vergessen hat."
-  const data = model({
-    floors: [{ id: "ug", name: "Untergeschoss", level: 0, icon: "" },
-             { id: "eg", name: "Erdgeschoss", level: 1, icon: "" }],
-    areas: [
-      { id: "keller", name: "Keller", floor_id: "ug",
-        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
-      { id: "vpn", name: "VPN", floor_id: "ug", kind: "virtual",
-        position: at(0.5, 1.14), size: { width: 1.4, height: 0.22 } },
-      { id: "wz", name: "Wohnzimmer", floor_id: "eg",
-        position: at(0.5, 0.5), size: { width: 1, height: 1 } },
-    ],
-  });
-  const svg = panel(data, { floor: null })._stackHtml();
+// ── Die Hausansicht: Geschosse als Koerper, in einer Flucht ──────────
 
-  assert.match(svg, /class="soil"/, "das Erdreich ist kein Material");
-  assert.match(svg, /class="soil-hatch"/, "es ist nicht schraffiert");
-  // Und ausdruecklich kein Zimmer: die Raumkontur gehoert ihm nicht.
-  const alsRaum = new RegExp('class="room[^"]*"[^>]*/>[^]{0,400}?>VPN<');
-  assert.doesNotMatch(svg, alsRaum,
-                      "das Erdreich wird als Raum mit Rahmen gezeichnet");
+const house3d = await import(
+  pathToFileURL(join(here, "..", "custom_components", "spatial_hub", "www",
+                     "panel-house3d.js")).href
+);
+
+const room3d = (id, floor, x0, x1, y0, y1, extra = {}) => ({
+  id, name: extra.name || id, floor_id: floor, kind: "indoor",
+  position: { x: (x0 + x1) / 2, y: (y0 + y1) / 2, z: 0 },
+  size: { width: x1 - x0, height: y1 - y0 }, ...extra,
+});
+
+const scene3d = (floors, areas) => house3d.houseScene({
+  floors,
+  areasOf: (floor) => areas.filter((area) => area.floor_id === floor.id),
+});
+
+const twoStoreys = [
+  { id: "og", name: "Obergeschoss", level: 1, metres: 12 },
+  { id: "eg", name: "Erdgeschoss", level: 0, ground: true, metres: 12 },
+];
+
+test("every storey's outer walls stand in one line with the others", () => {
+  // Die Zusage der ganzen Ansicht: dieselbe Kamera fuer jedes Geschoss,
+  // danach nur senkrecht versetzt. Jede Ecke der Flucht landet oben wie
+  // unten auf derselben Bildspalte -- auch wenn das untere Geschoss einen
+  // Balkon hat und das obere nicht.
+  const scene = scene3d(twoStoreys, [
+    room3d("a", "og", 0, 1, 0, 1),
+    room3d("b", "eg", 0, 1, 0, 1),
+    { ...room3d("balkon", "eg", 1, 1.3, 0, 1), kind: "outdoor", name: "Balkon" },
+  ]);
+  for (const [x, y] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+    const top = scene.project(0, x, y, 0);
+    const bottom = scene.project(1, x, y, 0);
+    assert.ok(Math.abs(top.x - bottom.x) < 1e-6, `Ecke ${x},${y} steht schief`);
+    assert.ok(bottom.y > top.y, "das untere Geschoss steht unten");
+  }
+});
+
+test("storeys are stacked with air between them, the top one on top", () => {
+  const scene = scene3d(twoStoreys, [
+    room3d("a", "og", 0, 1, 0, 1), room3d("b", "eg", 0, 1, 0, 1),
+  ]);
+  // Die Vorderkante oben liegt ueber der Hinterkante unten.
+  assert.ok(scene.project(0, 0, 1, 0).y < scene.project(1, 0, 0, 1).y);
+  // Unten zuerst gemalt: ein hoeheres Geschoss liegt naeher an der Kamera.
+  assert.ok(scene.svg.indexOf('data-floor="eg"') < scene.svg.indexOf('data-floor="og"'));
+});
+
+test("walls that meet are one body: no line where two rooms touch", () => {
+  // Zwei Raeume nebeneinander, jeder mit vier Waenden: als Kaesten waeren
+  // das acht, und an jedem Stoss stuende eine Linie. Vereinigt ist es
+  // ein Aussenrand und zwei Loecher.
+  const T = 0.3;
+  const t = 0.12;
+  const rects = [
+    { x0: 0, x1: 10, y0: 0, y1: T }, { x0: 0, x1: 10, y0: 5 - T, y1: 5 },
+    { x0: 0, x1: T, y0: 0, y1: 5 }, { x0: 10 - T, x1: 10, y0: 0, y1: 5 },
+    { x0: 5 - t / 2, x1: 5 + t / 2, y0: 0, y1: 5 },
+  ];
+  const loops = house3d.unionLoops(rects, []);
+  assert.equal(loops.length, 3);
+  // Ein Durchbruch in der Zwischenwand verbindet die beiden Loecher.
+  const door = { x0: 4.8, x1: 5.2, y0: 2, y1: 3 };
+  assert.equal(house3d.unionLoops(rects, [door]).length, 2);
+});
+
+test("a door is a doorway with a leaf, a window stays in the wall", () => {
+  const withDoor = scene3d(twoStoreys.slice(1), [
+    room3d("a", "eg", 0, 1, 0, 1, { doors: [{ side: 2, at: 0.5, width: 0.1 }] }),
+  ]);
+  assert.match(withDoor.svg, /class="l leaf"/);
+  assert.match(withDoor.svg, /class="l swing"/);
+  assert.doesNotMatch(withDoor.svg, /class="l window"/);
+
+  const withWindow = scene3d(twoStoreys.slice(1), [
+    room3d("a", "eg", 0, 1, 0, 1,
+           { doors: [{ side: 2, at: 0.5, width: 0.1, kind: "window" }] }),
+  ]);
+  assert.match(withWindow.svg, /class="l window"/);
+  assert.doesNotMatch(withWindow.svg, /leaf|swing/);
+});
+
+test("a door as wide as a car is a gate, not a leaf swinging into the garage", () => {
+  const scene = scene3d(twoStoreys.slice(1), [
+    room3d("garage", "eg", 0, 0.3, 0, 1,
+           { doors: [{ side: 2, at: 0.5, width: 0.8 }] }),
+  ]);
+  assert.match(scene.svg, /class="l gate"/);
+  assert.doesNotMatch(scene.svg, /leaf/);
+});
+
+test("a staircase gets steps, a room called something else does not", () => {
+  const stairs = scene3d(twoStoreys.slice(1), [
+    room3d("t", "eg", 0.4, 0.5, 0, 0.6, { name: "Treppe" }),
+  ]);
+  const plain = scene3d(twoStoreys.slice(1), [
+    room3d("s", "eg", 0.4, 0.5, 0, 0.6, { name: "Stube" }),
+  ]);
+  assert.match(stairs.svg, /class="l step"/);
+  assert.doesNotMatch(plain.svg, /step/);
+});
+
+test("a balcony has a railing, a garden only a dashed edge", () => {
+  const scene = scene3d(twoStoreys, [
+    room3d("a", "og", 0, 1, 0, 1), room3d("b", "eg", 0, 1, 0, 1),
+    { ...room3d("balkon", "og", 1, 1.2, 0.1, 0.9), kind: "outdoor", name: "Balkon" },
+    { ...room3d("garten", "eg", 0, 1, 1, 1.25), kind: "outdoor", name: "Garten" },
+  ]);
+  const og = scene.svg.slice(scene.svg.indexOf('data-floor="og"'));
+  const eg = scene.svg.slice(0, scene.svg.indexOf('data-floor="og"'));
+  assert.match(og, /class="l rail"/);
+  assert.doesNotMatch(eg, /rail/);
+  assert.match(eg, /class="l garden"/);
+});
+
+test("the soil is drawn as material, not as a room somebody forgot", () => {
+  // Schraffur ohne Rahmen, keine Waende -- ein Kasten neben dem Haus
+  // saehe aus wie ein vergessener Raum.
+  const scene = scene3d(twoStoreys.slice(1), [
+    { ...room3d("netz", "eg", -0.25, -0.05, 0, 1), kind: "virtual", name: "Internet" },
+    { ...room3d("vpn", "eg", -0.25, -0.05, 1.05, 1.2), kind: "virtual", name: "VPN" },
+  ]);
+  assert.match(scene.svg, /class="l soil"/);
+  assert.match(scene.svg, />INTERNET</);
+  assert.match(scene.svg, />VPN</, "jeder virtuelle Bereich fuer sich");
+  assert.doesNotMatch(scene.svg, /class="l wall"|class="f cap"|slab/);
+});
+
+test("a wall broken apart is two walls with a joint, from either side", () => {
+  const loopsOf = (extra) => {
+    const scene = scene3d(twoStoreys.slice(1), [
+      room3d("a", "eg", 0, 0.5, 0, 1, extra),
+      room3d("b", "eg", 0.5, 1, 0, 1),
+    ]);
+    return (scene.svg.match(/class="f cap"[^>]*d="([^"]*)"/) || [])[1]
+      .split("M").length - 1;
+  };
+  // Aussenrand und zwei Loecher; getrennt kommt die Fuge als Schleife dazu.
+  assert.equal(loopsOf({}), 3);
+  assert.equal(loopsOf({ unjoined: ["b"] }), 4);
+});
+
+test("storeys are named in the margin, in capitals", () => {
+  const scene = scene3d(twoStoreys, [
+    room3d("a", "og", 0, 1, 0, 1, { name: "Küche" }), room3d("b", "eg", 0, 1, 0, 1),
+  ]);
+  assert.match(scene.svg, /class="h3-storey"[^>]*>OBERGESCHOSS</);
+  assert.match(scene.svg, /class="h3-storey"[^>]*>ERDGESCHOSS</);
+  assert.match(scene.svg, />KÜCHE</);
+});
+
+test("a split face draws its own edges and never the cut", () => {
+  const square = house3d.poly([
+    { x: 0, y: 0, z: 0 }, { x: 2, y: 0, z: 0 },
+    { x: 2, y: 2, z: 0 }, { x: 0, y: 2, z: 0 },
+  ]);
+  const { front, back } = house3d.splitPoly(square, { n: { x: 1, y: 0, z: 0 }, d: 1 });
+  for (const part of [front, back]) {
+    assert.equal(part.pts.length, 4);
+    assert.equal(part.edges.filter(Boolean).length, 3, "die Schnittkante ist keine Kante");
+  }
+});
+
+test("the house view draws the new house, and devices stand on its floors", () => {
+  const view = panel(model(), { floor: null });
+  const html = view._stackHtml();
+  assert.match(html, /class="stack house3d"/);
+  assert.match(html, /data-floor="eg"/);
+  assert.match(html, /data-floor="og"/);
+  assert.match(html, /data-node="a:one"/);
+  assert.match(html, /data-edge=/);
+});
+
+test("a doorway goes through the masonry, not just its outside face", () => {
+  // Durch die ganze Mauer: die Krone ist dort offen, die beiden Loecher
+  // links und rechts der Wand werden zu einem.
+  const capLoops = (doors) => {
+    const scene = scene3d(twoStoreys.slice(1), [
+      room3d("a", "eg", 0, 0.5, 0, 1, { doors }),
+      room3d("b", "eg", 0.5, 1, 0, 1),
+    ]);
+    return (scene.svg.match(/class="f cap"[^>]*d="([^"]*)"/) || [])[1]
+      .split("M").length - 1;
+  };
+  assert.equal(capLoops([]), 3);
+  assert.equal(capLoops([{ side: 1, at: 0.5, width: 0.2 }]), 2);
+  assert.equal(capLoops([{ side: 1, at: 0.5, width: 0.2, kind: "window" }]), 3,
+               "ein Fenster bricht die Mauer nicht");
+});
+
+test("two doors that touch are one opening, not two", () => {
+  const leaves = (doors) => (scene3d(twoStoreys.slice(1), [
+    room3d("a", "eg", 0, 1, 0, 1, { doors }),
+  ]).svg.match(/class="l leaf"/g) || []).length;
+  assert.equal(leaves([{ side: 2, at: 0.3, width: 0.05 }, { side: 2, at: 0.7, width: 0.05 }]), 2);
+  assert.equal(leaves([{ side: 2, at: 0.45, width: 0.05 }, { side: 2, at: 0.5, width: 0.05 }]), 1);
+});
+
+test("a door on a wall that does not exist is left out, not guessed", () => {
+  const svgOf = (doors) => scene3d(twoStoreys.slice(1), [
+    room3d("a", "eg", 0, 1, 0, 1, { doors }),
+  ]).svg;
+  assert.doesNotMatch(svgOf([{ side: 7, at: 0.5, width: 0.1 }]), /leaf/);
+  assert.doesNotMatch(svgOf([{ side: 2, at: "mitte", width: 0.1 }]), /leaf/);
+  // Eine Art, die niemand kennt, ist eine Tuer -- nichts zu zeichnen hiesse,
+  // die Wand stillschweigend zu schliessen.
+  assert.match(svgOf([{ side: 2, at: 0.5, width: 0.1, kind: "portal" }]), /class="l leaf"/);
+});
+
+test("the dimension chain splits at the walls and measures in this storey's metres", () => {
+  const floors = [{ id: "eg", name: "EG", level: 0, ground: true, metres: 10 }];
+  const rooms = [
+    room3d("a", "eg", 0, 0.4, 0, 1), room3d("b", "eg", 0.4, 1, 0, 1),
+  ];
+  const on = house3d.houseScene({
+    floors, dimensions: true,
+    areasOf: () => rooms,
+  });
+  assert.match(on.svg, />4,00 m</);
+  assert.match(on.svg, />6,00 m</);
+  assert.match(on.svg, />10,00 m</, "die zweite Reihe traegt das Gesamtmass");
+
+  const off = house3d.houseScene({ floors, areasOf: () => rooms });
+  assert.doesNotMatch(off.svg, /h3-dim|l dim/, "ohne den Schalter keine Kette");
+
+  const unknown = house3d.houseScene({
+    floors: [{ id: "eg", name: "EG", level: 0 }], dimensions: true,
+    areasOf: () => rooms,
+  });
+  assert.doesNotMatch(unknown.svg, /h3-dim/, "ohne metres keine erfundene Zahl");
+  assert.ok(on.height > off.height, "die Zeichnung waechst fuer die Kette");
+});
+
+test("a measure that does not fit between its ticks is left out, the ticks stay", () => {
+  const floors = [{ id: "eg", name: "EG", level: 0, ground: true, metres: 10 }];
+  const rooms = [
+    room3d("a", "eg", 0, 0.02, 0, 1), room3d("b", "eg", 0.02, 1, 0, 1),
+  ];
+  const scene = house3d.houseScene({ floors, dimensions: true, areasOf: () => rooms });
+  assert.doesNotMatch(scene.svg, />0,20 m</);
+  assert.match(scene.svg, />9,80 m</);
+  assert.equal((scene.svg.match(/class="l dim"/g) || []).length, 2, "die Striche bleiben");
+});
+
+test("a long storey name gets the margin it needs", () => {
+  const short = scene3d([{ id: "eg", name: "EG", metres: 12 }], [room3d("a", "eg", 0, 1, 0, 1)]);
+  const long = scene3d([{ id: "eg", name: "Untergeschoss", metres: 12 }], [room3d("a", "eg", 0, 1, 0, 1)]);
+  assert.ok(long.width - short.width > 200);
+  const x = Number((long.svg.match(/class="h3-storey" x="([0-9.]+)"/) || [])[1]);
+  assert.ok(x - "UNTERGESCHOSS".length * 30 * 0.62 > 0, "der Name steht ganz im Bild");
 });

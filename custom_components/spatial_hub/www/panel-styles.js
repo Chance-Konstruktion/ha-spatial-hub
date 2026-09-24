@@ -202,6 +202,30 @@ main { flex:0 0 auto; min-width:0; }
          border-radius:12px; box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12));
          padding:8px; }
 .stack svg { display:block; width:100%; height:auto; }
+/* Die Hausansicht als Strichzeichnung: Flächen in der Farbe des Grundes,
+   Kanten in der Farbe der Tinte. Verdeckt wird durch Übermalen -- deshalb
+   bekommt jede Fläche einen hauchdünnen Rand in ihrer eigenen Farbe, sonst
+   blitzt an der Naht zweier Teilflächen die Linie dahinter durch. Dunkles
+   Theme: weiße Linien auf Schwarz; helles Theme: dieselbe Zeichnung
+   invertiert. */
+.house3d { --h3-face:var(--fp-surface, var(--card-background-color,#fff));
+           --h3-ink:var(--fp-ink, var(--primary-text-color,#111)); }
+.house3d .f { fill:var(--h3-face); stroke:var(--h3-face); stroke-width:.6;
+              stroke-linejoin:round; }
+.house3d .l { fill:none; stroke:var(--h3-ink);
+              stroke-width:calc(1.5px * var(--fp-house,1));
+              stroke-linejoin:round; stroke-linecap:round; }
+.house3d .l.swing, .house3d .l.rail, .house3d .l.gate {
+  stroke-width:calc(1px * var(--fp-house,1)); }
+.house3d .l.garden { stroke-dasharray:6 5; opacity:.7; }
+.house3d .l.soil, .house3d .l.dim { stroke-width:1px; opacity:.75; }
+.house3d .h3-dim { fill:var(--h3-ink); text-anchor:middle; opacity:.85;
+                   pointer-events:none; }
+.house3d .h3-room { fill:var(--h3-ink); text-anchor:middle;
+                    letter-spacing:.06em; pointer-events:none; }
+.house3d .h3-storey { fill:var(--h3-ink); text-anchor:end;
+                      letter-spacing:.05em; pointer-events:none; }
+.house3d .h3-floor { pointer-events:none; }
 /* Es gibt keinen Gebäudekörper mehr, der über allen Etagen liegt. Weder
    durchscheinende Wände noch ein Dach noch Eckpfosten: alles davon lag
    über dem Grundriss, und der ist der Grund, warum jemand hinschaut. Was
