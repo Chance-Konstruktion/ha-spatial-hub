@@ -247,7 +247,40 @@ test("a node with no floor waits in the tray, not somewhere in the rooms", () =>
     ["a:homeless"],
     "the tray is the same on every storey -- the fix is not per floor",
   );
+  view._trayOpen = true;
   assert.match(view._trayHtml(), /a:homeless/);
+});
+
+test("the tray is one line until somebody opens it", () => {
+  // Im echten Haus: 23 Mediaplayer ohne Raum, offen 194px unter dem Plan
+  // auf jeder Etage. Eingeklappt bleibt die Zahl -- die sagt, dass etwas
+  // zu tun ist -- und die Liste kommt auf Nachfrage.
+  const nodes = Array.from({ length: 23 },
+                           (_, i) => node(`a:lost${i}`, { floor_id: null }));
+  const view = panel(model({ nodes }));
+  const closed = view._trayHtml();
+  assert.match(closed, /23 ohne Etage/);
+  assert.match(closed, /data-tray-toggle/);
+  assert.doesNotMatch(closed, /tray-item/, "no wall of buttons while folded");
+
+  view._trayOpen = true;
+  assert.equal((view._trayHtml().match(/class="tray-item"/g) || []).length, 23);
+});
+
+test("a hidden room takes its devices with it", () => {
+  // Der Hub blendet nur den Raum aus und reicht dessen Geraete weiter.
+  // Gezeichnet standen sie dann frei im Nachbarraum -- im echten Haus
+  // sechs Punkte des Gaeste-WCs mitten im Erdgeschoss.
+  const data = model({
+    nodes: [node("a:wc", { area_id: "gaste_wc" }), node("a:stays")],
+    hidden: { nodes: [], areas: [{ id: "gaste_wc", name: "Gäste-WC" }] },
+  });
+  assert.deepEqual(panel(data)._visibleNodes.map((n) => n.id), ["a:stays"]);
+  assert.doesNotMatch(panel(data, { floor: null })._stackHtml(), /a:wc/);
+
+  data.hidden.areas = [];
+  assert.deepEqual(panel(data)._visibleNodes.map((n) => n.id),
+                   ["a:wc", "a:stays"], "and brings them back with it");
 });
 
 test("the tray disappears once everything has a room", () => {
@@ -1095,6 +1128,7 @@ test("a node on no storey at all lands in the tray, not silently missing", () =>
   // Not on a storey it does not belong to -- in the strip underneath,
   // which is the same answer the single-floor view gives.
   assert.doesNotMatch(view._stackHtml(), /a:lost/);
+  view._trayOpen = true;
   assert.match(view._trayHtml(), /a:lost/);
 });
 

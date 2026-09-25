@@ -1016,6 +1016,11 @@ export const EINGABEN = {
       return true;
     }
 
+    if (hit("data-tray-toggle")) {
+      this._trayOpen = !this._trayOpen;
+      this._render();
+      return true;
+    }
     if (hit("data-legend")) {
       this._legendOpen = !this._legendOpen;
       this._render();

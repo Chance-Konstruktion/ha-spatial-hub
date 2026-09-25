@@ -798,7 +798,13 @@ select { font:inherit; padding:6px; border-radius:8px;
         box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
 .tray-head { display:flex; align-items:center; flex-wrap:wrap; gap:6px;
              margin:0 0 8px; font-size:13px; }
-.tray-items { display:flex; flex-wrap:wrap; gap:6px; }
+.tray-items { display:flex; flex-wrap:wrap; gap:6px; max-height:28vh; overflow-y:auto; }
+.tray:not(.open) { padding:4px 12px; }
+.tray:not(.open) .tray-head { margin:0; }
+.tray-toggle { display:flex; align-items:center; gap:4px; border:0; background:transparent;
+               font:inherit; color:inherit; cursor:pointer; padding:2px 4px; border-radius:8px; }
+.tray-toggle ha-icon { --mdc-icon-size:18px; }
+.tray-toggle:hover { background:var(--secondary-background-color,#f2f2f2); }
 .tray-item { display:flex; align-items:center; gap:6px; border:0; font:inherit;
              color:inherit; cursor:pointer; border-radius:16px; padding:3px 10px 3px 3px;
              background:var(--secondary-background-color,#fafafa); font-size:13px; }

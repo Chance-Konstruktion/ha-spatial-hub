@@ -728,9 +728,16 @@ class SpatialHubPanel extends HTMLElement {
     const floor = this._floor;
     const hidden = this._hiddenProviders;
     const stackable = new Set(this._stackFloors.map((entry) => entry.id));
+    const hiddenRooms = this._hiddenAreaIds;
     return model.nodes.filter((node) => {
       if (hidden.has(this._providerOf(node.id))) return false;
       if (!node.position) return false;
+      // Ein ausgeblendeter Raum nimmt seine Geraete mit. Der Hub reicht
+      // sie weiter (er blendet nur den Raum aus), und gezeichnet standen
+      // sie dann frei im Nachbarraum: im echten Haus sechs Punkte des
+      // Gaeste-WCs mitten im Erdgeschoss, ohne Wand drumherum. Wer den
+      // Raum zurueckholt, bekommt sie mit ihm zurueck.
+      if (node.area_id && hiddenRooms.has(node.area_id)) return false;
       // A node with no floor has no place on the plan -- it gets the tray
       // underneath instead. Dropping it somewhere in the rooms was the
       // worst of both: it looked assigned, and it sat on top of a grid
@@ -742,6 +749,13 @@ class SpatialHubPanel extends HTMLElement {
       if (!floor) return stackable.has(node.floor_id);
       return node.floor_id === floor.id;
     });
+  }
+
+  /** Die Bereiche, die der Nutzer ausgeblendet hat (der Hub listet sie
+   *  unter `hidden.areas`, statt sie mitzuschicken). */
+  get _hiddenAreaIds() {
+    const hidden = (this._model && this._model.hidden) || {};
+    return new Set((hidden.areas || []).map((area) => area.id));
   }
 
   /** Everything Home Assistant has not put on a storey yet.

@@ -743,16 +743,25 @@ export const ANSICHT = {
   _trayHtml() {
     const waiting = this._floorlessNodes;
     if (!waiting.length) return "";
+    // Eingeklappt eine Zeile. Offen stand hier jedes Geraet als Knopf,
+    // und in einem echten Haus mit 23 Mediaplayern ohne Raum waren das
+    // 194px unter dem Plan, auf jeder Etage -- mehr als die Legende je
+    // gekostet hat. Die Zahl sagt, dass es etwas zu tun gibt; die Liste
+    // gibt es auf Nachfrage.
+    const open = Boolean(this._trayOpen);
     return `
-      <section class="tray">
+      <section class="tray ${open ? "open" : ""}">
         <p class="tray-head">
-          <ha-icon icon="mdi:tray-arrow-down"></ha-icon>
-          <span>${waiting.length} ohne Etage</span>
-          <span class="muted">— in Home Assistant unter <i>Einstellungen →
-          Bereiche &amp; Zonen</i> einem Raum zuweisen, dann wandern sie von
-          selbst an ihren Platz.</span>
+          <button class="tray-toggle" data-tray-toggle="1"
+                  aria-expanded="${open ? "true" : "false"}">
+            <ha-icon icon="${open ? "mdi:chevron-down" : "mdi:chevron-right"}"></ha-icon>
+            <ha-icon icon="mdi:tray-arrow-down"></ha-icon>
+            <span>${waiting.length} ohne Etage</span>
+          </button>
+          <span class="muted">— in Home Assistant einem Raum zuweisen,
+          dann wandern sie von selbst an ihren Platz.</span>
         </p>
-        <div class="tray-items">
+        ${open ? `<div class="tray-items">
           ${waiting
             .map((node) => {
               const custom = this._customIcon(node);
@@ -772,7 +781,7 @@ export const ANSICHT = {
               </button>`;
             })
             .join("")}
-        </div>
+        </div>` : ""}
       </section>`;
   },
 
