@@ -247,7 +247,40 @@ test("a node with no floor waits in the tray, not somewhere in the rooms", () =>
     ["a:homeless"],
     "the tray is the same on every storey -- the fix is not per floor",
   );
+  view._trayOpen = true;
   assert.match(view._trayHtml(), /a:homeless/);
+});
+
+test("the tray is one line until somebody opens it", () => {
+  // Im echten Haus: 23 Mediaplayer ohne Raum, offen 194px unter dem Plan
+  // auf jeder Etage. Eingeklappt bleibt die Zahl -- die sagt, dass etwas
+  // zu tun ist -- und die Liste kommt auf Nachfrage.
+  const nodes = Array.from({ length: 23 },
+                           (_, i) => node(`a:lost${i}`, { floor_id: null }));
+  const view = panel(model({ nodes }));
+  const closed = view._trayHtml();
+  assert.match(closed, /23 ohne Etage/);
+  assert.match(closed, /data-tray-toggle/);
+  assert.doesNotMatch(closed, /tray-item/, "no wall of buttons while folded");
+
+  view._trayOpen = true;
+  assert.equal((view._trayHtml().match(/class="tray-item"/g) || []).length, 23);
+});
+
+test("a hidden room takes its devices with it", () => {
+  // Der Hub blendet nur den Raum aus und reicht dessen Geraete weiter.
+  // Gezeichnet standen sie dann frei im Nachbarraum -- im echten Haus
+  // sechs Punkte des Gaeste-WCs mitten im Erdgeschoss.
+  const data = model({
+    nodes: [node("a:wc", { area_id: "gaste_wc" }), node("a:stays")],
+    hidden: { nodes: [], areas: [{ id: "gaste_wc", name: "Gäste-WC" }] },
+  });
+  assert.deepEqual(panel(data)._visibleNodes.map((n) => n.id), ["a:stays"]);
+  assert.doesNotMatch(panel(data, { floor: null })._stackHtml(), /a:wc/);
+
+  data.hidden.areas = [];
+  assert.deepEqual(panel(data)._visibleNodes.map((n) => n.id),
+                   ["a:wc", "a:stays"], "and brings them back with it");
 });
 
 test("the tray disappears once everything has a room", () => {
@@ -493,10 +526,11 @@ test("nobody without a user gets the pencil", () => {
 
 test("editing tools appear only in edit mode", () => {
   const view = panel();
+  assert.equal(view._editBarHtml(), "", "no toolbar at all while looking");
   assert.doesNotMatch(view._headerHtml(), /data-floor-dialog/);
   view._edit = true;
-  assert.match(view._headerHtml(), /data-floor-dialog/);
-  assert.match(view._headerHtml(), /data-reset-floor/);
+  assert.match(view._editBarHtml(), /data-floor-dialog/);
+  assert.match(view._editBarHtml(), /data-reset-floor/);
 });
 
 test("areas grow a grip and a hide button only while editing", () => {
@@ -779,7 +813,7 @@ test("the palette is offered only while editing", () => {
   const view = panel();
   assert.doesNotMatch(view._headerHtml(), /data-theme-dialog/);
   view._edit = true;
-  assert.match(view._headerHtml(), /data-theme-dialog/);
+  assert.match(view._editBarHtml(), /data-theme-dialog/);
 });
 
 test("the dialog offers a colour per word of the vocabulary", () => {
@@ -1094,6 +1128,7 @@ test("a node on no storey at all lands in the tray, not silently missing", () =>
   // Not on a storey it does not belong to -- in the strip underneath,
   // which is the same answer the single-floor view gives.
   assert.doesNotMatch(view._stackHtml(), /a:lost/);
+  view._trayOpen = true;
   assert.match(view._trayHtml(), /a:lost/);
 });
 
@@ -2895,7 +2930,7 @@ test("der Massband-Schalter ist auch in der Hausansicht da", () => {
   // Er stand im Block fuer die Einzelansicht und war damit genau dort
   // nicht erreichbar, wo die Ketten etwas wert sind.
   const stapel = panel(withMetres(), { floor: null, edit: true });
-  assert.match(stapel._headerHtml(), /data-toggle-meters/);
+  assert.match(stapel._editBarHtml(), /data-toggle-meters/);
 });
 
 test("the walls never swallow a click meant for a device", () => {
@@ -3451,9 +3486,9 @@ test("the devices are out of the way while the rooms are being drawn", () => {
 
 test("rooms mode is the one with the wall tools", () => {
   const rooms = panel(model(), { edit: true, what: "rooms" });
-  assert.match(rooms._headerHtml(), /data-toggle-corners/);
+  assert.match(rooms._editBarHtml(), /data-toggle-corners/);
   const icons = panel(model(), { edit: true, what: "icons" });
-  assert.doesNotMatch(icons._headerHtml(), /data-toggle-corners/);
+  assert.doesNotMatch(icons._editBarHtml(), /data-toggle-corners/);
 });
 
 // ── Das Grundstück ist so groß wie der Garten ──────────────
@@ -3612,14 +3647,61 @@ test("the tab strip is the first thing in the header, wrapped or not", () => {
 
 // ── Ein Bildschirm, der doppelt so hoch wie breit ist ──────
 
-test("the legend follows the plan instead of sinking to the bottom", () => {
-  // Measured on a 373×910 window: the plan ended at 485px and the legend
-  // started at 866px -- 381 empty pixels in between, because `main` was
-  // told to take all the leftover height and the plan sat at its top.
+test("no rule is quietly overruled by a later one with the same selector", () => {
+  // Zweimal derselbe Fehler, beide Male unsichtbar fuer jeden anderen
+  // Test: ".area-name" stand zweimal im Stylesheet, und die spaetere Regel
+  // setzte den Raumnamen zurueck unter die Mauer. Und die Media-Queries
+  // fuer das Suchfeld standen *vor* seiner Grundregel -- auf dem Telefon
+  // blieb es 120px breit. Gleiche Spezifitaet heisst: die spaetere gewinnt.
+  const css = styleSheet().replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [];
+  const media = [];
+  const token = /([^{}]+)\{|\}/g;
+  let match;
+  while ((match = token.exec(css))) {
+    if (match[0] === "}") { media.pop(); continue; }
+    const head = match[1].trim();
+    if (head.startsWith("@")) { media.push(head); continue; }
+    const end = css.indexOf("}", token.lastIndex);
+    const props = new Map(css.slice(token.lastIndex, end).split(";")
+      .map((part) => part.split(":"))
+      .filter((pair) => pair.length > 1)
+      .map(([key, ...value]) => [key.trim(), value.join(":").trim()]));
+    token.lastIndex = end + 1;
+    for (const selector of head.split(",")) {
+      rules.push({ selector: selector.trim().replace(/\s+/g, " "),
+                   media: media.join(" "), props });
+    }
+  }
+  const lost = [];
+  rules.forEach((rule, at) => {
+    for (const later of rules.slice(at + 1)) {
+      if (later.selector !== rule.selector) continue;
+      if (later.media && later.media !== rule.media) continue;
+      for (const [key, value] of rule.props) {
+        if (later.props.has(key) && later.props.get(key) !== value) {
+          lost.push(`${rule.media} ${rule.selector} { ${key}:${value} }`);
+        }
+      }
+    }
+  });
+  assert.deepEqual(lost, []);
+});
+
+test("the plan takes the height and the legend floats over it", () => {
+  // Frueher: `main` so hoch wie noetig, die Legende als Zeile darunter.
+  // In Home Assistant mit seiner eigenen Leiste oben war das ein Drittel
+  // des Bildschirms unter dem Haus, fuer ein eingeklapptes "Legende".
+  // Jetzt fuellt der Plan die Hoehe, und die Legende liegt ueber ihm.
   const style = styleSheet();
 
-  assert.match(style, /\nmain \{[^}]*flex:0 0 auto/,
-               "the plan takes the height it needs and no more");
+  assert.match(style, /\nmain \{[^}]*flex:1 1 auto/,
+               "the plan takes all the height there is");
+  assert.match(style, /\nmain > \.plan \{[^}]*flex:1 1 auto/);
+  assert.doesNotMatch(style, /\.viewport \{[^}]*max-height:calc\(100vh/,
+                      "no cap computed from a window the panel does not own");
+  assert.match(style, /\n\.legend \{[^}]*position:absolute/,
+               "folded, the legend costs the plan no row of its own");
 });
 
 const screen = (innerWidth, innerHeight) => ({
@@ -3638,17 +3720,13 @@ const onScreen = (width, height, build = (view) => view) => {
   }
 };
 
-test("a tall screen opens the legend rather than leaving half of it empty", () => {
-  // A square plan on a tall narrow window can only be as wide as the
-  // window, so the lower half is going spare. Filling it with the layers
-  // and the providers beats filling it with nothing.
-  //
-  // Nicht auf dem Telefon: dort fuellt der Plan seit dem Vollbild den
-  // ganzen Schirm, und die Legende liegt als Blatt darueber. Offen zu
-  // starten hiesse da, ein Stueck Haus zuzudecken, bevor es jemand
-  // gesehen hat.
-  assert.equal(onScreen(800, 1600, (view) => view._legendOpen), true,
-               "a tall tablet has room under the plan");
+test("the legend starts folded on every screen", () => {
+  // Frueher offen auf hohen Bildschirmen, weil die untere Haelfte unter
+  // dem quadratischen Plan leer blieb. Der Plan fuellt inzwischen jede
+  // Hoehe, und die Legende liegt ueber ihm -- offen zu starten hiesse,
+  // ein Stueck Haus zuzudecken, bevor es jemand gesehen hat.
+  assert.equal(onScreen(800, 1600, (view) => view._legendOpen), false,
+               "a tall tablet shows its house first too");
   assert.equal(onScreen(1400, 900, (view) => view._legendOpen), false,
                "on a normal screen the house still comes first");
   assert.equal(onScreen(373, 910, (view) => view._legendOpen), false,

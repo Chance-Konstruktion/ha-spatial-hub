@@ -25,7 +25,10 @@ export const STYLES = `
 /* Vollbild heisst randlos: kein Innenabstand, keine Karte, keine
  * Schatten. Was hier noch Platz kostet, kostet ihn am Haus. */
 .app.phone .body { padding:0; gap:0; overflow:hidden; position:relative; }
-.app.phone main { flex:1 1 auto; min-height:0; display:flex; }
+/* Als Spalte, nicht als Zeile: in einer Zeile stand der Hinweis unter
+   der Hausansicht *neben* dem Plan und drueckte ihn auf 105px Breite. */
+.app.phone main { flex:1 1 auto; min-height:0; display:flex;
+                  flex-direction:column; }
 .app.phone .viewport { max-height:none; height:100%; width:100%;
                        border-radius:0; }
 .app.phone .stage, .app.phone .stack { border-radius:0; box-shadow:none; }
@@ -85,43 +88,107 @@ header { display:flex; align-items:center; gap:8px; padding:8px 12px;
 /* Sobald die Reiter eine eigene Zeile haben, sollen sie die ganze
    nehmen -- eine halbe Zeile Etagen neben halb leerem Platz waere
    Verschnitt. Der Abstandshalter schiebt die Werkzeuge nach rechts. */
+/* "header .search input" und nicht ".search input": die Grundregel steht
+   weiter unten und gewann bei gleicher Spezifitaet immer. Das Suchfeld
+   blieb auf dem Telefon 120px breit, und die Kopfzeile brach in eine
+   dritte Reihe fuer zwei Knoepfe um. */
 @media (max-width: 760px) {
   .tabs { flex:1 0 100%; }
   .spacer { flex:1 1 auto; }
-  .search input { width:88px; }
+  header .search input { width:88px; }
 }
 @media (max-width: 420px) {
   /* Noch schmaler: das Suchfeld schrumpft auf die Lupe und wächst erst
      wieder, wenn jemand hineintippt. Ein Zoomknopf, der nicht mehr auf
      den Schirm passt, ist schlimmer als ein kurzes Suchfeld. */
-  .search input { width:0; padding:0; }
-  .search:focus-within input { width:110px; }
+  header .search input { width:0; padding:0; }
+  header .search:focus-within input { width:110px; }
 }
 .icon-btn { border:0; background:transparent; color:inherit; cursor:pointer;
             border-radius:50%; padding:6px; display:flex; }
 .icon-btn.on { background:rgba(255,255,255,.25); }
+.icon-btn.labelled { border-radius:18px; padding:6px 14px 6px 10px; gap:6px;
+                     align-items:center; font:inherit; font-weight:500;
+                     background:rgba(255,255,255,.9);
+                     color:var(--fp-accent, var(--primary-color,#03a9f4)); }
+/* Die Werkzeugleiste des Editors. Hell unter der farbigen Kopfzeile,
+   damit sofort zu sehen ist: das hier ist ein Modus, kein Dauerzustand.
+   Eine Zeile, die seitlich rollt -- umbrechen hiesse, der Plan springt. */
+.editbar { display:flex; align-items:center; gap:6px; padding:6px 12px;
+           overflow-x:auto; scrollbar-width:none; flex:0 0 auto;
+           background:var(--card-background-color,#fff);
+           border-bottom:1px solid var(--divider-color,#e0e0e0);
+           box-shadow:0 1px 3px rgba(0,0,0,.06); }
+.editbar::-webkit-scrollbar { display:none; }
+.tool-group { display:flex; align-items:center; gap:2px; flex:0 0 auto;
+              padding-right:6px; margin-right:2px;
+              border-right:1px solid var(--divider-color,#e0e0e0); }
+.tool-group:last-child { border-right:0; }
+.tool-group.mode { background:var(--secondary-background-color,#f2f2f2);
+                   border-radius:18px; padding:2px; border-right:0; margin-right:8px; }
+.tool { display:flex; align-items:center; gap:6px; border:0; font:inherit;
+        font-size:13px; white-space:nowrap; cursor:pointer;
+        padding:6px 10px; border-radius:16px; background:transparent;
+        color:var(--primary-text-color,#212121); }
+.tool ha-icon { --mdc-icon-size:20px; color:var(--secondary-text-color,#727272); }
+.tool:hover:not([disabled]) { background:var(--secondary-background-color,#f2f2f2); }
+.tool.on { background:rgba(3,169,244,.14);
+           background:color-mix(in srgb, var(--fp-accent, var(--primary-color,#03a9f4)) 16%, transparent);
+           color:var(--fp-accent, var(--primary-color,#03a9f4)); font-weight:500; }
+.tool.on ha-icon { color:inherit; }
+.tool-group.mode .tool.on { background:var(--card-background-color,#fff);
+                            box-shadow:0 1px 3px rgba(0,0,0,.18); }
+.tool[disabled] { opacity:.38; cursor:default; }
+.tool.icon-only { padding:6px; }
+/* Schmal: nur noch die Symbole, das Wort steht im Tooltip. Der aktive
+   Modus behaelt sein Wort -- "wo bin ich" ist die eine Frage, die ohne
+   Zeigen beantwortet sein muss. */
+@media (max-width: 900px) {
+  .tool span { display:none; }
+  .tool { padding:6px 8px; }
+  .tool-group.mode .tool span { display:inline; }
+}
 /* Ebenen und Provider stehen unter dem Grundriss, nicht daneben: der Plan
    ist das Einzige, was Breite wirklich braucht. */
-.body { flex:1; display:flex; flex-direction:column; gap:16px; padding:16px; overflow:auto; }
-/* "flex:1" hat den Plan oben festgenagelt und die Legende ans untere
-   Ende geschoben -- auf einem 22:9-Telefon lagen 381 leere Pixel
-   dazwischen. Der Plan ist quadratisch und damit von der Breite
-   begrenzt; die uebrige Hoehe gehoert deshalb nicht in die Mitte,
-   sondern hinter alles. Jetzt steht die Legende direkt unter dem
-   Grundriss, egal wie hoch der Bildschirm ist. */
-main { flex:0 0 auto; min-width:0; }
-/* Eingeklappt: erst das Haus, dann die Erklärung dazu. */
+.body { flex:1 1 auto; min-height:0; display:flex; flex-direction:column;
+        gap:8px; padding:12px 16px 16px; overflow:hidden; position:relative; }
+/* Der Plan nimmt sich die ganze Hoehe, die uebrig ist.
+ *
+ * Er stand in einem Kasten mit "max-height:calc(100vh - 200px)", und
+ * darunter kamen Hinweis, Ablage und die eingeklappte Legende als eigene
+ * Zeilen. In Home Assistant, das oben seine eigene Leiste hat, war das
+ * ein Drittel des Bildschirms unter dem Haus -- fuer ein einziges Wort
+ * "Legende". Jetzt fuellt der Plan, was zwischen Kopfzeile und unterem
+ * Rand frei ist, und die Legende schwebt darueber. */
+main { flex:1 1 auto; min-height:0; min-width:0; display:flex;
+       flex-direction:column; }
+main > .plan { flex:1 1 auto; min-height:180px; position:relative;
+               display:flex; flex-direction:column; }
+.plan > .viewport { flex:1 1 auto; min-height:0; }
+main > :not(.plan) { flex:0 0 auto; }
+/* Die Legende liegt ueber dem Plan, auf jedem Bildschirm.
+ *
+ * Eingeklappt ist sie ein kleiner Knopf in der Ecke, der dem Haus nichts
+ * wegnimmt; aufgeklappt eine Karte ueber dem unteren Teil des Plans, die
+ * selbst rollt und mit demselben Knopf wieder zugeht. Auf dem Telefon
+ * wird daraus das Blatt von unten (siehe weiter unten). */
+.legend { position:absolute; left:12px; bottom:12px; z-index:5;
+          max-width:calc(100% - 24px); }
+.legend.open { right:12px; max-height:min(60%, 520px); overflow-y:auto;
+               -webkit-overflow-scrolling:touch; border-radius:12px;
+               background:var(--card-background-color,#fff);
+               box-shadow:0 4px 18px rgba(0,0,0,.22); }
+.legend.open .dock { box-shadow:none; padding-top:0; }
 .legend-toggle { display:flex; align-items:center; gap:6px; border:0;
-                 background:transparent; color:var(--secondary-text-color,#727272);
-                 font:inherit; cursor:pointer; padding:4px 0; border-radius:8px; }
-.legend-toggle:hover { color:var(--primary-text-color,#212121); }
-/* Im Hochformat ist die Höhe knapp und der Plan ist das, wofür man
-   gekommen ist. Eine Legende, die unbegrenzt mitwächst, schiebt ihn aus
-   dem sichtbaren Bereich -- also bekommt sie hier ein Dach und rollt
-   selbst, statt die ganze Seite zu rollen. */
-@media (orientation: portrait) {
-  .legend.open { max-height:38vh; overflow-y:auto; -webkit-overflow-scrolling:touch; }
-}
+                 font:inherit; font-size:13px; cursor:pointer;
+                 padding:6px 14px 6px 8px; border-radius:18px;
+                 color:var(--primary-text-color,#212121);
+                 background:var(--card-background-color,#fff);
+                 box-shadow:0 1px 5px rgba(0,0,0,.22); opacity:.92; }
+.legend-toggle:hover { opacity:1; }
+.legend.open .legend-toggle { box-shadow:none; background:transparent;
+                              padding:10px 16px 4px; opacity:1;
+                              color:var(--secondary-text-color,#727272); }
 /* Auf dem Telefon liegt die Legende ueber dem Plan statt darunter.
  *
  * Darunter hiesse: der Plan wird kuerzer, sobald jemand nachsieht,
@@ -129,19 +196,15 @@ main { flex:0 0 auto; min-width:0; }
  * genau der falsche Moment, um Flaeche zu verlieren. Als Blatt kostet
  * sie nichts, solange sie zu ist, und laesst sich mit dem Daumen wieder
  * wegschieben, ohne den kleinen Schalter treffen zu muessen. */
-.app.phone .legend { position:absolute; left:0; right:0; bottom:0; z-index:5;
-                     background:var(--card-background-color,#fff);
-                     border-radius:16px 16px 0 0;
-                     box-shadow:0 -2px 12px rgba(0,0,0,.22);
-                     padding:0 8px 8px;
+/* Zu heisst zu: nur der Knopf in der Ecke, der Rest ist Plan. */
+.app.phone .legend { left:12px; bottom:12px; max-width:calc(100% - 24px);
                      transition:transform .18s ease-out; }
-.app.phone .legend.open { max-height:60dvh; overflow-y:auto;
-                          -webkit-overflow-scrolling:touch; }
-/* Zu heisst zu: nur die Zeile mit dem Schalter, der Rest ist Plan. */
-.app.phone .legend:not(.open) { box-shadow:none;
-                                background:var(--card-background-color,#fff); }
+.app.phone .legend.open { left:0; right:0; bottom:0; max-width:none;
+                          border-radius:16px 16px 0 0;
+                          box-shadow:0 -2px 12px rgba(0,0,0,.22);
+                          padding:0 8px 8px; max-height:60dvh; }
 .app.phone .legend .dock { box-shadow:none; border-radius:0; padding:0 8px 8px; }
-.app.phone .legend-toggle { padding:8px 4px; }
+.app.phone .legend.open .legend-toggle { padding:8px 4px; }
 /* Der Griff. Breit genug fuer einen Daumen, schmal genug, um nicht wie
    ein Knopf auszusehen -- er tut ja nichts, wenn man nur tippt.
    Sichtbar sind 5px, zu treffen sind 33: der Innenabstand gehoert zur
@@ -176,8 +239,11 @@ main { flex:0 0 auto; min-width:0; }
 /* Der Grundriss ist quadratisch, ein Bildschirm ist es nicht. Ohne Deckel
    ragt das Haus auf einem 16:9-Monitor unten aus dem Fenster und die
    Ansicht wirkt wie im Hochformat. */
-.viewport { overflow:hidden; touch-action:none; border-radius:12px;
-            max-height:calc(100vh - 200px); }
+/* Kein fester Deckel mehr ("max-height:calc(100vh - 200px)"): die Hoehe
+   kommt aus dem Platz, der in "main" frei ist. Der alte Deckel rechnete
+   mit dem ganzen Browserfenster und wusste nichts von der Leiste, die
+   Home Assistant selbst oben hinsetzt. */
+.viewport { overflow:hidden; touch-action:none; border-radius:12px; }
 /* Kein "will-change:transform": das befördert die Fläche auf eine eigene
    Ebene, die einmal gerastert und danach nur noch als Bitmap vergrößert
    wird -- beim Hineinzoomen werden die Icons dadurch unscharf statt neu
@@ -433,7 +499,9 @@ main { flex:0 0 auto; min-width:0; }
 .stage.rooms-none .walls { display:none; }
 /* Der Raumname rueckt hinter die Wand vor seiner Ecke -- um wie viel,
  * sagt der Renderer dem Raum als Variable; ohne Wand gilt der alte
- * Abstand. */
+ * Abstand. Diese Regel gibt es genau einmal: Eine zweite weiter unten
+ * setzte "top:6px; left:8px" und gewann, weil sie spaeter kam -- der Name
+ * lag damit unter dem Mauerwerk, aus "Kueche" wurde "uche". */
 .area-name { position:absolute;
              top:calc(var(--wall-band-top, 0%) + 6px);
              left:calc(var(--wall-band-left, 0%) + 8px);
@@ -585,8 +653,6 @@ main { flex:0 0 auto; min-width:0; }
 .mode { display:flex; gap:4px; flex:0 0 auto; }
 .mode .chip { display:flex; align-items:center; gap:4px; white-space:nowrap;
               border-color:rgba(255,255,255,.4); }
-.area-name { position:absolute; top:6px; left:8px; font-size:12px;
-             color:var(--secondary-text-color,#727272); display:flex; align-items:center; gap:4px; }
 
 .node { position:absolute; opacity:var(--layer-opacity,1);
         transform:translate(-50%,-50%) scale(calc(var(--node-scale,1) * min(1, 1 / var(--camera-zoom,1))));
@@ -732,7 +798,13 @@ select { font:inherit; padding:6px; border-radius:8px;
         box-shadow:var(--ha-card-box-shadow,0 1px 3px rgba(0,0,0,.12)); }
 .tray-head { display:flex; align-items:center; flex-wrap:wrap; gap:6px;
              margin:0 0 8px; font-size:13px; }
-.tray-items { display:flex; flex-wrap:wrap; gap:6px; }
+.tray-items { display:flex; flex-wrap:wrap; gap:6px; max-height:28vh; overflow-y:auto; }
+.tray:not(.open) { padding:4px 12px; }
+.tray:not(.open) .tray-head { margin:0; }
+.tray-toggle { display:flex; align-items:center; gap:4px; border:0; background:transparent;
+               font:inherit; color:inherit; cursor:pointer; padding:2px 4px; border-radius:8px; }
+.tray-toggle ha-icon { --mdc-icon-size:18px; }
+.tray-toggle:hover { background:var(--secondary-background-color,#f2f2f2); }
 .tray-item { display:flex; align-items:center; gap:6px; border:0; font:inherit;
              color:inherit; cursor:pointer; border-radius:16px; padding:3px 10px 3px 3px;
              background:var(--secondary-background-color,#fafafa); font-size:13px; }
@@ -834,6 +906,13 @@ select { font:inherit; padding:6px; border-radius:8px;
               background:var(--node-color, var(--primary-color,#03a9f4)); flex:0 0 auto; }
 .popup-icon svg { width:22px; height:22px; fill:currentColor; }
 .inline { display:flex; align-items:center; gap:8px; font-size:13px; margin:6px 0; }
+.field.inline-field { flex-direction:row; flex-wrap:wrap; align-items:center; gap:6px; }
+.field.inline-field input[type=number] { width:76px; font:inherit; padding:4px 6px;
+  border-radius:6px; border:1px solid var(--divider-color,#e0e0e0);
+  background:transparent; color:inherit; }
+.floor-dialog h3 { margin:16px 0 4px; }
+.floor-dialog .edit-buttons { margin-top:18px; padding-top:12px;
+  border-top:1px solid var(--divider-color,#e0e0e0); }
 .popup-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
 .popup h2 { margin:0; font-size:18px; }
 .popup .sub { margin:2px 0 10px; color:var(--secondary-text-color,#727272); font-size:13px; }

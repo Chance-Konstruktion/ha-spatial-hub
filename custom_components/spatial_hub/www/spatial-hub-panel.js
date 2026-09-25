@@ -148,13 +148,10 @@ class SpatialHubPanel extends HTMLElement {
     // the layers it is made of. One click opens it and it stays open.
     // Auf einem hohen schmalen Bildschirm war sie frueher offen, weil der
     // Plan von der Breite begrenzt war und die untere Haelfte sonst leer
-    // blieb. Auf dem Telefon fuellt der Plan jetzt den Schirm, und die
-    // Legende liegt als Blatt darueber -- offen zu starten hiesse dort,
-    // ein Drittel des Hauses zuzudecken, bevor es jemand gesehen hat.
-    this._legendOpen =
-      typeof window !== "undefined" && window.innerHeight && !this._isPhone()
-        ? window.innerHeight / window.innerWidth > 1.9
-        : false;
+    // blieb. Inzwischen fuellt der Plan jede Hoehe und die Legende liegt
+    // auf jedem Bildschirm ueber ihm -- offen zu starten hiesse, ein
+    // Stueck Haus zuzudecken, bevor es jemand gesehen hat.
+    this._legendOpen = false;
     // Vollbild auf dem Telefon: der Grundriss bekommt den Schirm, die
     // Leisten kommen auf Knopfdruck zurueck. Auf einem Monitor ist Platz
     // fuer beides, und eine Kopfzeile, die man erst hervorholen muss,
@@ -731,9 +728,16 @@ class SpatialHubPanel extends HTMLElement {
     const floor = this._floor;
     const hidden = this._hiddenProviders;
     const stackable = new Set(this._stackFloors.map((entry) => entry.id));
+    const hiddenRooms = this._hiddenAreaIds;
     return model.nodes.filter((node) => {
       if (hidden.has(this._providerOf(node.id))) return false;
       if (!node.position) return false;
+      // Ein ausgeblendeter Raum nimmt seine Geraete mit. Der Hub reicht
+      // sie weiter (er blendet nur den Raum aus), und gezeichnet standen
+      // sie dann frei im Nachbarraum: im echten Haus sechs Punkte des
+      // Gaeste-WCs mitten im Erdgeschoss, ohne Wand drumherum. Wer den
+      // Raum zurueckholt, bekommt sie mit ihm zurueck.
+      if (node.area_id && hiddenRooms.has(node.area_id)) return false;
       // A node with no floor has no place on the plan -- it gets the tray
       // underneath instead. Dropping it somewhere in the rooms was the
       // worst of both: it looked assigned, and it sat on top of a grid
@@ -745,6 +749,13 @@ class SpatialHubPanel extends HTMLElement {
       if (!floor) return stackable.has(node.floor_id);
       return node.floor_id === floor.id;
     });
+  }
+
+  /** Die Bereiche, die der Nutzer ausgeblendet hat (der Hub listet sie
+   *  unter `hidden.areas`, statt sie mitzuschicken). */
+  get _hiddenAreaIds() {
+    const hidden = (this._model && this._model.hidden) || {};
+    return new Set((hidden.areas || []).map((area) => area.id));
   }
 
   /** Everything Home Assistant has not put on a storey yet.
@@ -870,12 +881,13 @@ class SpatialHubPanel extends HTMLElement {
 
     this._root.setAttribute("style", this._themeVars);
     this._root.className = this._shellClasses();
+    const bars = this._bars || !this._isPhone();
     this._root.innerHTML = `
-      ${this._bars || !this._isPhone() ? this._headerHtml() : ""}
+      ${bars ? this._headerHtml() : ""}
+      ${bars ? this._editBarHtml() : ""}
       <div class="body">
         ${this._barsButtonHtml()}
         <main>${this._stageHtml()}</main>
-        ${this._legendHtml()}
       </div>
       ${this._showDiagnostics ? this._diagnosticsHtml() : ""}
       ${this._floorDialog ? this._floorDialogHtml() : ""}
