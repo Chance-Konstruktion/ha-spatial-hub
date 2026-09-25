@@ -659,35 +659,46 @@ darunterliegenden und läsen sich, als gehörten sie dorthin.
 
 #### Höhe ist das, was Etagen zu Etagen macht
 
-Die Hausansicht zeigt Räume mit **stehenden Wänden** und Geschosse auf einer
-**Bodenplatte mit Dicke**. Flache Umrisse übereinander sind vier Zeichnungen,
-kein Haus: alles hat dieselbe Strichstärke, und nichts im Bild sagt, welche
-Linie eine Wand ist und welche eine Bodenkante.
+Die Hausansicht zeigt jedes Geschoss als **Körper**: eine Bodenplatte mit
+Dicke, darauf Mauern mit Stärke und Höhe, geschnitten in Brüstungshöhe wie in
+einem Schnittmodell. Flache Umrisse übereinander sind vier Zeichnungen, kein
+Haus.
 
-- Räume MÜSSEN **von hinten nach vorn** gezeichnet werden. Mit Höhe verdeckt,
-  wer zuletzt gezeichnet wird — in Speicherreihenfolge kehrt sich das Geschoss
-  nach innen.
-- Nur `indoor` bekommt Wände. Ein Garten hat keine, das Erdreich erst recht nicht.
-- Die Zeichnung MUSS **mit dem Haus wachsen**, statt das Haus in eine feste
-  Fläche zu quetschen. Der Abstand zwischen zwei Geschossen MUSS größer sein
-  als die Tiefe eines Geschosses, sonst werden sie ineinander gezeichnet.
-- Eine Wand hat **zwei Seiten**. Gezeichnet wird die Außenfläche und die
-  Mauerkrone als Band zwischen Außen- und Innenkante — ein einzelner Strich
-  ist eine Grenze, kein Mauerwerk. Die Außenwand des Hauses ist stärker als
-  die Zwischenwände.
-- Die Außenwand MUSS **um die Räume herum** gezeichnet werden: die beiden
-  zum Betrachter zeigenden Flächen nach den Räumen, die beiden hinteren
-  davor. Alle vier vorn, und die Rückwand übermalt den Grundriss; alle vier
-  hinten, und die Räume stehen auf einer hausförmigen Platte statt in einem
-  Haus.
-- Etagen stehen **leicht versetzt**, nicht exakt übereinander. Deckungsgleich
-  fällt der Umriss der oberen auf den der unteren, und nur der Abstand
-  unterscheidet sie.
+- **Eine Kamera für alle Geschosse.** Jedes Geschoss wird durch dieselbe
+  Projektion gesehen und danach nur **senkrecht** versetzt. Daraus folgt: Die
+  Außenwände aller Geschosse stehen parallel zueinander und **in einer
+  Flucht** — vorne links wie hinten rechts. Ein seitlicher Versatz, eine
+  eigene Kamera pro Geschoss oder ein eigener Maßstab pro Etage brechen
+  genau diese Zusage.
+- Zwischen zwei Geschossen steht **Luft**. Die Zeichnung wächst mit dem Haus,
+  statt das Haus in eine feste Fläche zu quetschen; kein Geschoss wird in ein
+  anderes hineingezeichnet.
+- Gezeichnet wird als **Strichzeichnung mit verdeckten Kanten**: Flächen in
+  der Farbe des Grundes, Kanten in der Farbe der Tinte, und was hinter einer
+  Mauer liegt, verschwindet. Die Reihenfolge MUSS für jede Blickrichtung
+  richtig sein, nicht nur meistens — eine Wand, die durch eine andere
+  hindurchscheint, liest sich als Fehler im Haus.
+- Die Mauern eines Geschosses sind **ein** Körper. Wo zwei Wände aufeinander
+  treffen, steht keine Linie; eine gemeinsame Wand ist eine Wand
+  (§ Gemeinsame Wände). Eine getrennte (`unjoined`) sind zwei, mit Fuge.
+- Die Außenwand ist stärker als die Zwischenwände und steht **innerhalb** der
+  Bauflucht: Ihre Außenseite *ist* die Flucht.
+- Eine Tür ist ein Durchbruch durch die ganze Mauer, mit Türblatt und
+  Öffnungsbogen in den Raum, dem sie gehört. Eine Öffnung, die breiter ist
+  als ein Mensch braucht (ab 2,3 m), ist ein **Tor** und wird als Lamellen in
+  der Wandebene gezeichnet. Ein Fenster sitzt **in** der Mauerkrone.
+- Nur `indoor` bekommt Wände. Ein Balkon bekommt eine Platte und ein
+  Geländer an den Seiten, die nicht am Haus liegen; eine Terrasse nur die
+  Platte; ein Garten nur eine gestrichelte Kante. Virtuelle Bereiche sind
+  Erdreich und werden schraffiert gezeichnet (§ Das Erdreich).
+- Raumnamen liegen auf dem Boden ihres Raumes und weichen nach hinten aus,
+  wenn in der Mitte ein Gerät steht. Etagennamen stehen links neben ihrem
+  Geschoss.
 - Über den Etagen wird **nichts** gezeichnet: kein Dach, keine
-  durchscheinenden Wände, keine Eckpfosten. Alles davon liegt über dem
-  Grundriss. Was das Haus zusammenhält, sind die Wände der Etagen selbst.
-- Drei Gewichte, nicht eines: Außenwand am stärksten, Innenwände leiser,
-  Garten nur gestrichelt.
+  durchscheinenden Wände, keine Eckpfosten. Was das Haus zusammenhält, ist
+  die Flucht der Geschosse selbst.
+- Die Farben folgen dem Theme: auf dunklem Grund weiße Linien, auf hellem
+  dieselbe Zeichnung invertiert.
 
 ### Ein Gerät in einen anderen Raum ziehen
 

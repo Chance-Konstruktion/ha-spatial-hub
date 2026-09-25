@@ -66,6 +66,7 @@ import {
   cornersOf,
 } from "./panel-markup.js";
 import { ALL_FLOORS, formatValue, pretty } from "./panel-const.js";
+import { houseScene } from "./panel-house3d.js";
 
 // Wie gross die zwei Beschriftungen im Stapel sind und wie weit der
 // Geraetename unter seinem Punkt haengt. Steht hier und nicht nur im
@@ -242,159 +243,33 @@ Aus lässt sich alles frei setzen.">
       </header>`;
   },
 
+  /** Die Hausansicht: alle Geschosse als Koerper, in einer Flucht.
+   *
+   *  Gezeichnet wird das Haus von `panel-house3d.js` -- Mauern, Tueren,
+   *  Fenster, Treppen, Balkone, Raum- und Etagennamen. Hier kommt nur dazu,
+   *  was dem Panel gehoert: Geraete, Verbindungen, Auswahl und Suche.
+   *  Beide rechnen durch dieselbe Projektion, also sitzt ein Punkt genau
+   *  auf dem Boden des Raumes, zu dem er gehoert.
+   */
   _stackHtml() {
     const floors = this._stackFloors;
-    // A node with no storey at all still exists. Drawn on the front plane
-    // and marked, rather than quietly missing from the one view that is
-    // supposed to show the whole house. Die Regel liegt auf dem Panel
-    // (`_planeOf`), damit Symbole, Namen und Entzerren dieselbe Ebene
-    // rechnen.
+    const areas = (this._model.areas || []).filter((area) => this._inSandwich(area));
+    const scene = houseScene({
+      floors,
+      areasOf: (floor) => areas.filter((area) => area.floor_id === floor.id),
+      pinsOf: (floor) => this._visibleNodes
+        .filter((node) => node.floor_id === floor.id)
+        .map((node) => node.position),
+      dimensions: Boolean(this._meters),
+    });
+    const scale = this._counterScale;
     const planeOf = (node) => this._planeOf(node);
-
     const spots = new Map(
       this._visibleNodes.map((node) => [
         node.id,
-        this._project(planeOf(node), node.position.x, node.position.y),
+        scene.project(planeOf(node), node.position.x, node.position.y),
       ]),
     );
-
-    // Die y-Grenzen duerfen von den x-Grenzen abweichen: der Rahmen ist
-    // nicht mehr quadratisch, seit jede Himmelsrichtung ihren eigenen
-    // Rand hat. Ohne Angabe gelten die x-Grenzen fuer beides -- das ist
-    // das Haus selbst, und das liegt auf 0..1 in beiden Achsen.
-    const corners = (at, from, to, fromY = from, toY = to) =>
-      [[from, fromY], [to, fromY], [to, toY], [from, toY]]
-        .map(([x, y]) => this._project(at, x, y));
-
-    const outline = (at, from, to, fromY, toY) =>
-      corners(at, from, to, fromY, toY)
-        .map((point) => `${point.x},${point.y}`).join(" ");
-
-    // Alles, was fest im Bild steht und deshalb beim Entzerren der
-    // Geraetenamen im Weg sein kann: Etagennamen und Massketten. Beide
-    // entstehen hier beim Zeichnen der Etagen, also werden sie hier
-    // eingesammelt -- die Namen der Geraete kommen erst danach und
-    // koennen dann allen ausweichen.
-    const scale = this._counterScale;
-    // Die Waende jedes Geschosses als Vierecke -- dieselben, die die
-    // Planes unten zeichnen. Raumnamen weichen ihnen aus wie den anderen
-    // Namen, bevor irgendetwas im Dokument haengt; das Entzerren der
-    // Geraetenamen prueft gegen alle Ebenen zugleich, denn ein Name
-    // wandert ueber die ganze Zeichnung, nicht nur ueber seine Etage.
-    const floorWalls = floors.map((floor, at) => this._stackWallPolys(at));
-    const fixed = this._stackRoomLabels(floors, scale, floorWalls);
-
-    const plans = floors.map((floor, at) => {
-      const frame = this._frame;
-      // The garden is drawn as what it is: the ground floor's apron, one
-      // ring around the house, on the same plane. No extra storey, and
-      // Vorgarten, Terrasse and Einfahrt all fit on it at once.
-      //
-      // Only the real ground floor gets this field, even though other
-      // storeys may carry outdoor areas of their own -- a balcony upstairs
-      // is still edited and drawn as a room (see `rooms` below), it just
-      // does not turn its whole storey into a lawn.
-      // Und dasselbe eine Etage tiefer, nur als Erde statt als Rasen:
-      // die unterste Etage liegt im Boden, und was um sie herum liegt,
-      // ist Erdreich. Dort steckt der Hausanschluss, und dort stehen
-      // seit dem Umzug die virtuellen Bereiche.
-      //
-      // Zwei Faelle, nicht einer mit einer Klasse dran: eine Etage kann
-      // beides sein -- ein Haus ohne Keller hat Garten *und* Erdreich um
-      // dasselbe Erdgeschoss. Dann liegt die Erde unter dem Rasen.
-      const ground = (className) =>
-        `<polygon class="${className}" points="${outline(
-          at, frame.min, frame.min + frame.span,
-          minY(frame), minY(frame) + spanY(frame),
-        )}"/>`;
-      const apron = `${floor.has_soil ? ground("soil-plane") : ""}${
-        floor.has_outdoor && floor.ground ? ground("apron") : ""
-      }`;
-      // Der Name steht links neben der Etage, im Rand -- nicht an ihrer
-      // Kante. Die x-Koordinate kommt vom linkesten Punkt der Platte,
-      // die y-Koordinate aus der oberen Haelfte: so steht der Name auf
-      // Hoehe der Etage, statt an ihrer Unterkante zu haengen.
-      //
-      // Bei einer einzelnen Etage stattdessen oben links ueber dem Blatt,
-      // klein und laufend statt gross und rechtsbuendig: dort gibt es
-      // keine Reihe, in die er sich einordnen muesste, und der Rand, in
-      // dem er sonst steht, waere leere Flaeche neben einem Grundriss.
-      // Ueber die Mauerkrone gesetzt, sonst laege er auf der Rueckwand.
-      const label = this._oneStorey
-        ? { x: this._project(at, 0, 0).x - 34, y: STACK.top - STACK.rise - 10 }
-        : {
-            x: this._project(at, 0, 1).x - 34,
-            y: this._project(at, 0, 0.35).y,
-          };
-      // Back to front. Rooms have height now, so a room further back can
-      // be hidden behind the walls of one in front -- which is what depth
-      // looks like. Drawn in storage order instead, a back room paints
-      // over the front one and the whole storey turns inside out.
-      const onThisFloor = this._model.areas.filter(
-        (area) =>
-          area.floor_id === floor.id && area.position && this._inSandwich(area),
-      );
-      // Two rooms side by side used to draw two walls in the same place,
-      // which is what a plan looks like when nobody has told it that a
-      // partition is one wall with a room on either side. Whoever is in
-      // front draws it; the other simply leaves that wall out.
-      const joins = joinsOf(onThisFloor);
-      const byId = new Map(onThisFloor.map((area) => [area.id, area]));
-      const rooms = onThisFloor
-        .slice()
-        .sort((a, b) => a.position.y - b.position.y)
-        .map((area) => {
-          const keep = this._wallKeeper(joins, byId, area);
-          return this._roomPolygon(at, area, keep, floorWalls[at]);
-        })
-        .join("");
-      // The storey is a floor slab, not a sheet of paper: a thin band of
-      // edge under it is the difference between four drawings above each
-      // other and four floors of one house.
-      //
-      // Genau deshalb faellt sie weg, sobald nur eine Etage dasteht. Dann
-      // gibt es nichts zu trennen, und was bleibt, ist eine Wanne: ein
-      // Sockel mit dicker Vorderkante, unter einem Grundriss, der gar
-      // nicht auf etwas steht. Eine Bauzeichnung zeichnet den Boden
-      // nicht, sie zeichnet die Waende -- der Boden ist das Blatt.
-      //
-      // The outer wall is split around the rooms on purpose: the two walls
-      // facing the viewer are drawn after them and hide their lower edge,
-      // which is what puts the rooms *inside* the house instead of on top
-      // of a slab shaped like one.
-      const dims = this._dimensionsOf(at, floor);
-      fixed.push(...dims.labels);
-      // Der Etagenname ist rechtsbuendig gesetzt; sein Kasten liegt also
-      // links von seinem Punkt und nicht um ihn herum.
-      fixed.push({
-        x: label.x, y: label.y,
-        text: String(floor.name || "").toLocaleUpperCase("de"),
-        size: this._oneStorey ? STOREY_LABEL_ALONE : STOREY_LABEL_SIZE,
-        scale, anchor: this._oneStorey ? "start" : "end", fixed: true,
-      });
-
-      const house = corners(at, 0, 1);
-      const crown = house.map((corner) => ({ x: corner.x, y: corner.y - STACK.rise }));
-      const slab = this._oneStorey
-        ? ""
-        : `${wallsOf(house, -STACK.slab, "storey-side")}
-           <polygon class="storey" points="${outline(at, 0, 1)}"/>`;
-      return `<g class="plane">
-        ${apron}
-        ${slab}
-        ${wallsOf(house, STACK.rise, "shell-face", BACK_WALL)}
-        ${rooms}
-        ${wallsOf(house, STACK.rise, "shell-face", FRONT_WALL)}
-        ${capsOf(crown, STACK.outerWall, "shell-cap")}
-        ${dims.html}
-        <g data-at-x="${label.x}" data-at-y="${label.y}"
-           transform="translate(${label.x},${label.y}) scale(${
-             this._counterScale
-           })"><text class="storey-name ${this._oneStorey ? "alone" : ""}">${escapeHtml(
-             String(floor.name || "").toLocaleUpperCase("de"),
-           )}</text></g>
-      </g>`;
-    });
 
     const edges = this._visibleEdges
       .filter((edge) => spots.has(edge.source) && spots.has(edge.target))
@@ -413,40 +288,8 @@ Aus lässt sich alles frei setzen.">
       })
       .join("");
 
-    const matches = this._matches;
-    // Namen entzerren, bevor irgendeiner gezeichnet wird.
-    //
-    // Vorher galt eine Pauschale: mehr als fuenf Geraete auf einer Ebene,
-    // und *alle* ihre Namen verschwanden bis zum Darueberfahren. Das traf
-    // auch die, die sich nie in die Quere kamen, und liess bei fuenf
-    // Geraeten zwei uebereinander stehen -- gezaehlt wurde ja, nicht
-    // nachgesehen. Jetzt wird nachgesehen.
-    //
-    // Raumnamen sind fest: ein Raumname gehoert in seinen Raum, und ihn
-    // zu verschieben hiesse, ihn ueber die Wand des Nachbarn zu schieben.
-    // Beweglich sind die Geraetenamen -- die haengen ohnehin schon unter
-    // ihrem Punkt und nicht darin. Gegen die Waende auszuweichen ist die
-    // zweite Haelfte derselben Regel: Ein Name auf Mauerwerk ist nicht
-    // besser als ein Name auf einem anderen Namen.
-    const nodeLabels = this._visibleNodes.map((node) => {
-      const at = spots.get(node.id);
-      return {
-        x: at.x, y: at.y + STACK_LABEL_DROP * scale,
-        text: node.label, size: STACK_LABEL_SIZE, scale,
-      };
-    });
-
-    // Die Symbole selbst sind auch im Weg. Sie sind fest -- ein Punkt
-    // sagt, wo etwas *ist*, den kann man nicht verschieben, um Platz fuer
-    // eine Beschriftung zu machen. Das Entzerren kannte bisher nur Text
-    // und schob Namen deshalb genau auf die Punkte: am Demohaus sechs
-    // Beschriftungen unter einem fremden Symbol, "Dielenlicht" auf
-    // 31x22 Bildpunkten.
-    //
-    // Das eigene Symbol ist dabei kein Sonderfall. Ein Name haengt
-    // `STACK_LABEL_DROP` darunter und beruehrt es nicht; weicht er nach
-    // oben aus, laeuft er hinein -- und dann ist er dort genauso
-    // unlesbar wie unter einem fremden.
+    // Namen entzerren: die Punkte stehen fest, ihre Namen weichen einander
+    // aus. Was keinen Platz findet, erscheint beim Darueberfahren.
     const pins = this._visibleNodes.map((node) => {
       const at = spots.get(node.id);
       return {
@@ -454,14 +297,16 @@ Aus lässt sich alles frei setzen.">
         fixed: true,
       };
     });
+    const nodeLabels = this._visibleNodes.map((node) => {
+      const at = spots.get(node.id);
+      return {
+        x: at.x, y: at.y + STACK_LABEL_DROP * scale,
+        text: node.label, size: STACK_LABEL_SIZE, scale,
+      };
+    });
+    const placed = declutter([...pins, ...nodeLabels]).slice(pins.length);
 
-    // Gegen die Waende aller Etagen zu pruefen ist der zweite Teil der
-    // Rechnung: ein Name wandert ueber die ganze Zeichnung, nicht nur
-    // ueber seine Etage.
-    const placed = declutter([...fixed, ...pins, ...nodeLabels],
-                             floorWalls.flat())
-      .slice(fixed.length + pins.length);
-
+    const matches = this._matches;
     const nodes = this._visibleNodes
       .map((node, order) => {
         const at = spots.get(node.id);
@@ -472,8 +317,7 @@ Aus lässt sich alles frei setzen.">
         const dimmed = matches && !matches.has(node.id);
         return `<g class="stack-node ${selected ? "on" : ""}
                    ${spot.hidden ? "crowded" : ""} ${dimmed ? "dimmed" : ""}
-                   ${matches && !dimmed ? "found" : ""}
-                   ${node.floor_id ? "" : "floorless"}"
+                   ${matches && !dimmed ? "found" : ""}"
                    data-node="${escapeHtml(node.id)}"
                    style="--layer-opacity:${this._providerOpacity(node.id)}"
                    data-at-x="${at.x}" data-at-y="${at.y}"
@@ -481,18 +325,15 @@ Aus lässt sich alles frei setzen.">
           <circle r="14" fill="${this._nodeColour(node)}"/>
           ${this._stackIconHtml(node)}
           <text class="stack-label" y="${
-            // Zurueck in die Einheiten des Elements: der Kasten wurde im
-            // Bild gerechnet, das <text> haengt aber in einem <g>, das
-            // schon mit counterScale skaliert ist.
             (STACK_LABEL_DROP + spot.shift / (scale || 1)).toFixed(1)
           }">${escapeHtml(node.label)}</text>
         </g>`;
       })
       .join("");
 
-    return `${this._viewportHtml(`<div class="stack">
-      <svg viewBox="0 0 ${Math.round(this._stackWidth)} ${Math.round(this._stackHeight)}">
-        ${plans.join("")}
+    return `${this._viewportHtml(`<div class="stack house3d">
+      <svg viewBox="0 0 ${scene.width} ${scene.height}">
+        ${scene.svg}
         ${edges}
         ${nodes}
       </svg>
