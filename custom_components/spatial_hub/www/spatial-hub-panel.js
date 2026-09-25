@@ -148,13 +148,10 @@ class SpatialHubPanel extends HTMLElement {
     // the layers it is made of. One click opens it and it stays open.
     // Auf einem hohen schmalen Bildschirm war sie frueher offen, weil der
     // Plan von der Breite begrenzt war und die untere Haelfte sonst leer
-    // blieb. Auf dem Telefon fuellt der Plan jetzt den Schirm, und die
-    // Legende liegt als Blatt darueber -- offen zu starten hiesse dort,
-    // ein Drittel des Hauses zuzudecken, bevor es jemand gesehen hat.
-    this._legendOpen =
-      typeof window !== "undefined" && window.innerHeight && !this._isPhone()
-        ? window.innerHeight / window.innerWidth > 1.9
-        : false;
+    // blieb. Inzwischen fuellt der Plan jede Hoehe und die Legende liegt
+    // auf jedem Bildschirm ueber ihm -- offen zu starten hiesse, ein
+    // Stueck Haus zuzudecken, bevor es jemand gesehen hat.
+    this._legendOpen = false;
     // Vollbild auf dem Telefon: der Grundriss bekommt den Schirm, die
     // Leisten kommen auf Knopfdruck zurueck. Auf einem Monitor ist Platz
     // fuer beides, und eine Kopfzeile, die man erst hervorholen muss,
@@ -870,12 +867,13 @@ class SpatialHubPanel extends HTMLElement {
 
     this._root.setAttribute("style", this._themeVars);
     this._root.className = this._shellClasses();
+    const bars = this._bars || !this._isPhone();
     this._root.innerHTML = `
-      ${this._bars || !this._isPhone() ? this._headerHtml() : ""}
+      ${bars ? this._headerHtml() : ""}
+      ${bars ? this._editBarHtml() : ""}
       <div class="body">
         ${this._barsButtonHtml()}
         <main>${this._stageHtml()}</main>
-        ${this._legendHtml()}
       </div>
       ${this._showDiagnostics ? this._diagnosticsHtml() : ""}
       ${this._floorDialog ? this._floorDialogHtml() : ""}

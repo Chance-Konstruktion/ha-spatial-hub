@@ -123,124 +123,119 @@ export const ANSICHT = {
             <ha-icon icon="mdi:fit-to-screen-outline"></ha-icon>
           </button>
         </div>
-        ${
-          this._edit
-            ? `<div class="mode" role="group" aria-label="Was wird bearbeitet">
-                 <button class="chip ${this._editWhat === "rooms" ? "on" : ""}"
-                         data-edit-what="rooms"
-                         title="Räume: Wände ziehen, Ecken setzen, Grundstück">
-                   <ha-icon icon="mdi:floor-plan"></ha-icon> Räume
-                 </button>
-                 <button class="chip ${this._editWhat === "icons" ? "on" : ""}"
-                         data-edit-what="icons"
-                         title="Geräte: Punkte in ihre Räume sortieren">
-                   <ha-icon icon="mdi:shape-plus-outline"></ha-icon> Geräte
-                 </button>
-               </div>
-               <button class="chip ${this._snapOff ? "" : "on"}"
-                       data-grid="1" aria-pressed="${!this._snapOff}"
-                       title="Raster: hält Wände auf gleicher Höhe.
-Aus lässt sich alles frei setzen.">
-                 <ha-icon icon="mdi:grid"></ha-icon> Raster
-               </button>
-               <button class="icon-btn" data-undo="1" title="Rückgängig"
-                       ${this._undo.length ? "" : "disabled"}>
-                 <ha-icon icon="mdi:undo"></ha-icon>
-               </button>
-               <button class="icon-btn" data-redo="1" title="Wiederholen"
-                       ${this._redo.length ? "" : "disabled"}>
-                 <ha-icon icon="mdi:redo"></ha-icon>
-               </button>
-               <button class="icon-btn" data-theme-dialog="1" title="Aussehen">
-                 <ha-icon icon="mdi:palette-outline"></ha-icon>
-               </button>
-               <button class="icon-btn" data-floor-dialog="1" title="Etage einrichten">
-                 <ha-icon icon="mdi:image-outline"></ha-icon>
-               </button>
-               ${
-                 this._stacked || !this._editRooms
-                   ? ""
-                   : `<button class="icon-btn ${this._corners ? "on" : ""}"
-                              data-toggle-corners="1"
-                              title="${
-                                this._corners
-                                  ? "Ecken fertig — zurück zu den Wänden"
-                                  : "Ecken bearbeiten: Nischen und Wandversätze"
-                              }">
-                        <ha-icon icon="mdi:vector-polygon"></ha-icon>
-                      </button>
-                      <button class="icon-btn ${this._plot ? "on" : ""}"
-                              data-toggle-plot="1"
-                              title="${
-                                this._plot
-                                  ? "Grundstück entfernen"
-                                  : "Grundstück zeichnen: die Grenze um Haus und Garten"
-                              }">
-                        <ha-icon icon="mdi:map-marker-path"></ha-icon>
-                      </button>
-                      ${
-                        this._plot
-                          ? `<button class="icon-btn" data-plot-scale="1.12"
-                                     title="Grundstück vergrößern">
-                               <ha-icon icon="mdi:arrow-expand-all"></ha-icon>
-                             </button>
-                             <button class="icon-btn" data-plot-scale="0.89"
-                                     title="Grundstück verkleinern">
-                               <ha-icon icon="mdi:arrow-collapse-all"></ha-icon>
-                             </button>`
-                          : ""
-                      }
-                      `
-               }
-               ${
-                 // Der Massstab gilt in beiden Ansichten, also gehoert
-                 // der Schalter in beide. Er stand im Block darueber und
-                 // war damit in der Hausansicht nicht erreichbar -- und
-                 // genau dort sind die Massketten etwas wert, weil man
-                 // dort das ganze Haus sieht.
-                 this._editRooms
-                   ? `<button class="icon-btn ${this._meters ? "on" : ""}"
-                              data-toggle-meters="1"
-                              title="${
-                                this._meters
-                                  ? "Maße ausblenden"
-                                  : "Maße in Metern (Expertenmodus)"
-                              }">
-                        <ha-icon icon="mdi:tape-measure"></ha-icon>
-                      </button>`
-                   : ""
-               }
-               ${
-                 this._ghostFloorCount
-                   ? `<button class="icon-btn ${this._ghosts ? "on" : ""}"
-                              data-toggle-ghosts="1"
-                              title="Außenwände der anderen Etagen">
-                        <ha-icon icon="mdi:layers-outline"></ha-icon>
-                      </button>`
-                   : ""
-               }
-               <button class="icon-btn" data-reset-floor="1"
-                       title="Anordnung dieser Etage zurücksetzen">
-                 <ha-icon icon="mdi:backup-restore"></ha-icon>
-               </button>`
-            : ""
-        }
         <button class="icon-btn ${this._showDiagnostics ? "on" : ""}"
                 data-toggle="diagnostics" title="Diagnose">
           <ha-icon icon="mdi:stethoscope"></ha-icon>
         </button>
         ${
+          // Beim Bearbeiten sagt der Knopf, wie man wieder herauskommt --
+          // ein Haken allein war zwischen elf anderen Symbolen nicht als
+          // "fertig" zu erkennen.
           this._canArrange
-            ? `<button class="icon-btn ${this._edit ? "on" : ""}"
+            ? `<button class="icon-btn ${this._edit ? "on labelled" : ""}"
                        data-toggle-edit="1"
                        title="${this._edit ? "Bearbeiten beenden" : "Bearbeiten"}">
                  <ha-icon icon="${
                    this._edit ? "mdi:check" : "mdi:pencil-outline"
-                 }"></ha-icon>
+                 }"></ha-icon>${this._edit ? "<span>Fertig</span>" : ""}
                </button>`
             : ""
         }
       </header>`;
+  },
+
+  /** Die Werkzeuge des Editors, in einer eigenen Leiste unter der Kopfzeile.
+   *
+   *  Sie standen in der Kopfzeile, zwoelf Symbole ohne Beschriftung
+   *  zwischen Suche und Zoom. Auf einem 1280er Monitor brach die Zeile
+   *  deshalb in zwei, der Grundriss sprang beim Einschalten nach unten,
+   *  und welches Symbol "Grundstueck" und welches "Ecken" hiess, verriet
+   *  nur das Zeigen mit der Maus -- das es auf einem Tablet nicht gibt.
+   *
+   *  Jetzt eine Zeile, gruppiert nach dem, was man gerade vorhat: was
+   *  bearbeitet wird, wie genau, die Form der Etage, die Etage selbst.
+   *  Jeder Knopf traegt sein Wort. Wird es eng, rollt die Leiste seitlich,
+   *  statt umzubrechen -- sie wird nie hoeher, der Plan springt nicht.
+   */
+  _editBarHtml() {
+    if (!this._edit) return "";
+    const tool = ({ attr, icon, label, title, on = false, disabled = false }) =>
+      `<button class="tool ${on ? "on" : ""}" ${attr}
+               title="${escapeHtml(title || label)}"
+               ${on ? 'aria-pressed="true"' : ""} ${disabled ? "disabled" : ""}>
+         <ha-icon icon="${icon}"></ha-icon><span>${escapeHtml(label)}</span>
+       </button>`;
+    const group = (...items) => {
+      const inner = items.filter(Boolean).join("");
+      return inner ? `<div class="tool-group">${inner}</div>` : "";
+    };
+    const single = !this._stacked;
+
+    const mode = `<div class="tool-group mode" role="group"
+                       aria-label="Was wird bearbeitet">
+      ${tool({ attr: 'data-edit-what="rooms"', icon: "mdi:floor-plan",
+               label: "Räume", on: this._editWhat === "rooms",
+               title: "Räume: Wände ziehen, Ecken setzen, Grundstück" })}
+      ${tool({ attr: 'data-edit-what="icons"', icon: "mdi:shape-plus-outline",
+               label: "Geräte", on: this._editWhat === "icons",
+               title: "Geräte: Punkte in ihre Räume sortieren" })}
+    </div>`;
+
+    const history = group(
+      tool({ attr: 'data-undo="1"', icon: "mdi:undo", label: "Zurück",
+             title: "Rückgängig", disabled: !this._undo.length }),
+      tool({ attr: 'data-redo="1"', icon: "mdi:redo", label: "Vor",
+             title: "Wiederholen", disabled: !this._redo.length }),
+    );
+
+    const precision = group(
+      tool({ attr: `data-grid="1" aria-pressed="${!this._snapOff}"`,
+             icon: "mdi:grid", label: "Raster", on: !this._snapOff,
+             title: "Raster: hält Wände auf gleicher Höhe. Aus lässt sich alles frei setzen." }),
+      // Der Massstab gilt in beiden Ansichten, also gehoert der Schalter
+      // in beide -- in der Hausansicht sind die Massketten am meisten wert.
+      this._editRooms && tool({
+        attr: 'data-toggle-meters="1"', icon: "mdi:tape-measure", label: "Maße",
+        on: this._meters,
+        title: this._meters ? "Maße ausblenden" : "Maße in Metern (Expertenmodus)" }),
+      this._ghostFloorCount && tool({
+        attr: 'data-toggle-ghosts="1"', icon: "mdi:layers-outline",
+        label: "Andere Etagen", on: this._ghosts,
+        title: "Außenwände der anderen Etagen einblenden" }),
+    );
+
+    const shape = single && this._editRooms
+      ? group(
+        tool({ attr: 'data-toggle-corners="1"', icon: "mdi:vector-polygon",
+               label: "Ecken", on: this._corners,
+               title: this._corners
+                 ? "Ecken fertig — zurück zu den Wänden"
+                 : "Ecken bearbeiten: Nischen und Wandversätze" }),
+        tool({ attr: 'data-toggle-plot="1"', icon: "mdi:map-marker-path",
+               label: "Grundstück", on: Boolean(this._plot),
+               title: this._plot
+                 ? "Grundstück entfernen"
+                 : "Grundstück zeichnen: die Grenze um Haus und Garten" }),
+        this._plot && `<button class="tool icon-only" data-plot-scale="0.89"
+                title="Grundstück verkleinern"><ha-icon icon="mdi:minus"></ha-icon></button>
+          <button class="tool icon-only" data-plot-scale="1.12"
+                title="Grundstück vergrößern"><ha-icon icon="mdi:plus"></ha-icon></button>`,
+      )
+      : "";
+
+    const setup = group(
+      single && tool({ attr: 'data-floor-dialog="1"', icon: "mdi:cog-outline",
+                       label: "Etage", title: "Diese Etage einrichten" }),
+      tool({ attr: 'data-theme-dialog="1"', icon: "mdi:palette-outline",
+             label: "Aussehen" }),
+      single && tool({ attr: 'data-reset-floor="1"', icon: "mdi:backup-restore",
+                       label: "Zurücksetzen",
+                       title: "Anordnung dieser Etage zurücksetzen" }),
+    );
+
+    return `<nav class="editbar" aria-label="Werkzeuge">
+      ${mode}${history}${precision}${shape}${setup}
+    </nav>`;
   },
 
   /** Die Hausansicht: alle Geschosse als Koerper, in einer Flucht.
@@ -338,9 +333,15 @@ Aus lässt sich alles frei setzen.">
         ${nodes}
       </svg>
     </div>`)}
-    <p class="hint">Alle Etagen auf einmal — die einzige Ansicht, in der eine
-    Verbindung zwischen zwei Stockwerken überhaupt zu sehen ist. Zum
-    Anordnen und für Details eine einzelne Etage wählen.</p>`;
+    ${
+      // Nur beim Bearbeiten: dort ist es die Antwort auf "warum laesst sich
+      // hier nichts ziehen". Beim Anschauen war es eine feste Textzeile
+      // unter dem Haus, die jeden Tag dasselbe sagte.
+      this._edit
+        ? `<p class="hint">Zum Anordnen oben eine einzelne Etage wählen —
+           hier siehst du das ganze Haus mit allen Verbindungen.</p>`
+        : ""
+    }`;
   },
 
   /** Die Masskette unter einer Etage.
@@ -513,7 +514,14 @@ Aus lässt sich alles frei setzen.">
 
   /** The camera lives here: one wrapper, both views, identical behaviour. */
   _viewportHtml(inner) {
-    return `<div class="viewport"><div class="canvas">${inner}</div></div>`;
+    // Die Legende steht neben dem Fenster und nicht darin: im Fenster
+    // bekaeme sie Rad und Ziehen der Kamera ab. Neben ihm, im selben
+    // Rahmen, liegt sie trotzdem in seiner Ecke -- und nicht auf den
+    // Hinweisen, die unter dem Plan stehen.
+    return `<div class="plan">
+      <div class="viewport"><div class="canvas">${inner}</div></div>
+      ${this._legendHtml()}
+    </div>`;
   },
 
   _stageHtml() {
@@ -1906,23 +1914,56 @@ Aus lässt sich alles frei setzen.">
       </div>`;
   },
 
+  /** Alles, was eine Etage als Ganzes betrifft, an einer Stelle.
+   *
+   *  Bis hierher gab es hier nur das Hintergrundbild und das
+   *  Seitenverhaeltnis. Ob die Etage im Haus-Stapel erscheint, konnte man
+   *  nirgends einstellen (der Hub kannte `in_sandwich` fuer Etagen laengst),
+   *  die Breite in Metern stand nur unter dem Plan, sobald das Massband an
+   *  war, und "zuruecksetzen" war ein Symbol ohne Wort in der Kopfzeile.
+   */
   _floorDialogHtml() {
     const floor = this._floor;
     if (!floor) return "";
     return `
       <div class="scrim" data-close-floor="1"></div>
-      <div class="popup">
+      <div class="popup centred floor-dialog">
         <div class="popup-head">
           <h2>${escapeHtml(floor.name)}</h2>
           <button class="icon-btn" data-close-floor="1">
             <ha-icon icon="mdi:close"></ha-icon>
           </button>
         </div>
-        <p class="note">Ein Grundriss-Bild als Hintergrund. Es bleibt im
-        Browser des Nutzers nichts hängen — der Hub speichert es, und jeder
-        Renderer bekommt es mit dem Modell.</p>
+        ${
+          floor.unassigned
+            ? ""
+            : `<h3>Hausansicht</h3>
+               <label class="inline">
+                 <input type="checkbox" data-floor-flag="in_sandwich"
+                        ${floor.in_sandwich === false ? "" : "checked"}>
+                 Im Haus-Stapel zeigen
+               </label>
+               <p class="note">Aus heißt: nur noch über den eigenen Reiter zu
+               sehen — gut für einen Dachboden, der das Haus nur verdeckt.</p>`
+        }
+        <h3>Größe</h3>
         <label class="field">
-          <span>Hintergrundbild</span>
+          <span>Seitenverhältnis <b data-aspect-value>${(
+            floor.aspect || 1.6
+          ).toFixed(2)}</b> <i>breit : tief</i></span>
+          <input type="range" min="0.5" max="3" step="0.05"
+                 value="${floor.aspect || 1.6}" data-aspect="1">
+        </label>
+        <label class="field inline-field">
+          <span>Haus breit</span>
+          <input type="number" min="1" max="200" step="0.1"
+                 value="${houseMetres(floor)}" data-house-metres="1"> m
+          <i>— nur für die Maße, gezeichnet wird nach Augenmaß</i>
+        </label>
+        <h3>Hintergrundbild</h3>
+        <p class="note">Ein gescannter Grundriss zum Nachzeichnen. Der Hub
+        speichert es, jeder Renderer bekommt es mit dem Modell.</p>
+        <label class="field">
           <input type="file" accept="image/*" data-background="1">
         </label>
         ${
@@ -1930,13 +1971,12 @@ Aus lässt sich alles frei setzen.">
             ? `<button class="link" data-clear-background="1">Bild entfernen</button>`
             : ""
         }
-        <label class="field">
-          <span>Seitenverhältnis <b data-aspect-value>${(
-            floor.aspect || 1.6
-          ).toFixed(2)}</b></span>
-          <input type="range" min="0.5" max="3" step="0.05"
-                 value="${floor.aspect || 1.6}" data-aspect="1">
-        </label>
+        <div class="edit-buttons">
+          <button class="chip" data-reset-floor="1">
+            <ha-icon icon="mdi:backup-restore"></ha-icon>
+            Anordnung dieser Etage zurücksetzen
+          </button>
+        </div>
       </div>`;
   },
 

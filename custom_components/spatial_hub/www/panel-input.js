@@ -757,7 +757,17 @@ export const EINGABEN = {
       const label = this._root.querySelector("[data-aspect-value]");
       if (label) label.textContent = Number(input.value).toFixed(2);
       if (committed && this._floor) {
-        this._setLayout("floors", this._floor.id, { aspect: Number(input.value) });
+        this._setLayout("floors", this._floor.id, { aspect: Number(input.value) },
+                        { aspect: this._floor.aspect ?? null });
+      }
+      return;
+    }
+    const floorFlag = attribute("data-floor-flag");
+    if (floorFlag !== null) {
+      const floor = this._floor;
+      if (committed && floor) {
+        this._setLayout("floors", floor.id, { [floorFlag]: input.checked },
+                        { [floorFlag]: floor[floorFlag] ?? null });
       }
       return;
     }
@@ -1236,7 +1246,14 @@ export const EINGABEN = {
 
     const floorButton = hit("data-floor");
     if (floorButton) {
-      this._floorId = floorButton.getAttribute("data-floor");
+      const next = floorButton.getAttribute("data-floor");
+      // Eine andere Etage ist ein anderes Bild und wird neu eingepasst.
+      // Der Stapel ist dreimal so hoch wie ein Geschoss; mit seiner
+      // Kamera weitergereicht lag das Erdgeschoss bei 49 % als Briefmarke
+      // in der Mitte eines leeren Fensters. Wer auf dieselbe Etage tippt,
+      // behaelt seinen Ausschnitt.
+      if (next !== this._floorId) this._fitted = false;
+      this._floorId = next;
       this._selected = null;
       this._render();
       return true;

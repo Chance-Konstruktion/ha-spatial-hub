@@ -57,7 +57,7 @@ const HOUSE3D = Object.freeze({
   pitch: 38, //            Grad, wie steil die Kamera hinabsieht
   distance: 1.75, //       Kameraabstand in Hausbreiten -- die Perspektive
   pixels: 1000, //         so breit wird das Haus im Bild
-  gap: 64, //              Luft zwischen zwei Geschossen, in Bildpunkten
+  gap: 40, //              Luft zwischen zwei Geschossen, in Bildpunkten
   margin: 28,
   wall: [0.07, 0.8, 1.5], //   Mauerhoehe (Schnitthoehe): Anteil, min, max
   outer: [0.024, 0.2, 0.45], // Aussenwand
