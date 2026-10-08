@@ -383,11 +383,17 @@ cp -r ha-spatial-hub/custom_components/spatial_hub /config/custom_components/
 Then restart Home Assistant and go to *Devices & services* → *Add
 integration* → **Spatial Hub**. There is nothing to configure.
 
+[![Open your Home Assistant instance and start setting up the integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=spatial_hub)
+
 To update, copy the folder again and restart.
 
 ### HACS, via the mirror
 
-HACS is the usual way, and its documentation is explicit: *"Only public
+This button opens the repository in your own HACS and adds it as a custom repository automatically:
+
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Chance-Konstruktion&repository=ha-spatial-hub&category=integration)
+
+Or by hand: HACS is the usual way, and its documentation is explicit: *"Only public
 repositories on GitHub will work with HACS."* This project is developed on
 GitLab — but it is mirrored to GitHub, and the mirror is public:
 
