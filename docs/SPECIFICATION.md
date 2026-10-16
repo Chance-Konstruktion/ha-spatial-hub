@@ -1,6 +1,6 @@
 # Spatial Provider Specification
 
-**Version 1.0** · Provider API v1 · SDK v7
+**Version 1.0** · Provider API v1 · SDK v8
 
 Dieses Dokument beschreibt das räumliche Datenmodell und die Rollenverteilung
 zwischen **Provider**, **Hub** und **Renderer**. Es ist normativ: Wo Code und
@@ -869,7 +869,7 @@ Registrierung werden als vermuteter Tippfehler gemeldet.
 
 - **`api_version`** (aktuell 1) ist der Vertrag. Eine Registrierung mit
   höherer Major-Version wird abgelehnt statt missverstanden.
-- **`sdk_version`** (aktuell 4) ist die Revision der kopierten Shim-Datei.
+- **`sdk_version`** (aktuell 8) ist die Revision der kopierten Shim-Datei.
   Eine ältere Kopie funktioniert weiter; der Hub notiert in der Diagnose,
   dass es eine neuere gibt.
 - **Diese Spezifikation** wird mit ihrer eigenen Versionsnummer geführt.
