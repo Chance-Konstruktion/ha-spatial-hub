@@ -119,8 +119,12 @@ async def _async_register_static_path(hass: HomeAssistant) -> None:
     path = str(WWW_DIR)
     from homeassistant.components.http import StaticPathConfig
 
-    # Cached hard, busted by the ?v= above -- which is why that key
-    # hashes every file in here and not just the entry module.
+    # Nicht hart gecacht. Nur das Einstiegsmodul traegt das ?v=; die
+    # Geschwister laedt der Browser unter festen Adressen, und mit einem
+    # Jahr Cache bekam er nach einem Update ein neues Panel mit einer alten
+    # panel-view.js ("_editBarHtml is not a function", die Seite blieb auf
+    # "Grundriss wird geladen" stehen -- so auf .247 am 17.10. gesehen).
+    # Ohne Cache-Kopfzeilen fragt er nach und bekommt meist ein 304.
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(URL_BASE, path, True)]
+        [StaticPathConfig(URL_BASE, path, False)]
     )

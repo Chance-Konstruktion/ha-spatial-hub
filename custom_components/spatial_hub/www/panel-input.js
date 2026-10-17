@@ -28,7 +28,7 @@ import {
   openingRun,
 } from "./panel-geometry.js";
 import { qualityColour, stateColour } from "./panel-colour.js";
-import { DOMAIN, SHEET, ZOOM } from "./panel-const.js";
+import { DOMAIN, FLOOR_KEY, SHEET, ZOOM } from "./panel-const.js";
 
 
 export const EINGABEN = {
@@ -1259,6 +1259,11 @@ export const EINGABEN = {
       // behaelt seinen Ausschnitt.
       if (next !== this._floorId) this._fitted = false;
       this._floorId = next;
+      try {
+        window.localStorage.setItem(FLOOR_KEY, next);
+      } catch (err) {
+        // Ohne Speicher beginnt der naechste Besuch eben auf der vollsten Etage.
+      }
       this._selected = null;
       this._render();
       return true;

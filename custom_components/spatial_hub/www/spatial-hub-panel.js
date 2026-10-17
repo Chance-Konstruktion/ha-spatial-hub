@@ -15,7 +15,7 @@ import { STYLES } from "./panel-styles.js";
 import { haTransport } from "./panel-transport.js";
 import { ANSICHT } from "./panel-view.js";
 import { EINGABEN } from "./panel-input.js";
-import { ALL_FLOORS, CLUSTER_THRESHOLD, DOMAIN, FIT, PHONE, ZOOM } from "./panel-const.js";
+import { ALL_FLOORS, CLUSTER_THRESHOLD, DOMAIN, FIT, FLOOR_KEY, PHONE, ZOOM } from "./panel-const.js";
 import {
   STACK,
   centreOf,
@@ -104,9 +104,12 @@ class SpatialHubPanel extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._model = null;
     this._error = null;
-    // The house as a whole is the first thing to show. A single storey
-    // is a detail of it, not the other way round.
-    this._floorId = ALL_FLOORS;
+    // Erst eine Etage, flach von oben: dort lassen sich Raeume und Geraete
+    // lesen. Das Haus als Stapel ist der Ueberblick daneben, nicht der
+    // Einstieg -- drei gekippte Geschosse in einem Fenster machen jede
+    // Beschriftung zur Briefmarke. Welche Etage, entscheidet
+    // `_startFloor`, sobald das Modell da ist.
+    this._floorId = null;
     this._selected = null; // { kind, id }
     // The room whose shared walls are on show. Not a selection in the
     // popup sense -- clicking a room in room mode asks "what is this room
@@ -334,6 +337,7 @@ class SpatialHubPanel extends HTMLElement {
     try {
       this._model = await this._io.call({ type: `${DOMAIN}/model` });
       this._error = null;
+      if (this._floorId === null) this._floorId = this._startFloor();
     } catch (err) {
       this._error = err && err.message ? err.message : String(err);
     } finally {
@@ -489,6 +493,28 @@ class SpatialHubPanel extends HTMLElement {
 
   get _floors() {
     return (this._model && this._model.floors) || [];
+  }
+
+  /** Die zuletzt gewaehlte Etage, sonst die mit den meisten Geraeten. */
+  _startFloor() {
+    const floors = this._floors;
+    let saved = null;
+    try {
+      saved = window.localStorage.getItem(FLOOR_KEY);
+    } catch (err) {
+      saved = null;
+    }
+    if (saved === ALL_FLOORS || floors.some((floor) => floor.id === saved)) {
+      return saved;
+    }
+    const count = new Map();
+    for (const node of this._model.nodes || []) {
+      count.set(node.floor_id, (count.get(node.floor_id) || 0) + 1);
+    }
+    const busiest = [...floors].sort(
+      (a, b) => (count.get(b.id) || 0) - (count.get(a.id) || 0),
+    )[0];
+    return busiest ? busiest.id : ALL_FLOORS;
   }
 
   get _stacked() {
@@ -780,12 +806,31 @@ class SpatialHubPanel extends HTMLElement {
     const model = this._model;
     if (!model) return [];
     const known = new Map(this._visibleNodes.map((node) => [node.id, node]));
+    // Ein Geraet in einer Gruppe hat keinen eigenen Punkt auf dem Plan.
+    // Seine Kante endet dann am Gruppenzeichen -- vorher lief sie zu der
+    // unsichtbaren Stelle mitten im Raum und hoerte dort im Leeren auf.
+    // Eine Kante innerhalb derselben Gruppe zeigt nichts und faellt weg.
+    const groupOf = new Map();
+    if (!this._stacked) {
+      for (const group of this._nodeGroups.clusters) {
+        const centre = {
+          x: group.reduce((sum, node) => sum + node.position.x, 0) / group.length,
+          y: group.reduce((sum, node) => sum + node.position.y, 0) / group.length,
+        };
+        for (const node of group) groupOf.set(node.id, { key: group, centre });
+      }
+    }
+    const end = (id) => (groupOf.get(id) || {}).centre || known.get(id).position;
     return model.edges
       .filter((edge) => known.has(edge.source) && known.has(edge.target))
+      .filter((edge) => {
+        const [a, b] = [groupOf.get(edge.source), groupOf.get(edge.target)];
+        return !(a && b && a.key === b.key);
+      })
       .map((edge) => ({
         ...edge,
-        from: known.get(edge.source).position,
-        to: known.get(edge.target).position,
+        from: end(edge.source),
+        to: end(edge.target),
       }));
   }
 
