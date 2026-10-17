@@ -1846,7 +1846,11 @@ class SpatialHubPanel extends HTMLElement {
     const byRoom = new Map();
     const singles = [];
     for (const node of nodes) {
-      if (!node.area_id) {
+      // Wer blinkt, will gesehen werden: ein fertiger Lader oder ein
+      // Fehler darf nicht als einer von 23 hinter einem Gruppenzeichen
+      // verschwinden.
+      const custom = this._customIcon(node);
+      if (!node.area_id || (custom && custom.animation)) {
         singles.push(node);
         continue;
       }

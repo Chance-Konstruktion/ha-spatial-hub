@@ -128,7 +128,18 @@ const customIcon = (iconSets, node) => {
   return (set && set[node.icon]) || null;
 };
 
+/** Die Animation aus dem icon_set als CSS-Klasse (Spec: `animation`).
+ *
+ *  Bis zum 17.10. las der Renderer das Feld gar nicht: das D100 meldete
+ *  "fertig" mit pulse, und auf dem Plan blinkte nichts. Nur bekannte Namen,
+ *  denn der Wert kommt vom Anbieter und landet in einem class-Attribut.
+ */
+const ANIMATIONS = new Set(["pulse", "blink", "spin"]);
+const animationClass = (custom) =>
+  custom && ANIMATIONS.has(custom.animation) ? `anim-${custom.animation}` : "";
+
 export {
+  animationClass,
   HA_COLOURS,
   STATE_SPARE,
   QUALITY_SPARE,

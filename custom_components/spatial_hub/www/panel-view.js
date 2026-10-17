@@ -67,6 +67,7 @@ import {
 } from "./panel-markup.js";
 import { ALL_FLOORS, formatValue, pretty } from "./panel-const.js";
 import { houseScene } from "./panel-house3d.js";
+import { animationClass } from "./panel-colour.js";
 
 // Wie gross die zwei Beschriftungen im Stapel sind und wie weit der
 // Geraetename unter seinem Punkt haengt. Steht hier und nicht nur im
@@ -509,7 +510,7 @@ export const ANSICHT = {
           node.icon || this._genericIcon(node),
         )}"></ha-icon>`;
     return `<foreignObject x="-11" y="-11" width="22" height="22"
-              class="stack-icon">${inner}</foreignObject>`;
+              class="stack-icon ${animationClass(custom)}">${inner}</foreignObject>`;
   },
 
   /** The camera lives here: one wrapper, both views, identical behaviour. */
@@ -1382,6 +1383,7 @@ export const ANSICHT = {
     const frame = this._frame;
     return `
       <button class="node ${selected ? "on" : ""} ${node.floor_id ? "" : "floorless"}
+        ${animationClass(custom)}
         ${this._crowded(node) ? "crowded" : ""}
         ${matches && !matches.has(node.id) ? "dimmed" : ""}
         ${matches && matches.has(node.id) ? "found" : ""}"
