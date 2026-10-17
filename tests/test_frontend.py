@@ -291,3 +291,18 @@ async def test_the_cache_key_is_never_read_in_the_event_loop(hass):
     assert custom["module_url"].endswith(f"?v={frontend.panel_version()}"), (
         "and it is still the same key the panel gets"
     )
+
+
+def test_stale_gzip_is_dropped_matching_one_kept(tmp_path):
+    """HACS packt www; eine Hand-Kopie danach liess die alte .gz liegen."""
+    import gzip
+
+    from custom_components.spatial_hub.frontend import drop_stale_gzip
+
+    (tmp_path / "a.js").write_bytes(b"neu")
+    (tmp_path / "a.js.gz").write_bytes(gzip.compress(b"alt"))
+    (tmp_path / "b.js").write_bytes(b"gleich")
+    (tmp_path / "b.js.gz").write_bytes(gzip.compress(b"gleich"))
+    (tmp_path / "c.js.gz").write_bytes(gzip.compress(b"waise"))
+    assert sorted(drop_stale_gzip(tmp_path)) == ["a.js.gz", "c.js.gz"]
+    assert (tmp_path / "b.js.gz").exists()
