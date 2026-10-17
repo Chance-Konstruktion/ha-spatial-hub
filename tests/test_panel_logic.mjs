@@ -171,6 +171,9 @@ const model = (overrides = {}) => ({
 });
 
 /** A panel wired to a model, with no DOM behind it. */
+// Most tests here are about one storey at a time. The panel opens on a
+// flat floor (see "opens flat"); a test about the stack says so with
+// floor:null. Below: the original note.
 // Most tests here are about one storey at a time. The panel now opens on
 // the stacked view of the whole house, so a test that means "the detail
 // view" has to say so -- pass floor:null for the stack.
@@ -5208,4 +5211,28 @@ test("a long storey name gets the margin it needs", () => {
   assert.ok(long.width - short.width > 200);
   const x = Number((long.svg.match(/class="h3-storey" x="([0-9.]+)"/) || [])[1]);
   assert.ok(x - "UNTERGESCHOSS".length * 30 * 0.62 > 0, "der Name steht ganz im Bild");
+});
+
+// ── Flach zuerst (17.10.) ──────────────────────────────────
+
+test("opens flat on the busiest floor, not on the stacked house", () => {
+  const view = new SpatialHubPanel();
+  assert.equal(view._floorId, null, "nothing chosen before the model is in");
+  view._model = model({
+    nodes: [node("a:1"), node("a:2", { floor_id: "og" }), node("a:3", { floor_id: "og" })],
+  });
+  assert.equal(view._startFloor(), "og");
+});
+
+test("an edge into a cluster ends at the cluster badge", () => {
+  const room = { area_id: "wohnzimmer" };
+  const inRoom = [0.2, 0.3, 0.4, 0.5].map((x, i) =>
+    node(`a:c${i}`, { ...room, position: at(x, 0.5) }));
+  const view = panel(model({
+    nodes: [...inRoom, node("a:far", { position: at(0.9, 0.1) })],
+    edges: [edge("a:c0", "a:far"), edge("a:c0", "a:c1")],
+  }));
+  const edges = view._visibleEdges;
+  assert.equal(edges.length, 1, "an edge inside one cluster shows nothing");
+  assert.ok(Math.abs(edges[0].from.x - 0.35) < 1e-9, "ends at the badge, not at a:c0");
 });

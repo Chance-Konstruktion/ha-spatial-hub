@@ -59,3 +59,6 @@ export const formatValue = (value) => {
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 };
+
+/** Wo im Browser die zuletzt gewaehlte Etage liegt. */
+export const FLOOR_KEY = "spatial_hub.floor";
