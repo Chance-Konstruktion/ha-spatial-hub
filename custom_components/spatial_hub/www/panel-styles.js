@@ -664,6 +664,17 @@ main > :not(.plan) { flex:0 0 auto; }
              transform:rotate(var(--node-rotation,0deg)); }
 .node.floorless .dot { outline:2px dashed var(--warning-color,#ff9800); outline-offset:2px; }
 .node.on .dot { box-shadow:0 0 0 4px var(--node-color); }
+/* icon_set.animation: ein Geraet, das Aufmerksamkeit will. */
+.node.anim-pulse .dot, .stack-icon.anim-pulse .custom-icon { animation:node-pulse 1.4s ease-in-out infinite; }
+.node.anim-blink .dot, .stack-icon.anim-blink .custom-icon { animation:node-blink 1s steps(2, jump-none) infinite; }
+.node.anim-spin .dot svg, .stack-icon.anim-spin svg { animation:node-spin 2s linear infinite; }
+@keyframes node-pulse { 0%,100% { box-shadow:0 0 0 0 var(--node-color); transform:rotate(var(--node-rotation,0deg)) scale(1); }
+  50% { box-shadow:0 0 0 9px transparent; transform:rotate(var(--node-rotation,0deg)) scale(1.12); } }
+@keyframes node-blink { 50% { opacity:.25; } }
+@keyframes node-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .node.anim-pulse .dot, .node.anim-blink .dot, .stack-icon .custom-icon,
+  .node.anim-spin .dot svg { animation:none; box-shadow:0 0 0 4px var(--node-color); } }
 .node .label { font-size:11px; white-space:nowrap; color:var(--primary-text-color,#212121);
                background:var(--card-background-color,#fff); border-radius:4px; padding:0 4px; }
 /* Fünf Geräte in einem Wohnzimmer ergaben fünf Namen übereinander --

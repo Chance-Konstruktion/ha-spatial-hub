@@ -1482,7 +1482,7 @@ test("a provider's own icon is never nested raw into the drawing", () => {
   // A bare <svg> with no width is a nested viewport and defaults to the
   // whole drawing -- one device covered the entire house.
   assert.doesNotMatch(source, /<g class="stack-icon"[^>]*>\$\{custom\.svg\}/);
-  assert.match(source, /class="stack-icon">\$\{inner\}<\/foreignObject>/);
+  assert.match(source, /class="stack-icon[^"]*">\$\{inner\}<\/foreignObject>/);
 });
 
 test("the canvas is not frozen onto a bitmap layer", () => {
@@ -5235,4 +5235,26 @@ test("an edge into a cluster ends at the cluster badge", () => {
   const edges = view._visibleEdges;
   assert.equal(edges.length, 1, "an edge inside one cluster shows nothing");
   assert.ok(Math.abs(edges[0].from.x - 0.35) < 1e-9, "ends at the badge, not at a:c0");
+});
+
+test("an animated icon pulses and never hides in a cluster", () => {
+  const room = { area_id: "wohnzimmer" };
+  const nodes = [0, 1, 2, 3].map((i) => node(`a:n${i}`, { ...room }));
+  nodes.push(node("a:done", { ...room, icon: "fertig" }));
+  const view = panel(model({
+    nodes,
+    icon_sets: { a: { fertig: { svg: "<svg></svg>", animation: "pulse" } } },
+  }));
+  const { singles, clusters } = view._nodeGroups;
+  assert.deepEqual(singles.map((n) => n.id), ["a:done"]);
+  assert.equal(clusters[0].length, 4);
+  assert.match(view._nodeHtml(singles[0]), /anim-pulse/);
+});
+
+test("an unknown animation name never reaches the class attribute", () => {
+  const view = panel(model({
+    nodes: [node("a:x", { icon: "k" })],
+    icon_sets: { a: { k: { svg: "<svg></svg>", animation: "x\" onclick=\"y" } } },
+  }));
+  assert.doesNotMatch(view._nodeHtml(view._visibleNodes[0]), /onclick/);
 });
