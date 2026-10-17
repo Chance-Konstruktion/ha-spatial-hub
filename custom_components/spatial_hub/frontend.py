@@ -11,6 +11,7 @@ sync with a repository. HACS copies the file, Home Assistant serves it.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import logging
 from pathlib import Path
@@ -75,8 +76,35 @@ async def async_panel_version(hass: HomeAssistant) -> str:
     return await hass.async_add_executor_job(panel_version)
 
 
+def drop_stale_gzip(folder: Path = WWW_DIR) -> list[str]:
+    """Gepackte Kopien loeschen, die nicht mehr zu ihrer Datei passen.
+
+    HACS legt neben jede Datei in www eine .gz, und Home Assistant liefert
+    die bevorzugt aus. Wird das Panel danach ohne HACS ersetzt (Hand-Kopie,
+    git), bleibt die .gz alt -- und der Browser bekommt den alten Renderer,
+    egal wie oft er neu laedt, denn der Cache-Schluessel ist ja neu. Auf
+    .247 lagen so am 17.10. Packungen vom 30.09. vor jedem Update seither.
+    Eine .gz, deren Inhalt nicht mehr die Datei ist, ist keine Abkuerzung
+    mehr, sondern eine Luege.
+    """
+    weg: list[str] = []
+    for packung in folder.glob("*.gz"):
+        quelle = packung.with_suffix("")
+        try:
+            if quelle.is_file() and gzip.decompress(packung.read_bytes()) == quelle.read_bytes():
+                continue
+            packung.unlink()
+            weg.append(packung.name)
+        except (OSError, EOFError, gzip.BadGzipFile):
+            _LOGGER.debug("Konnte %s nicht pruefen", packung, exc_info=True)
+    if weg:
+        _LOGGER.info("Veraltete gepackte Panel-Dateien entfernt: %s", ", ".join(weg))
+    return weg
+
+
 async def async_register_panel(hass: HomeAssistant) -> None:
     """Serve the renderer and put it in the sidebar."""
+    await hass.async_add_executor_job(drop_stale_gzip)
     await _async_register_static_path(hass)
 
     version = await async_panel_version(hass)
