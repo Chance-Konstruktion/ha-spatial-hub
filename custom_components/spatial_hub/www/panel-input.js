@@ -28,7 +28,7 @@ import {
   openingRun,
 } from "./panel-geometry.js";
 import { qualityColour, stateColour } from "./panel-colour.js";
-import { DOMAIN, FLOOR_KEY, SHEET, ZOOM } from "./panel-const.js";
+import { DOMAIN, SHEET, ZOOM } from "./panel-const.js";
 
 
 export const EINGABEN = {
@@ -581,6 +581,16 @@ export const EINGABEN = {
     this._flushRender();
   },
 
+  /** Ein Element im Bild oder in einem Dialog -- die Dialoge von HA liegen
+   *  neben dem Bild, nicht darin. */
+  _find(selector) {
+    return (
+      this._root.querySelector(selector) ||
+      (this._dialogHost && this._dialogHost.querySelector(selector)) ||
+      null
+    );
+  },
+
   _onInput(event, committed) {
     const input = event.target;
     if (!input || !input.getAttribute) return;
@@ -592,10 +602,18 @@ export const EINGABEN = {
       this._search = input.value;
       this._render();
       const box = this._root.querySelector("[data-search]");
-      if (box && box.focus) {
+      const refocus = () => {
         box.focus();
         if (box.setSelectionRange) {
           box.setSelectionRange(box.value.length, box.value.length);
+        }
+      };
+      // Ein ha-input hat sein <input> erst, wenn es sich gezeichnet hat.
+      if (box && box.focus) {
+        if (box.updateComplete && typeof box.updateComplete.then === "function") {
+          box.updateComplete.then(refocus);
+        } else {
+          refocus();
         }
       }
       return;
@@ -669,7 +687,7 @@ export const EINGABEN = {
     }
 
     if (attribute("data-theme-size") !== null) {
-      const label = this._root.querySelector("[data-size-value]");
+      const label = this._find("[data-size-value]");
       if (label) label.textContent = `${Number(input.value).toFixed(2)}×`;
       if (committed) this._setTheme({ node_size: Number(input.value) });
       return;
@@ -689,7 +707,7 @@ export const EINGABEN = {
     }
 
     if (attribute("data-theme-house") !== null) {
-      const label = this._root.querySelector("[data-house-value]");
+      const label = this._find("[data-house-value]");
       if (label) label.textContent = `${Number(input.value).toFixed(2)}×`;
       // Live auf die Variable, damit der Regler das Haus sofort bewegt --
       // ein Regler, dessen Wirkung erst beim Loslassen kommt, wird blind
@@ -700,7 +718,7 @@ export const EINGABEN = {
     }
 
     if (attribute("data-theme-snap") !== null) {
-      const label = this._root.querySelector("[data-snap-value]");
+      const label = this._find("[data-snap-value]");
       if (label) label.textContent = `${Number(input.value).toFixed(2)}×`;
       if (committed) this._setTheme({ snap_reach: Number(input.value) });
       return;
@@ -754,7 +772,7 @@ export const EINGABEN = {
       return;
     }
     if (attribute("data-aspect") !== null) {
-      const label = this._root.querySelector("[data-aspect-value]");
+      const label = this._find("[data-aspect-value]");
       if (label) label.textContent = Number(input.value).toFixed(2);
       if (committed && this._floor) {
         this._setLayout("floors", this._floor.id, { aspect: Number(input.value) },
@@ -787,6 +805,13 @@ export const EINGABEN = {
     }
 
     const path = event.composedPath();
+    // Ein gesperrter ha-button meldet den Klick trotzdem an seinen Wirt
+    // weiter; ein gesperrter <button> nie. Gleiches Verhalten wie vorher.
+    if (path.some((element) => element && element.tagName === "HA-BUTTON" &&
+        typeof element.hasAttribute === "function" &&
+        element.hasAttribute("disabled"))) {
+      return;
+    }
     const hit = (attribute) =>
       path.find(
         (element) =>
@@ -966,11 +991,18 @@ export const EINGABEN = {
     if (shapeDelete) {
       const id = shapeDelete.getAttribute("data-shape-delete");
       const shape = this._shape(id);
-      if (
-        !shape ||
-        window.confirm(`„${shape.name}“ wirklich löschen?`)
-      ) {
+      if (!shape) {
         this._deleteShape(id);
+      } else {
+        this._whenConfirmed({
+          title: "Fläche löschen",
+          text: `„${shape.name}“ wirklich löschen?`,
+          confirm: "Löschen",
+          destructive: true,
+        }, () => {
+          this._deleteShape(id);
+          this._render();
+        });
       }
       this._render();
       return true;
@@ -1251,21 +1283,9 @@ export const EINGABEN = {
 
     const floorButton = hit("data-floor");
     if (floorButton) {
-      const next = floorButton.getAttribute("data-floor");
-      // Eine andere Etage ist ein anderes Bild und wird neu eingepasst.
-      // Der Stapel ist dreimal so hoch wie ein Geschoss; mit seiner
-      // Kamera weitergereicht lag das Erdgeschoss bei 49 % als Briefmarke
-      // in der Mitte eines leeren Fensters. Wer auf dieselbe Etage tippt,
-      // behaelt seinen Ausschnitt.
-      if (next !== this._floorId) this._fitted = false;
-      this._floorId = next;
-      try {
-        window.localStorage.setItem(FLOOR_KEY, next);
-      } catch (err) {
-        // Ohne Speicher beginnt der naechste Besuch eben auf der vollsten Etage.
-      }
-      this._selected = null;
-      this._render();
+      // Die Etage waehlen steht in `_goFloor` (dort auch die Begruendung fuer
+      // das neue Einpassen) -- Reiter von HA und Klick im Haus nehmen denselben Weg.
+      this._goFloor(floorButton.getAttribute("data-floor"));
       return true;
     }
 

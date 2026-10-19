@@ -68,6 +68,25 @@ import {
 import { ALL_FLOORS, formatValue, pretty } from "./panel-const.js";
 import { houseScene } from "./panel-house3d.js";
 import { animationClass } from "./panel-colour.js";
+import {
+  dialogShell,
+  haAlert,
+  haBtn,
+  haChip,
+  haDefined,
+  haIconBtn,
+  haInput,
+  haLink,
+  haRange,
+  haSelect,
+  haToggle,
+} from "./panel-ha.js";
+
+// Ein Hinweis unter dem Plan: eine Meldung von HA, sonst der Absatz von frueher.
+const hint = (inner, extra = "") =>
+  haDefined("ha-alert")
+    ? haAlert("info", inner)
+    : `<p class="hint${extra}">${inner}</p>`;
 
 // Wie gross die zwei Beschriftungen im Stapel sind und wie weit der
 // Geraetename unter seinem Punkt haengt. Steht hier und nicht nur im
@@ -87,6 +106,9 @@ export const ANSICHT = {
   _headerHtml() {
     const floors = this._floors;
     const current = this._floor;
+    // Mit dem Rahmen von HA sind die Etagen dessen Reiter (siehe
+    // `_syncTabs`); die Kopfzeile hier behaelt nur die Werkzeuge.
+    const inFrame = Boolean(this._frameEl);
     const stackTab = floors.length > 1
       ? `<button class="tab ${this._stacked ? "on" : ""}"
                  data-floor="${ALL_FLOORS}" title="Alle Etagen übereinander">
@@ -103,43 +125,56 @@ export const ANSICHT = {
         </button>`,
       )
       .join("");
-    return `
-      <header>
-        <div class="tabs">${stackTab}${tabs}</div>
-        <div class="spacer"></div>
-        <label class="search" title="Gerät suchen">
+    const ha = haDefined("ha-icon-button");
+    const iconButton = (attrs, icon, label, old, on = false) =>
+      ha ? haIconBtn({ attrs, icon, label, on }) : old;
+    const search = haDefined("ha-input")
+      ? haInput({ attrs: 'data-search="1"', type: "search", placeholder: "Suchen",
+                  value: this._search, cls: "search-ha" })
+      : `<label class="search" title="Gerät suchen">
           <ha-icon icon="mdi:magnify"></ha-icon>
           <input type="search" data-search="1" placeholder="Suchen"
                  value="${escapeHtml(this._search)}">
-        </label>
+        </label>`;
+    return `
+      <header${inFrame ? ' class="ha"' : ""}>
+        ${inFrame ? "" : `<div class="tabs">${stackTab}${tabs}</div>
+        <div class="spacer"></div>`}
+        ${search}
         <div class="zoom">
-          <button class="icon-btn" data-zoom="out" title="Verkleinern">
+          ${iconButton('data-zoom="out"', "mdi:magnify-minus-outline", "Verkleinern", `<button class="icon-btn" data-zoom="out" title="Verkleinern">
             <ha-icon icon="mdi:magnify-minus-outline"></ha-icon>
-          </button>
+          </button>`)}
           <span data-zoom-value>100 %</span>
-          <button class="icon-btn" data-zoom="in" title="Vergrößern">
+          ${iconButton('data-zoom="in"', "mdi:magnify-plus-outline", "Vergrößern", `<button class="icon-btn" data-zoom="in" title="Vergrößern">
             <ha-icon icon="mdi:magnify-plus-outline"></ha-icon>
-          </button>
-          <button class="icon-btn" data-zoom="fit" title="Alles zeigen">
+          </button>`)}
+          ${iconButton('data-zoom="fit"', "mdi:fit-to-screen-outline", "Alles zeigen", `<button class="icon-btn" data-zoom="fit" title="Alles zeigen">
             <ha-icon icon="mdi:fit-to-screen-outline"></ha-icon>
-          </button>
+          </button>`)}
         </div>
-        <button class="icon-btn ${this._showDiagnostics ? "on" : ""}"
+        ${iconButton('data-toggle="diagnostics"', "mdi:stethoscope", "Diagnose", `<button class="icon-btn ${this._showDiagnostics ? "on" : ""}"
                 data-toggle="diagnostics" title="Diagnose">
           <ha-icon icon="mdi:stethoscope"></ha-icon>
-        </button>
+        </button>`, this._showDiagnostics)}
         ${
           // Beim Bearbeiten sagt der Knopf, wie man wieder herauskommt --
           // ein Haken allein war zwischen elf anderen Symbolen nicht als
           // "fertig" zu erkennen.
           this._canArrange
-            ? `<button class="icon-btn ${this._edit ? "on labelled" : ""}"
+            ? (haDefined("ha-button") && this._edit
+              ? haBtn({ attrs: 'data-toggle-edit="1"', text: "Fertig", icon: "mdi:check",
+                        appearance: "filled", title: "Bearbeiten beenden" })
+              : iconButton('data-toggle-edit="1"',
+                  this._edit ? "mdi:check" : "mdi:pencil-outline",
+                  this._edit ? "Bearbeiten beenden" : "Bearbeiten",
+                  `<button class="icon-btn ${this._edit ? "on labelled" : ""}"
                        data-toggle-edit="1"
                        title="${this._edit ? "Bearbeiten beenden" : "Bearbeiten"}">
                  <ha-icon icon="${
                    this._edit ? "mdi:check" : "mdi:pencil-outline"
                  }"></ha-icon>${this._edit ? "<span>Fertig</span>" : ""}
-               </button>`
+               </button>`))
             : ""
         }
       </header>`;
@@ -161,7 +196,14 @@ export const ANSICHT = {
   _editBarHtml() {
     if (!this._edit) return "";
     const tool = ({ attr, icon, label, title, on = false, disabled = false }) =>
-      `<button class="tool ${on ? "on" : ""}" ${attr}
+      haDefined("ha-button")
+        ? haBtn({
+            attrs: `${attr}${on ? ' aria-pressed="true"' : ""}`,
+            text: `<span class="tool-label">${escapeHtml(label)}</span>`,
+            icon, appearance: on ? "filled" : "plain",
+            title: title || label, disabled, cls: "tool-ha",
+          })
+        : `<button class="tool ${on ? "on" : ""}" ${attr}
                title="${escapeHtml(title || label)}"
                ${on ? 'aria-pressed="true"' : ""} ${disabled ? "disabled" : ""}>
          <ha-icon icon="${icon}"></ha-icon><span>${escapeHtml(label)}</span>
@@ -217,10 +259,15 @@ export const ANSICHT = {
                title: this._plot
                  ? "Grundstück entfernen"
                  : "Grundstück zeichnen: die Grenze um Haus und Garten" }),
-        this._plot && `<button class="tool icon-only" data-plot-scale="0.89"
+        this._plot && (haDefined("ha-icon-button")
+          ? haIconBtn({ attrs: 'data-plot-scale="0.89"', icon: "mdi:minus",
+                        label: "Grundstück verkleinern" })
+            + haIconBtn({ attrs: 'data-plot-scale="1.12"', icon: "mdi:plus",
+                          label: "Grundstück vergrößern" })
+          : `<button class="tool icon-only" data-plot-scale="0.89"
                 title="Grundstück verkleinern"><ha-icon icon="mdi:minus"></ha-icon></button>
           <button class="tool icon-only" data-plot-scale="1.12"
-                title="Grundstück vergrößern"><ha-icon icon="mdi:plus"></ha-icon></button>`,
+                title="Grundstück vergrößern"><ha-icon icon="mdi:plus"></ha-icon></button>`),
       )
       : "";
 
@@ -339,8 +386,8 @@ export const ANSICHT = {
       // hier nichts ziehen". Beim Anschauen war es eine feste Textzeile
       // unter dem Haus, die jeden Tag dasselbe sagte.
       this._edit
-        ? `<p class="hint">Zum Anordnen oben eine einzelne Etage wählen —
-           hier siehst du das ganze Haus mit allen Verbindungen.</p>`
+        ? hint(`Zum Anordnen oben eine einzelne Etage wählen —
+           hier siehst du das ganze Haus mit allen Verbindungen.`)
         : ""
     }`;
   },
@@ -533,6 +580,12 @@ export const ANSICHT = {
     // else gets rendered -- the areas alone are already the user's home,
     // and an empty rectangle after installing is a bad first impression.
     if (!model.providers.length && !areas.length) {
+      if (haDefined("ha-alert")) {
+        return haAlert("info", `Keine Bereiche in Home Assistant und keine
+        Integration, die räumliche Daten liefert. Lege Bereiche unter
+        <i>Einstellungen → Bereiche & Zonen</i> an — der Grundriss folgt von
+        selbst.`, { title: "Noch nichts zu zeichnen" });
+      }
       return `<div class="empty">
         <h2>Noch nichts zu zeichnen</h2>
         <p>Keine Bereiche in Home Assistant und keine Integration, die
@@ -542,26 +595,34 @@ export const ANSICHT = {
     }
 
     const floor = this._floor;
-    const moved = this._moved
-      ? `<p class="banner moved">
-           <b>${escapeHtml(this._moved.label)}</b> ist jetzt in
-           <b>${escapeHtml(this._moved.room)}</b>${
-             this._moved.scope === "device"
+    const movedText = `
+           <b>${escapeHtml(this._moved ? this._moved.label : "")}</b> ist jetzt in
+           <b>${escapeHtml(this._moved ? this._moved.room : "")}</b>${
+             this._moved && this._moved.scope === "device"
                ? " — mit allen Entitäten des Geräts"
                : " — nur diese Entität"
-           }. Das steht so in Home Assistant.
+           }. Das steht so in Home Assistant.`;
+    const moved = this._moved
+      ? (haDefined("ha-alert")
+        ? haAlert("success", movedText, {
+            action: haBtn({ attrs: 'data-undo-move="1"', text: "Rückgängig",
+                            appearance: "plain" }),
+          })
+        : `<p class="banner moved">${movedText}
            <button class="link" data-undo-move="1">Rückgängig</button>
-         </p>`
+         </p>`)
       : "";
     const banner = floor && floor.unassigned
-      ? `<p class="banner">Diese Bereiche sind in Home Assistant keiner Etage
+      ? hint(`Diese Bereiche sind in Home Assistant keiner Etage
          zugeordnet. Sobald du das dort nachträgst, wandern sie von selbst auf
-         die richtige Etage — hier ist nichts einzustellen.</p>`
+         die richtige Etage — hier ist nichts einzustellen.`, "").replace(
+          'class="hint"', 'class="banner"')
       : model.providers.length
       ? ""
-      : `<p class="banner">Dein Haus, direkt aus Home Assistant. Sobald eine
+      : hint(`Dein Haus, direkt aus Home Assistant. Sobald eine
          Integration räumliche Daten liefert, erscheint sie hier von selbst —
-         einzurichten ist dafür nichts.</p>`;
+         einzurichten ist dafür nichts.`, "").replace(
+          'class="hint"', 'class="banner"');
 
     if (this._stacked) return `${moved}${banner}${this._stackHtml()}`;
 
@@ -622,9 +683,16 @@ export const ANSICHT = {
       ${this._metersHtml()}
       ${
         this._placing
-          ? `<p class="hint">Klick auf den Grundriss setzt „${escapeHtml(
-              this._placingLabel(),
-            )}“. <button class="link" data-cancel-place="1">Abbrechen</button></p>`
+          ? (haDefined("ha-alert")
+            ? haAlert("info", `Klick auf den Grundriss setzt „${escapeHtml(
+                this._placingLabel(),
+              )}“.`, {
+                action: haBtn({ attrs: 'data-cancel-place="1"', text: "Abbrechen",
+                                appearance: "plain" }),
+              })
+            : `<p class="hint">Klick auf den Grundriss setzt „${escapeHtml(
+                this._placingLabel(),
+              )}“. <button class="link" data-cancel-place="1">Abbrechen</button></p>`)
           : ""
       }`;
   },
@@ -638,19 +706,19 @@ export const ANSICHT = {
   _editHintHtml() {
     if (!this._edit || this._placing) return "";
     if (this._editIcons) {
-      return `<p class="hint">Geräte-Modus: Punkte ziehen sortiert sie in
+      return hint(`Geräte-Modus: Punkte ziehen sortiert sie in
         ihre Räume. Die Wände bleiben, wo sie sind — für die gibt es oben
-        <b>Räume</b>.</p>`;
+        <b>Räume</b>.`);
     }
     if (this._corners) {
-      return `<p class="hint">Ecken-Modus: eine Ecke ziehen verschiebt sie,
+      return hint(`Ecken-Modus: eine Ecke ziehen verschiebt sie,
         das <b>+</b> in der Wandmitte setzt eine neue — so entstehen
         Nischen und Wandversätze. Das <b>×</b> an einer Ecke entfernt sie;
         bleiben weniger als vier übrig, ist der Raum wieder ein Rechteck.
-        ${this._gridHintHtml()}</p>`;
+        ${this._gridHintHtml()}`);
     }
-    return `<p class="hint">Räume: ziehen ordnet an, an Wänden und Ecken
-      eines Bereichs ändert sich seine Größe. ${this._gridHintHtml()}</p>`;
+    return hint(`Räume: ziehen ordnet an, an Wänden und Ecken
+      eines Bereichs ändert sich seine Größe. ${this._gridHintHtml()}`);
   },
 
   /** Wie man das Raster loswird -- und zwar so, wie es dieses Geraet kann.
@@ -695,17 +763,24 @@ export const ANSICHT = {
           };
         })()
       : null;
-    return `<p class="hint meters">
-      <label>Haus breit
-        <input type="number" min="1" max="200" step="0.1" value="${across}"
-               data-house-metres="1"> m
-      </label>
+    const rest = `
       <span class="muted">Alles andere rechnet sich daraus.</span>
       ${
         size
           ? `<b>Grundstück ${metre(size.width)} × ${metre(size.height)} m</b>`
           : `<span class="muted">Kein Grundstück gezeichnet.</span>`
-      }
+      }`;
+    if (haDefined("ha-input")) {
+      return `<div class="hint meters meters-ha">${haInput({
+        attrs: 'data-house-metres="1"', label: "Haus breit (m)", type: "number",
+        min: 1, max: 200, step: 0.1, value: across,
+      })}${rest}</div>`;
+    }
+    return `<p class="hint meters">
+      <label>Haus breit
+        <input type="number" min="1" max="200" step="0.1" value="${across}"
+               data-house-metres="1"> m
+      </label>${rest}
     </p>`;
   },
 
@@ -753,12 +828,18 @@ export const ANSICHT = {
     return `
       <section class="tray ${open ? "open" : ""}">
         <p class="tray-head">
-          <button class="tray-toggle" data-tray-toggle="1"
+          ${haDefined("ha-button")
+            ? haBtn({
+                attrs: `data-tray-toggle="1" aria-expanded="${open ? "true" : "false"}"`,
+                icon: open ? "mdi:chevron-down" : "mdi:chevron-right",
+                text: `${waiting.length} ohne Etage`, appearance: "plain",
+              })
+            : `<button class="tray-toggle" data-tray-toggle="1"
                   aria-expanded="${open ? "true" : "false"}">
             <ha-icon icon="${open ? "mdi:chevron-down" : "mdi:chevron-right"}"></ha-icon>
             <ha-icon icon="mdi:tray-arrow-down"></ha-icon>
             <span>${waiting.length} ohne Etage</span>
-          </button>
+          </button>`}
           <span class="muted">— in Home Assistant einem Raum zuweisen,
           dann wandern sie von selbst an ihren Platz.</span>
         </p>
@@ -974,32 +1055,42 @@ export const ANSICHT = {
   _shapeDialogHtml() {
     const shape = this._shape(this._shapeDialog);
     if (!shape) return "";
-    return `
-      <div class="scrim" data-close-shape="1"></div>
-      <div class="popup centred">
-        <div class="popup-head">
-          <h2>${escapeHtml(shape.name)}</h2>
-          <button class="icon-btn" data-close-shape="1">
-            <ha-icon icon="mdi:close"></ha-icon>
-          </button>
-        </div>
+    const name = haDefined("ha-input")
+      ? haInput({ attrs: `data-shape-name="${escapeHtml(shape.id)}"`, label: "Name",
+                  value: shape.name })
+      : `
         <label class="field">
           <span>Name</span>
           <input type="text" value="${escapeHtml(shape.name)}"
                  data-shape-name="${escapeHtml(shape.id)}">
-        </label>
+        </label>`;
+    const body = `
+        ${name}
         <label class="field">
           <span>Farbe</span>
           <input type="color" value="${escapeHtml(shape.color || "#8899aa")}"
                  data-shape-color="${escapeHtml(shape.id)}">
-        </label>
+        </label>`;
+    const reshapeText = this._shapeEdit === shape.id ? "Ecken fertig" : "Ecken bearbeiten";
+    const reshape = haLink({
+      attrs: `data-shape-reshape="${escapeHtml(shape.id)}"`, text: reshapeText,
+      old: `
         <button class="link" data-shape-reshape="${escapeHtml(shape.id)}">
-          ${this._shapeEdit === shape.id ? "Ecken fertig" : "Ecken bearbeiten"}
-        </button>
+          ${reshapeText}
+        </button>`,
+    });
+    const remove = haLink({
+      attrs: `data-shape-delete="${escapeHtml(shape.id)}"`, text: "Fläche löschen",
+      danger: true,
+      old: `
         <button class="link" data-shape-delete="${escapeHtml(shape.id)}">
           Fläche löschen
-        </button>
-      </div>`;
+        </button>`,
+    });
+    return dialogShell({
+      key: "shape", title: shape.name, closer: "data-close-shape",
+      cls: "popup centred", body, footer: `${reshape}${remove}`, footerCls: "shape-actions",
+    });
   },
 
   _ghostsHtml() {
@@ -1409,6 +1500,14 @@ export const ANSICHT = {
   _barsButtonHtml() {
     if (!this._isPhone()) return "";
     const open = this._bars;
+    if (haDefined("ha-icon-button")) {
+      return haIconBtn({
+        attrs: `data-bars="1" aria-expanded="${open ? "true" : "false"}"`,
+        icon: open ? "mdi:fullscreen" : "mdi:fullscreen-exit",
+        label: open ? "Vollbild: Leisten ausblenden" : "Leisten einblenden",
+        cls: `bars-btn${open ? " on" : ""}`,
+      });
+    }
     return `
       <button class="bars-btn ${open ? "on" : ""}" data-bars="1"
               aria-expanded="${open ? "true" : "false"}"
@@ -1443,13 +1542,19 @@ export const ANSICHT = {
     return `
       <section class="legend ${open ? "open" : ""}">
         ${grab}
-        <button class="legend-toggle" data-legend
+        ${haDefined("ha-button")
+          ? haBtn({
+              attrs: `data-legend aria-expanded="${open ? "true" : "false"}"`,
+              icon: open ? "mdi:chevron-down" : "mdi:chevron-right",
+              text: "Legende", appearance: "plain", cls: "legend-toggle-ha",
+            })
+          : `<button class="legend-toggle" data-legend
                 aria-expanded="${open ? "true" : "false"}">
           <ha-icon icon="${
             open ? "mdi:chevron-down" : "mdi:chevron-right"
           }"></ha-icon>
           <span>Legende</span>
-        </button>
+        </button>`}
         ${open ? `<div class="dock">${this._sidebarHtml()}</div>` : ""}
       </section>`;
   },
@@ -1461,27 +1566,44 @@ export const ANSICHT = {
       .map(
         (layer) => `
         <div class="layer">
-          <button class="row" data-layer="${escapeHtml(layer.id)}">
+          ${haDefined("ha-button")
+            ? haBtn({
+                attrs: `data-layer="${escapeHtml(layer.id)}"`,
+                icon: layer.visible === false ? "mdi:eye-off-outline" : "mdi:eye-outline",
+                text: escapeHtml(layer.name || layer.id), appearance: "plain",
+                cls: layer.visible === false ? "muted" : "",
+              })
+            : `<button class="row" data-layer="${escapeHtml(layer.id)}">
             <ha-icon icon="${
               layer.visible === false ? "mdi:eye-off-outline" : "mdi:eye-outline"
             }"></ha-icon>
             <span class="${layer.visible === false ? "muted" : ""}">
               ${escapeHtml(layer.name || layer.id)}
             </span>
-          </button>
+          </button>`}
           ${
             this._edit
               ? `<div class="layer-edit">
-                   <input type="range" min="0.1" max="1" step="0.05"
+                   ${haRange({
+                     attrs: `data-layer-opacity="${escapeHtml(layer.id)}"`,
+                     value: layer.opacity ?? 1, min: 0.1, max: 1, step: 0.05,
+                     title: "Deckkraft",
+                     old: `<input type="range" min="0.1" max="1" step="0.05"
                           value="${layer.opacity ?? 1}"
                           data-layer-opacity="${escapeHtml(layer.id)}"
-                          title="Deckkraft">
-                   <button class="icon-btn small" data-layer-up="${escapeHtml(
+                          title="Deckkraft">`,
+                   })}
+                   ${haDefined("ha-icon-button")
+                     ? haIconBtn({ attrs: `data-layer-up="${escapeHtml(layer.id)}"`,
+                                   icon: "mdi:arrow-up", label: "Nach vorn" })
+                       + haIconBtn({ attrs: `data-layer-down="${escapeHtml(layer.id)}"`,
+                                     icon: "mdi:arrow-down", label: "Nach hinten" })
+                     : `<button class="icon-btn small" data-layer-up="${escapeHtml(
                      layer.id,
                    )}" title="Nach vorn"><ha-icon icon="mdi:arrow-up"></ha-icon></button>
                    <button class="icon-btn small" data-layer-down="${escapeHtml(
                      layer.id,
-                   )}" title="Nach hinten"><ha-icon icon="mdi:arrow-down"></ha-icon></button>
+                   )}" title="Nach hinten"><ha-icon icon="mdi:arrow-down"></ha-icon></button>`}
                  </div>`
               : ""
           }
@@ -1499,11 +1621,16 @@ export const ANSICHT = {
         ${unplaced
           .map(
             (area) => `
-          <button class="chip ${
+          ${haChip({
+            attrs: `data-place-area="${escapeHtml(area.id)}"`,
+            text: escapeHtml(area.name),
+            on: Boolean(this._placing && this._placing.key === area.id),
+            old: `<button class="chip ${
             this._placing && this._placing.key === area.id ? "on" : ""
           }" data-place-area="${escapeHtml(area.id)}">
             ${escapeHtml(area.name)}
           </button>`,
+          })}`,
           )
           .join("")}
       </div>`
@@ -1534,7 +1661,14 @@ export const ANSICHT = {
             }
             <b>${escapeHtml(provider.name || provider.id)}</b>
             <span class="muted">${escapeHtml(provider.version || "")}</span>
-            <button class="icon-btn small"
+            ${haDefined("ha-icon-button")
+              ? haIconBtn({
+                  attrs: `data-toggle-provider="${escapeHtml(provider.id)}"`,
+                  icon: this._hiddenProviders.has(provider.id)
+                    ? "mdi:eye-off-outline" : "mdi:eye-outline",
+                  label: "Alle Ebenen dieses Providers umschalten",
+                })
+              : `<button class="icon-btn small"
                     data-toggle-provider="${escapeHtml(provider.id)}"
                     title="Alle Ebenen dieses Providers umschalten">
               <ha-icon icon="${
@@ -1542,13 +1676,17 @@ export const ANSICHT = {
                   ? "mdi:eye-off-outline"
                   : "mdi:eye-outline"
               }"></ha-icon>
-            </button>
+            </button>`}
           </div>
           <div class="chips">
             ${own
               .map(
                 (layer) => `
-              <button class="chip ${layer.visible === false ? "" : "on"}"
+              ${haChip({
+                attrs: `data-layer="${escapeHtml(layer.id)}"`,
+                text: escapeHtml(layer.name || layer.id), icon: layer.icon || "",
+                on: layer.visible !== false,
+                old: `<button class="chip ${layer.visible === false ? "" : "on"}"
                       data-layer="${escapeHtml(layer.id)}">
                 ${
                   layer.icon
@@ -1557,6 +1695,7 @@ export const ANSICHT = {
                 }
                 ${escapeHtml(layer.name || layer.id)}
               </button>`,
+              })}`,
               )
               .join("") || '<span class="note">Keine Ebene.</span>'}
           </div>
@@ -1593,15 +1732,7 @@ export const ANSICHT = {
       [AREA_KIND.OUTDOOR, "Garten / Außenbereich", "mdi:tree-outline"],
       [AREA_KIND.VIRTUAL, "Virtuell (Internet, VPN, Cloud)", "mdi:transmission-tower"],
     ];
-    return `
-      <div class="scrim" data-close-area="1"></div>
-      <div class="popup centred">
-        <div class="popup-head">
-          <h2>${escapeHtml(area.name)}</h2>
-          <button class="icon-btn" data-close-area="1">
-            <ha-icon icon="mdi:close"></ha-icon>
-          </button>
-        </div>
+    const body = `
         <p class="note">Ein Garten ist keine Etage. Außenbereiche legen sich
         als Ring um das Erdgeschoss — Vorgarten, Terrasse, Einfahrt und
         Garage passen alle darauf, ohne ein Stockwerk zu erfinden.
@@ -1610,25 +1741,39 @@ export const ANSICHT = {
         <div class="chips">
           ${kinds
             .map(
-              ([value, label, icon]) => `
+              ([value, label, icon]) => haChip({
+                attrs: `data-area-kind="${value}"`, text: label, icon,
+                on: kind === value,
+                old: `
             <button class="chip ${kind === value ? "on" : ""}"
                     data-area-kind="${value}">
               <ha-icon icon="${icon}"></ha-icon> ${label}
             </button>`,
+              }),
             )
             .join("")}
         </div>
         <h3>Sandwich</h3>
-        <label class="inline">
+        ${haToggle({
+          attrs: 'data-area-flag="in_sandwich"',
+          checked: area.in_sandwich !== false,
+          text: "In der Hausansicht zeigen",
+          old: `<label class="inline">
           <input type="checkbox" data-area-flag="in_sandwich"
                  ${area.in_sandwich === false ? "" : "checked"}>
           In der Hausansicht zeigen
-        </label>
-        <label class="inline">
+        </label>`,
+        })}
+        ${haToggle({
+          attrs: 'data-area-flag="single_only"',
+          checked: Boolean(area.single_only),
+          text: "Nur in der Einzelansicht",
+          old: `<label class="inline">
           <input type="checkbox" data-area-flag="single_only"
                  ${area.single_only ? "checked" : ""}>
           Nur in der Einzelansicht
-        </label>
+        </label>`,
+        })}
         <h3>Hintergrundbild</h3>
         <label class="field">
           <span>Bild für diesen Raum</span>
@@ -1636,11 +1781,17 @@ export const ANSICHT = {
         </label>
         ${
           area.background
-            ? `<button class="link" data-clear-area-background="1">Bild entfernen</button>`
+            ? haLink({
+                attrs: 'data-clear-area-background="1"', text: "Bild entfernen",
+                old: `<button class="link" data-clear-area-background="1">Bild entfernen</button>`,
+              })
             : ""
         }
-        ${doorsHtml(area)}
-      </div>`;
+        ${doorsHtml(area)}`;
+    return dialogShell({
+      key: "area", title: area.name, closer: "data-close-area",
+      cls: "popup centred", body,
+    });
   },
 
   _menuHtml() {
@@ -1684,10 +1835,16 @@ export const ANSICHT = {
     const layers = this._customLayers
       .map(
         (layer) => `
-        <button class="row" data-edit-layer="${escapeHtml(layer.id)}">
+        ${haDefined("ha-button")
+          ? haBtn({
+              attrs: `data-edit-layer="${escapeHtml(layer.id)}"`,
+              icon: layer.icon || "mdi:shape-outline",
+              text: escapeHtml(layer.name || layer.id), appearance: "plain",
+            })
+          : `<button class="row" data-edit-layer="${escapeHtml(layer.id)}">
           <ha-icon icon="${escapeHtml(layer.icon || "mdi:shape-outline")}"></ha-icon>
           <span>${escapeHtml(layer.name || layer.id)}</span>
-        </button>`,
+        </button>`}`,
       )
       .join("");
     return `
@@ -1695,7 +1852,8 @@ export const ANSICHT = {
       <p class="note">Beschreibe, was auf den Grundriss soll — die
       Integration dahinter spielt keine Rolle und wird nie gefragt.</p>
       <div class="rows">${layers}</div>
-      <button class="chip" data-new-layer="1">+ Ebene</button>`;
+      ${haChip({ attrs: 'data-new-layer="1"', text: "Ebene", icon: "mdi:plus",
+                 old: '<button class="chip" data-new-layer="1">+ Ebene</button>' })}`;
   },
 
   _layerDialogHtml() {
@@ -1707,7 +1865,13 @@ export const ANSICHT = {
         ? `<div class="chips">
              ${options
                .map(
-                 ({ value, count, label }) => `
+                 ({ value, count, label }) => haChip({
+                   attrs: `data-facet="${escapeHtml(field)}" data-value="${escapeHtml(value)}"`,
+                   text: `${escapeHtml(label || value)}${
+                     count ? ` <span class="muted">${count}</span>` : ""
+                   }`,
+                   on: (layer[field] || []).includes(value),
+                   old: `
                <button class="chip ${
                  (layer[field] || []).includes(value) ? "on" : ""
                }" data-facet="${escapeHtml(field)}"
@@ -1716,6 +1880,7 @@ export const ANSICHT = {
                    count ? ` <span class="muted">${count}</span>` : ""
                  }
                </button>`,
+                 }),
                )
                .join("")}
            </div>`
@@ -1726,25 +1891,20 @@ export const ANSICHT = {
       label: area.name,
     }));
 
-    return `
-      <div class="scrim" data-close-layer="1"></div>
-      <div class="popup">
-        <div class="popup-head">
-          <h2>${layer._isNew ? "Neue Ebene" : "Ebene bearbeiten"}</h2>
-          <button class="icon-btn" data-close-layer="1">
-            <ha-icon icon="mdi:close"></ha-icon>
-          </button>
-        </div>
+    const field = (name, label, value, placeholder, plainLabel) =>
+      haDefined("ha-input")
+        ? haInput({ attrs: `data-layer-field="${name}"`, label, value, placeholder })
+        : `
         <label class="field">
-          <span>Name</span>
-          <input type="text" value="${escapeHtml(layer.name || "")}"
-                 data-layer-field="name" placeholder="Lichter">
-        </label>
-        <label class="field">
-          <span>Icon</span>
-          <input type="text" value="${escapeHtml(layer.icon || "")}"
-                 data-layer-field="icon" placeholder="mdi:lightbulb">
-        </label>
+          <span>${plainLabel || label}</span>
+          <input type="text" value="${escapeHtml(value)}"
+                 data-layer-field="${name}"${
+                   placeholder ? ` placeholder="${placeholder}"` : ""}>
+        </label>`;
+
+    const body = `
+        ${field("name", "Name", layer.name || "", "Lichter")}
+        ${field("icon", "Icon", layer.icon || "", "mdi:lightbulb")}
 
         <h3>Was gehört dazu?</h3>
         <p class="note">Eine Regel, keine Liste: „alle Lichter" stimmt auch
@@ -1766,18 +1926,20 @@ export const ANSICHT = {
             : ""
         }
 
-        <label class="field">
-          <span>Zusätzlich <i>(Entity-IDs, mit Komma getrennt)</i></span>
-          <input type="text" value="${escapeHtml((layer.entities || []).join(", "))}"
-                 data-layer-field="entities" placeholder="sensor.aussen, light.flur">
-        </label>
-        <label class="field">
-          <span>Ausnehmen</span>
-          <input type="text" value="${escapeHtml((layer.exclude || []).join(", "))}"
-                 data-layer-field="exclude">
-        </label>
+        ${field("entities", "Zusätzlich (Entity-IDs, mit Komma getrennt)",
+                (layer.entities || []).join(", "), "sensor.aussen, light.flur",
+                "Zusätzlich <i>(Entity-IDs, mit Komma getrennt)</i>")}
+        ${field("exclude", "Ausnehmen", (layer.exclude || []).join(", "), "", "Ausnehmen")}
 
-        <label class="field">
+        ${haToggle({
+          attrs: 'data-layer-toggle="topology"',
+          checked: Boolean(layer.topology),
+          text: "Verbindungen zeichnen",
+          description: `Geräte mit ihrer Bridge, ihrem Controller oder ihrem Hub
+          verbinden. Home Assistant weiß bei vielen Geräten, worüber sie
+          erreicht werden. Diese Verbindung wird gezeichnet — ohne Aussage
+          darüber, wie gut sie ist, denn das misst niemand.`,
+          old: `<label class="field">
           <span>Verbindungen zeichnen</span>
           <label class="inline">
             <input type="checkbox" data-layer-toggle="topology"
@@ -1787,19 +1949,26 @@ export const ANSICHT = {
           <i class="muted">Home Assistant weiß bei vielen Geräten, worüber sie
           erreicht werden. Diese Verbindung wird gezeichnet — ohne Aussage
           darüber, wie gut sie ist, denn das misst niemand.</i>
-        </label>
+        </label>`,
+        })}`;
 
-        <div class="edit-buttons">
-          <button class="action" data-save-layer="1">Speichern</button>
-          ${
-            layer._isNew
-              ? ""
-              : `<button class="chip" data-delete-layer="1">
+    const save = haDefined("ha-button")
+      ? haBtn({ attrs: 'data-save-layer="1"', text: "Speichern", appearance: "filled" })
+      : `<button class="action" data-save-layer="1">Speichern</button>`;
+    const remove = layer._isNew
+      ? ""
+      : haDefined("ha-button")
+        ? haBtn({ attrs: 'data-delete-layer="1"', text: "Löschen",
+                  icon: "mdi:delete-outline", appearance: "plain", variant: "danger" })
+        : `<button class="chip" data-delete-layer="1">
                    <ha-icon icon="mdi:delete-outline"></ha-icon> Löschen
-                 </button>`
-          }
-        </div>
-      </div>`;
+                 </button>`;
+    return dialogShell({
+      key: "layer", title: layer._isNew ? "Neue Ebene" : "Ebene bearbeiten",
+      closer: "data-close-layer", body,
+      // Bei HA steht „Löschen“ vor „Speichern“; am Rand die Hauptaktion.
+      footer: haDefined("ha-dialog") ? `${remove}${save}` : `${save}${remove}`,
+    });
   },
 
   _hiddenTrayHtml() {
@@ -1814,17 +1983,25 @@ export const ANSICHT = {
         ${areas
           .map(
             (area) => `
-          <button class="chip" data-show-area="${escapeHtml(area.id)}">
+          ${haChip({
+            attrs: `data-show-area="${escapeHtml(area.id)}"`,
+            text: escapeHtml(area.name),
+            old: `<button class="chip" data-show-area="${escapeHtml(area.id)}">
             ${escapeHtml(area.name)}
           </button>`,
+          })}`,
           )
           .join("")}
         ${nodes
           .map(
             (node) => `
-          <button class="chip" data-show-node="${escapeHtml(node.id)}">
+          ${haChip({
+            attrs: `data-show-node="${escapeHtml(node.id)}"`,
+            text: escapeHtml(node.label),
+            old: `<button class="chip" data-show-node="${escapeHtml(node.id)}">
             ${escapeHtml(node.label)}
           </button>`,
+          })}`,
           )
           .join("")}
       </div>`;
@@ -1834,13 +2011,23 @@ export const ANSICHT = {
     const theme = this._theme;
     const chips = ["auto", "classic", "blueprint", "neon", "paper"]
       .map(
-        (preset) => `
+        (preset) => haChip({
+          attrs: `data-preset="${preset}"`, text: preset,
+          on: theme.preset === preset,
+          old: `
         <button class="chip ${theme.preset === preset ? "on" : ""}"
                 data-preset="${preset}">${preset}</button>`,
+        }),
       )
       .join("");
 
-    const choice = (attribute, label, options, current) => `
+    const choice = (attribute, label, options, current) =>
+      haDefined("ha-select")
+        ? haSelect({
+            attrs: `data-${attribute}`, label,
+            value: current || options[0][0], options,
+          })
+        : `
       <label class="field">
         <span>${label}</span>
         <select data-${attribute}>
@@ -1870,15 +2057,17 @@ export const ANSICHT = {
           .join("")}
       </div>`;
 
-    return `
-      <div class="scrim" data-close-theme="1"></div>
-      <div class="popup">
-        <div class="popup-head">
-          <h2>Aussehen</h2>
-          <button class="icon-btn" data-close-theme="1">
-            <ha-icon icon="mdi:close"></ha-icon>
-          </button>
-        </div>
+    const slider = (attrs, label, value, min, max, step) => haRange({
+      attrs, value, min, max, step, label,
+      old: `
+        <label class="field">
+          <span>${label}</span>
+          <input type="range" min="${min}" max="${max}" step="${step}"
+                 value="${value}" ${attrs}>
+        </label>`,
+    });
+
+    const body = `
         <p class="note">Ein Theme färbt das gemeinsame Vokabular — Zustände
         und Verbindungsqualität. Nie eine einzelne Integration: die nächste,
         die dazukommt, sieht dadurch von selbst richtig aus.</p>
@@ -1895,34 +2084,31 @@ export const ANSICHT = {
         ${choice("room-style", "Räume", [
           ["outline", "Umriss"], ["filled", "Gefüllt"], ["none", "Aus"],
         ], theme.room_style)}
-        <label class="field">
-          <span>Größe <b data-size-value>${(theme.node_size || 1).toFixed(
-            2,
-          )}×</b></span>
-          <input type="range" min="0.4" max="3" step="0.05"
-                 value="${theme.node_size || 1}" data-theme-size="1">
-        </label>
-        <label class="field">
-          <span>Haus <b data-house-value>${houseWeight(theme).toFixed(2)}×</b></span>
-          <input type="range" min="0.2" max="1.6" step="0.05"
-                 value="${houseWeight(theme)}" data-theme-house="1">
-        </label>
+        ${slider('data-theme-size="1"',
+          `Größe <b data-size-value>${(theme.node_size || 1).toFixed(2)}×</b>`,
+          theme.node_size || 1, 0.4, 3, 0.05)}
+        ${slider('data-theme-house="1"',
+          `Haus <b data-house-value>${houseWeight(theme).toFixed(2)}×</b>`,
+          houseWeight(theme), 0.2, 1.6, 0.05)}
         <p class="note">Außenwände, Innenwände und Etagenplatten zusammen.
         Ganz links bleibt fast nur der Umriss und die Geräte stehen für
         sich; ganz rechts ist es ein Bauplan, in dem man sieht, welcher
         Raum welcher ist.</p>
-        <label class="field">
-          <span>Einrasten <b data-snap-value>${snapReach(theme).toFixed(2)}×</b></span>
-          <input type="range" min="0.4" max="3" step="0.1"
-                 value="${snapReach(theme)}" data-theme-snap="1">
-        </label>
+        ${slider('data-theme-snap="1"',
+          `Einrasten <b data-snap-value>${snapReach(theme).toFixed(2)}×</b>`,
+          snapReach(theme), 0.4, 3, 0.1)}
         <p class="note">Wie leicht eine gezogene Wand an der Nachbarwand
         oder der Hausflucht einrastet. Ganz links zielt man genau, ganz
         rechts reicht ungefähr hin.</p>
         ${swatches("state-color", theme.state_colors, "Zustände")}
         ${swatches("quality-color", theme.quality_colors, "Qualität")}
-        <button class="link" data-reset-theme="1">Auf Standard zurücksetzen</button>
-      </div>`;
+        ${haLink({
+          attrs: 'data-reset-theme="1"', text: "Auf Standard zurücksetzen", danger: true,
+          old: '<button class="link" data-reset-theme="1">Auf Standard zurücksetzen</button>',
+        })}`;
+    return dialogShell({
+      key: "theme", title: "Aussehen", closer: "data-close-theme", body,
+    });
   },
 
   /** Alles, was eine Etage als Ganzes betrifft, an einer Stelle.
@@ -1936,41 +2122,50 @@ export const ANSICHT = {
   _floorDialogHtml() {
     const floor = this._floor;
     if (!floor) return "";
-    return `
-      <div class="scrim" data-close-floor="1"></div>
-      <div class="popup centred floor-dialog">
-        <div class="popup-head">
-          <h2>${escapeHtml(floor.name)}</h2>
-          <button class="icon-btn" data-close-floor="1">
-            <ha-icon icon="mdi:close"></ha-icon>
-          </button>
-        </div>
+    const body = `
         ${
           floor.unassigned
             ? ""
             : `<h3>Hausansicht</h3>
-               <label class="inline">
+               ${haToggle({
+                 attrs: 'data-floor-flag="in_sandwich"',
+                 checked: floor.in_sandwich !== false,
+                 text: "Im Haus-Stapel zeigen",
+                 old: `<label class="inline">
                  <input type="checkbox" data-floor-flag="in_sandwich"
                         ${floor.in_sandwich === false ? "" : "checked"}>
                  Im Haus-Stapel zeigen
-               </label>
+               </label>`,
+               })}
                <p class="note">Aus heißt: nur noch über den eigenen Reiter zu
                sehen — gut für einen Dachboden, der das Haus nur verdeckt.</p>`
         }
         <h3>Größe</h3>
-        <label class="field">
+        ${haRange({
+          attrs: 'data-aspect="1"', value: floor.aspect || 1.6, min: 0.5, max: 3, step: 0.05,
+          label: `Seitenverhältnis <b data-aspect-value>${(
+            floor.aspect || 1.6
+          ).toFixed(2)}</b> <i>breit : tief</i>`,
+          old: `<label class="field">
           <span>Seitenverhältnis <b data-aspect-value>${(
             floor.aspect || 1.6
           ).toFixed(2)}</b> <i>breit : tief</i></span>
           <input type="range" min="0.5" max="3" step="0.05"
                  value="${floor.aspect || 1.6}" data-aspect="1">
-        </label>
-        <label class="field inline-field">
+        </label>`,
+        })}
+        ${haDefined("ha-input")
+          ? haInput({
+              attrs: 'data-house-metres="1"', label: "Haus breit (m)", type: "number",
+              min: 1, max: 200, step: 0.1, value: houseMetres(floor),
+              hint: "nur für die Maße, gezeichnet wird nach Augenmaß",
+            })
+          : `<label class="field inline-field">
           <span>Haus breit</span>
           <input type="number" min="1" max="200" step="0.1"
                  value="${houseMetres(floor)}" data-house-metres="1"> m
           <i>— nur für die Maße, gezeichnet wird nach Augenmaß</i>
-        </label>
+        </label>`}
         <h3>Hintergrundbild</h3>
         <p class="note">Ein gescannter Grundriss zum Nachzeichnen. Der Hub
         speichert es, jeder Renderer bekommt es mit dem Modell.</p>
@@ -1979,39 +2174,67 @@ export const ANSICHT = {
         </label>
         ${
           floor.background
-            ? `<button class="link" data-clear-background="1">Bild entfernen</button>`
+            ? haLink({
+                attrs: 'data-clear-background="1"', text: "Bild entfernen",
+                old: `<button class="link" data-clear-background="1">Bild entfernen</button>`,
+              })
             : ""
-        }
-        <div class="edit-buttons">
-          <button class="chip" data-reset-floor="1">
+        }`;
+    const reset = haDefined("ha-button")
+      ? haBtn({ attrs: 'data-reset-floor="1"', icon: "mdi:backup-restore",
+                text: "Anordnung dieser Etage zurücksetzen", appearance: "plain",
+                variant: "danger" })
+      : `<button class="chip" data-reset-floor="1">
             <ha-icon icon="mdi:backup-restore"></ha-icon>
             Anordnung dieser Etage zurücksetzen
-          </button>
-        </div>
-      </div>`;
+          </button>`;
+    return dialogShell({
+      key: "floor", title: floor.name, closer: "data-close-floor",
+      cls: "popup centred floor-dialog", body, footer: reset,
+    });
   },
 
   _editPanelHtml(kind, id, item) {
     if (kind !== "node") return "";
+    const hide = haChip({
+      attrs: `data-hide-node="${escapeHtml(id)}"`, text: "Ausblenden",
+      icon: "mdi:eye-off-outline",
+      old: `<button class="chip" data-hide-node="${escapeHtml(id)}">
+            <ha-icon icon="mdi:eye-off-outline"></ha-icon> Ausblenden
+          </button>`,
+    });
+    const reset = haChip({
+      attrs: `data-reset-item="${escapeHtml(id)}"`, text: "Zurücksetzen",
+      icon: "mdi:backup-restore",
+      old: `<button class="chip" data-reset-item="${escapeHtml(id)}">
+            <ha-icon icon="mdi:backup-restore"></ha-icon> Zurücksetzen
+          </button>`,
+    });
     return `
       <div class="edit-panel">
-        <label class="field">
+        ${haRange({
+          attrs: `data-node-scale="${escapeHtml(id)}"`, value: item.scale || 1,
+          min: 0.4, max: 3, step: 0.1,
+          label: `Größe <b>${(item.scale || 1).toFixed(2)}×</b>`,
+          old: `<label class="field">
           <span>Größe <b>${(item.scale || 1).toFixed(2)}×</b></span>
           <input type="range" min="0.4" max="3" step="0.1"
                  value="${item.scale || 1}" data-node-scale="${escapeHtml(id)}">
-        </label>
-        <label class="field">
+        </label>`,
+        })}
+        ${haRange({
+          attrs: `data-node-rotation="${escapeHtml(id)}"`, value: item.rotation || 0,
+          min: -180, max: 180, step: 5,
+          label: `Drehung <b>${Math.round(item.rotation || 0)}°</b>`,
+          old: `<label class="field">
           <span>Drehung <b>${Math.round(item.rotation || 0)}°</b></span>
           <input type="range" min="-180" max="180" step="5"
                  value="${item.rotation || 0}" data-node-rotation="${escapeHtml(id)}">
-        </label>
+        </label>`,
+        })}
         <div class="edit-buttons">
-          <button class="chip" data-hide-node="${escapeHtml(id)}">
-            <ha-icon icon="mdi:eye-off-outline"></ha-icon> Ausblenden
-          </button>
-          <button class="chip" data-reset-item="${escapeHtml(id)}">
-            <ha-icon icon="mdi:backup-restore"></ha-icon> Zurücksetzen
-          </button>
+          ${hide}
+          ${reset}
         </div>
       </div>`;
   },
@@ -2019,6 +2242,7 @@ export const ANSICHT = {
   _diagnosticsHtml() {
     const providers = (this._diagnostics && this._diagnostics.providers) || {};
     const entries = Object.entries(providers);
+    const haAlerts = haDefined("ha-alert");
     const body = entries.length
       ? entries
           .map(([providerId, status]) => {
@@ -2035,15 +2259,30 @@ export const ANSICHT = {
               } Edges</span>
               ${
                 problems.length
-                  ? `<ul>${problems
+                  ? (haAlerts
+                    ? problems
+                        .map((problem) => haAlert("warning", escapeHtml(problem)))
+                        .join("")
+                    : `<ul>${problems
                       .map((problem) => `<li>${escapeHtml(problem)}</li>`)
-                      .join("")}</ul>`
-                  : `<p class="ok">Keine Beanstandungen.</p>`
+                      .join("")}</ul>`)
+                  : (haAlerts
+                    ? haAlert("success", "Keine Beanstandungen.")
+                    : `<p class="ok">Keine Beanstandungen.</p>`)
               }
             </div>`;
           })
           .join("")
       : `<p class="note">Kein Provider hat bisher geliefert.</p>`;
+    if (haDefined("ha-card")) {
+      return `
+      <ha-card class="diagnostics" header="Diagnose">
+        <div class="card-content">${body}</div>
+        <div class="card-actions">${haBtn({
+          attrs: 'data-toggle="diagnostics"', text: "Schließen", appearance: "plain",
+        })}</div>
+      </ha-card>`;
+    }
     return `
       <section class="diagnostics">
         <div class="diag-head">
@@ -2078,7 +2317,14 @@ export const ANSICHT = {
 
     const actions = (item.actions || [])
       .map(
-        (action) => `
+        (action) => haDefined("ha-button")
+          ? haBtn({
+              attrs: `data-action="${escapeHtml(action.id)}" data-confirm="${
+                action.confirm ? "1" : ""}"`,
+              icon: action.icon || "",
+              text: escapeHtml(action.label || action.id), appearance: "filled",
+            })
+          : `
         <button class="action" data-action="${escapeHtml(action.id)}"
                 data-confirm="${action.confirm ? "1" : ""}">
           ${action.icon ? `<ha-icon icon="${escapeHtml(action.icon)}"></ha-icon>` : ""}
@@ -2101,16 +2347,7 @@ export const ANSICHT = {
         }</span>`
       : "";
 
-    return `
-      <div class="scrim" data-close="1"></div>
-      <div class="popup centred" role="dialog" aria-modal="true">
-        <div class="popup-head">
-          ${badge}
-          <h2>${escapeHtml(item.label || id)}</h2>
-          <button class="icon-btn" data-close="1">
-            <ha-icon icon="mdi:close"></ha-icon>
-          </button>
-        </div>
+    const body = `
         <p class="sub">
           ${escapeHtml(kind === "node" ? item.state : item.quality)}
           ${item.value != null ? ` · ${escapeHtml(item.value)}` : ""}
@@ -2125,19 +2362,26 @@ export const ANSICHT = {
                  ${
                    this._history
                      ? sparklineHtml(this._history)
-                     : `<button class="link" data-history="1">Verlauf laden</button>`
+                     : haLink({
+                         attrs: 'data-history="1"', text: "Verlauf laden",
+                         old: `<button class="link" data-history="1">Verlauf laden</button>`,
+                       })
                  }
                </div>`
             : ""
         }
         ${
-          actions
-            ? canAct
-              ? `<div class="actions">${actions}</div>`
-              : `<p class="note">Aktionen erfordern Administratorrechte.</p>`
+          actions && !canAct
+            ? `<p class="note">Aktionen erfordern Administratorrechte.</p>`
             : ""
-        }
-      </div>`;
+        }`;
+    return dialogShell({
+      key: "popup", title: item.label || id, closer: "data-close",
+      cls: "popup centred", plainAttrs: 'role="dialog" aria-modal="true"',
+      head: badge, body,
+      footer: actions && canAct ? actions : "",
+      footerCls: "actions",
+    });
   },
 
   /** Every way out of the popup that leads somewhere useful.
@@ -2157,33 +2401,53 @@ export const ANSICHT = {
     const links = [];
 
     if (item.entity_id) {
-      links.push(`<button class="chip" data-more-info="${escapeHtml(
-        item.entity_id,
-      )}"><ha-icon icon="mdi:information-outline"></ha-icon> More-Info</button>`);
+      links.push(haChip({
+        attrs: `data-more-info="${escapeHtml(item.entity_id)}"`, text: "More-Info",
+        icon: "mdi:information-outline",
+        old: `<button class="chip" data-more-info="${escapeHtml(
+          item.entity_id,
+        )}"><ha-icon icon="mdi:information-outline"></ha-icon> More-Info</button>`,
+      }));
     }
     if (item.device_id) {
-      links.push(`<button class="chip" data-navigate="/config/devices/device/${escapeHtml(
-        item.device_id,
-      )}"><ha-icon icon="mdi:devices"></ha-icon> Gerät öffnen</button>`);
+      links.push(haChip({
+        attrs: `data-navigate="/config/devices/device/${escapeHtml(item.device_id)}"`,
+        text: "Gerät öffnen", icon: "mdi:devices",
+        old: `<button class="chip" data-navigate="/config/devices/device/${escapeHtml(
+          item.device_id,
+        )}"><ha-icon icon="mdi:devices"></ha-icon> Gerät öffnen</button>`,
+      }));
     }
     if (entities.length) {
-      links.push(`<button class="chip" data-toggle-entities="1">
+      links.push(haChip({
+        attrs: 'data-toggle-entities="1"', text: `Entitäten (${entities.length})`,
+        icon: "mdi:format-list-bulleted",
+        old: `<button class="chip" data-toggle-entities="1">
         <ha-icon icon="mdi:format-list-bulleted"></ha-icon>
-        Entitäten (${entities.length})</button>`);
+        Entitäten (${entities.length})</button>`,
+      }));
     }
     if (item.entity_id) {
-      links.push(`<button class="chip" data-settings="${escapeHtml(
-        item.entity_id,
-      )}"><ha-icon icon="mdi:cog-outline"></ha-icon> Einstellungen</button>`);
+      links.push(haChip({
+        attrs: `data-settings="${escapeHtml(item.entity_id)}"`, text: "Einstellungen",
+        icon: "mdi:cog-outline",
+        old: `<button class="chip" data-settings="${escapeHtml(
+          item.entity_id,
+        )}"><ha-icon icon="mdi:cog-outline"></ha-icon> Einstellungen</button>`,
+      }));
     }
     if (provider && provider.panel_url) {
-      links.push(`<button class="chip" data-navigate="${escapeHtml(
-        provider.panel_url,
-      )}">${
-        provider.icon
-          ? `<ha-icon icon="${escapeHtml(provider.icon)}"></ha-icon>`
-          : ""
-      } ${escapeHtml(provider.name || provider.id)}</button>`);
+      links.push(haChip({
+        attrs: `data-navigate="${escapeHtml(provider.panel_url)}"`,
+        text: escapeHtml(provider.name || provider.id), icon: provider.icon || "",
+        old: `<button class="chip" data-navigate="${escapeHtml(
+          provider.panel_url,
+        )}">${
+          provider.icon
+            ? `<ha-icon icon="${escapeHtml(provider.icon)}"></ha-icon>`
+            : ""
+        } ${escapeHtml(provider.name || provider.id)}</button>`,
+      }));
     }
 
     const list = this._showEntities && entities.length
@@ -2192,9 +2456,13 @@ export const ANSICHT = {
             .map(
               (entity) => `
             <li>
-              <button class="link" data-more-info="${escapeHtml(
-                entity.entity_id,
-              )}">${escapeHtml(entity.name || entity.entity_id)}</button>
+              ${haLink({
+                attrs: `data-more-info="${escapeHtml(entity.entity_id)}"`,
+                text: escapeHtml(entity.name || entity.entity_id),
+                old: `<button class="link" data-more-info="${escapeHtml(
+                  entity.entity_id,
+                )}">${escapeHtml(entity.name || entity.entity_id)}</button>`,
+              })}
               <span class="muted">${escapeHtml(entity.state || "")}</span>
             </li>`,
             )

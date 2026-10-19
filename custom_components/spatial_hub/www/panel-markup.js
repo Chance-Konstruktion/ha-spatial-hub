@@ -34,6 +34,7 @@ import {
   isStairs,
   sideName,
 } from "./panel-geometry.js";
+import { haChip, haDefined, haIconBtn, haRange } from "./panel-ha.js";
 
 const escapeHtml = (value) =>
   String(value ?? "").replace(
@@ -260,30 +261,45 @@ const doorsHtml = (area) => {
           ${[[OPENING.DOOR, "Tür", "mdi:door"],
              [OPENING.WINDOW, "Fenster", "mdi:window-closed-variant"]]
             .map(
-              ([value, text, icon]) => `<button class="chip ${
+              ([value, text, icon]) => haChip({
+                attrs: `data-door="${index}" data-opening-kind="${value}"`,
+                text, icon, on: kind === value,
+                old: `<button class="chip ${
                 kind === value ? "on" : ""
               }" data-door="${index}" data-opening-kind="${value}">
                 <ha-icon icon="${icon}"></ha-icon> ${text}
               </button>`,
+              }),
             )
             .join("")}
         </div>
-        <label class="door-slide">
+        ${haRange({
+          attrs: `data-door="${index}" data-door-field="at"`,
+          value: Number(door.at), min: 0, max: 1, step: 0.01, label: "Mitte",
+          old: `<label class="door-slide">
           <span class="muted">Mitte</span>
           <input type="range" min="0" max="1" step="0.01"
                  value="${Number(door.at)}"
                  data-door="${index}" data-door-field="at">
-        </label>
-        <label class="door-slide">
+        </label>`,
+        })}
+        ${haRange({
+          attrs: `data-door="${index}" data-door-field="width"`,
+          value: Number(door.width), min: 0.05, max: 0.9, step: 0.01, label: "Breite",
+          old: `<label class="door-slide">
           <span class="muted">Breite</span>
           <input type="range" min="0.05" max="0.9" step="0.01"
                  value="${Number(door.width)}"
                  data-door="${index}" data-door-field="width">
-        </label>
-        <button class="icon-btn" data-door-remove="${index}"
+        </label>`,
+        })}
+        ${haDefined("ha-icon-button")
+          ? haIconBtn({ attrs: `data-door-remove="${index}"`, icon: "mdi:close",
+                        label: `${label} entfernen` })
+          : `<button class="icon-btn" data-door-remove="${index}"
                 title="${label} entfernen">
           <ha-icon icon="mdi:close"></ha-icon>
-        </button>
+        </button>`}
       </div>`;
     })
     .join("");
@@ -293,10 +309,14 @@ const doorsHtml = (area) => {
   const adders = (kind, text, icon) =>
     Array.from({ length: sides }, (_unused, side) => side)
       .map(
-        (side) => `<button class="chip" data-door-add="${side}"
+        (side) => haChip({
+          attrs: `data-door-add="${side}" data-add-kind="${kind}"`,
+          text: escapeHtml(sideName(side)), icon,
+          old: `<button class="chip" data-door-add="${side}"
           data-add-kind="${kind}">
           <ha-icon icon="${icon}"></ha-icon> ${escapeHtml(sideName(side))}
         </button>`,
+        }),
       )
       .join("");
   return `

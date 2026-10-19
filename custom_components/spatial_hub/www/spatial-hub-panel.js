@@ -15,7 +15,7 @@ import { STYLES } from "./panel-styles.js";
 import { haTransport } from "./panel-transport.js";
 import { ANSICHT } from "./panel-view.js";
 import { EINGABEN } from "./panel-input.js";
-import { ALL_FLOORS, CLUSTER_THRESHOLD, DOMAIN, FIT, FLOOR_KEY, PHONE, ZOOM } from "./panel-const.js";
+import { ALL_FLOORS, CLUSTER_THRESHOLD, DOMAIN, FIT, FLOOR_KEY, PANEL_URL, PHONE, ZOOM } from "./panel-const.js";
 import {
   STACK,
   centreOf,
@@ -96,6 +96,16 @@ import {
   sparklineHtml,
   escapeHtml,
 } from "./panel-markup.js";
+import {
+  HA_STYLES,
+  HOUSE_SLUG,
+  ICON_FLOOR,
+  ICON_HOUSE,
+  fillSelects,
+  floorSlug,
+  haDefined,
+  loadHaBlocks,
+} from "./panel-ha.js";
 
 
 class SpatialHubPanel extends HTMLElement {
@@ -195,6 +205,14 @@ class SpatialHubPanel extends HTMLElement {
     // Die einzige Verbindung nach draussen. Austauschbar ueber den
     // Setter unten -- siehe den Vertrag in panel-transport.js.
     this._io = haTransport(this);
+    // Der Rahmen von Home Assistant (hass-tabs-subpage), sobald seine
+    // Bausteine geladen sind. Bis dahin -- und ohne sie -- bleibt es beim
+    // schlichten Aufbau von frueher.
+    this._frameEl = null;
+    this._dialogHost = null;
+    this._blocks = null;
+    this._route = null;
+    this._tabsKey = "";
   }
 
   /** Womit dieser Renderer nach draussen spricht.
@@ -273,6 +291,7 @@ class SpatialHubPanel extends HTMLElement {
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
+    if (this._frameEl) this._frameEl.hass = hass;
     if (first) this._connect();
   }
 
@@ -282,10 +301,56 @@ class SpatialHubPanel extends HTMLElement {
 
   set narrow(value) {
     this._narrow = value;
+    if (this._frameEl) this._frameEl.narrow = Boolean(value);
+  }
+
+  /** HA nennt hier den Titel der Seitenleiste. */
+  set panel(value) {
+    this._panel = value;
+  }
+
+  /** Die Adresse unterhalb des Panels: /spatial/<etage>. Ein Reiter ist eine
+   *  Etage (oder "haus" fuer den Stapel); die Adresse haelt fest, welcher. */
+  set route(value) {
+    this._route = value;
+    const wanted = this._floorFromRoute();
+    if (wanted && this._model && wanted !== this._floorId) this._goFloor(wanted, false);
+  }
+
+  /** Die Etage, die die Adresse nennt -- oder null, wenn sie keine nennt. */
+  _floorFromRoute() {
+    const path = (this._route && this._route.path) || "";
+    const match = path.match(/^\/([^/]+)/);
+    if (!match || !this._model) return null;
+    let part = match[1];
+    try {
+      part = decodeURIComponent(part);
+    } catch (err) {
+      // Dann eben unveraendert vergleichen.
+    }
+    const floor = this._floors.find((candidate) => String(candidate.id) === part);
+    if (floor) return floor.id;
+    if (part === HOUSE_SLUG && this._floors.length > 1) return ALL_FLOORS;
+    return null;
+  }
+
+  /** Die Bausteine von HA laden (einmal) und den Rahmen bauen. */
+  _haReady() {
+    if (!this._blocks) {
+      this._blocks = loadHaBlocks().then(() => {
+        if (!this._frameEl && haDefined("hass-tabs-subpage")
+            && typeof document !== "undefined") {
+          this._buildFrame();
+          if (this._model) this._render();
+        }
+      });
+    }
+    return this._blocks;
   }
 
   connectedCallback() {
     this._renderShell();
+    this._haReady();
     // Ein gedrehtes Telefon ist ein anderer Bildschirm: quer ist Platz
     // fuer die Leisten, hoch nicht. Ohne das bliebe das Vollbild an der
     // Breite haengen, die beim Oeffnen zufaellig galt.
@@ -317,6 +382,9 @@ class SpatialHubPanel extends HTMLElement {
   // ── Data ────────────────────────────────────────────────
 
   async _connect() {
+    // Erst die Bausteine von HA, dann das erste Bild: sonst zeichnet das
+    // Panel einmal schlicht und baut sich danach um.
+    await this._haReady();
     await this._refresh();
     try {
       // The hub pushes a reason, never the model: a renderer that does not
@@ -498,6 +566,9 @@ class SpatialHubPanel extends HTMLElement {
   /** Die zuletzt gewaehlte Etage, sonst die mit den meisten Geraeten. */
   _startFloor() {
     const floors = this._floors;
+    // Eine Adresse mit Etage (/spatial/obergeschoss) gewinnt gegen den Merker.
+    const fromRoute = this._floorFromRoute();
+    if (fromRoute) return fromRoute;
     let saved = null;
     try {
       saved = window.localStorage.getItem(FLOOR_KEY);
@@ -878,11 +949,20 @@ class SpatialHubPanel extends HTMLElement {
     root.className = "app";
     this.shadowRoot.append(style, root);
     this._root = root;
+    this._wire(root);
+    root.innerHTML = `<div class="loading">Grundriss wird geladen …</div>`;
+  }
+
+  /** Alle Eingaben an einem Wurzelelement anschliessen. */
+  _wire(root) {
     root.addEventListener("click", (event) => this._onClick(event));
     root.addEventListener("pointerdown", (event) => this._onPointerDown(event));
     root.addEventListener("contextmenu", (event) => this._onContextMenu(event));
-    root.addEventListener("input", (event) => this._onInput(event, false));
-    root.addEventListener("change", (event) => this._onInput(event, true));
+    root.addEventListener("input", (event) => this._onField(event, false));
+    root.addEventListener("change", (event) => this._onField(event, true));
+    root.addEventListener("selected", (event) => this._onSelected(event));
+    root.addEventListener("focusout", (event) => this._onFieldLeave(event));
+    root.addEventListener("keydown", (event) => this._onFieldKey(event));
     root.addEventListener("wheel", (event) => {
       if (this._inViewport(event)) this._onWheel(event);
     }, { passive: false });
@@ -891,7 +971,344 @@ class SpatialHubPanel extends HTMLElement {
     root.addEventListener("touchmove", (event) => this._onTouchMove(event),
                           { passive: false });
     root.addEventListener("touchend", () => this._onTouchEnd());
+  }
+
+  /** Der Rahmen von Home Assistant: Kopfzeile mit Menuetaste, Reiter (oben,
+   *  auf dem schmalen Schirm unten) und der Platz fuer den Grundriss.
+   *
+   *  Die Reiter sind die Etagen. Die Leiste gehoert HA: wir geben nur
+   *  `tabs`, `route` und `narrow` weiter. Das alte `.app` bleibt das Innere
+   *  -- samt allen Zuhoerern -- und die Dialoge bekommen einen eigenen Platz
+   *  daneben, damit ein neues Bild sie nicht jedes Mal neu oeffnet. */
+  _buildFrame() {
+    const style = document.createElement("style");
+    style.textContent = STYLES;
+    const haStyle = document.createElement("style");
+    haStyle.textContent = HA_STYLES;
+    const frame = document.createElement("hass-tabs-subpage");
+    frame.mainPage = true;
+    frame.hass = this._hass;
+    frame.narrow = Boolean(this._narrow);
+    // hass-tabs-subpage ruft tabs.filter schon beim ersten Zeichnen.
+    frame.tabs = [];
+    frame.route = this._route || { prefix: `/${PANEL_URL}`, path: "" };
+    const title = document.createElement("div");
+    title.slot = "header";
+    title.textContent = (this._panel && this._panel.title) || "Spatial Hub";
+    const root = document.createElement("div");
+    root.className = "app";
     root.innerHTML = `<div class="loading">Grundriss wird geladen …</div>`;
+    frame.append(title, root);
+    const dialogs = document.createElement("div");
+    dialogs.id = "dialogs";
+    this.shadowRoot.replaceChildren(style, haStyle, frame, dialogs);
+    this._frameEl = frame;
+    this._root = root;
+    this._dialogHost = dialogs;
+    this._tabsKey = "";
+    this._wire(root);
+    this._wire(dialogs);
+    // HA meldet das Schliessen (Esc, Klick daneben, Kreuz) als `closed`.
+    const closed = (event) => this._onDialogClosed(event);
+    dialogs.addEventListener("closed", closed);
+    dialogs.addEventListener("wa-after-hide", closed);
+  }
+
+  /** Reiter und Adresse an HA weitergeben -- nur, wenn sich etwas aendert. */
+  _syncTabs() {
+    const frame = this._frameEl;
+    if (!frame || !this._model) return;
+    const floors = this._floors;
+    const tabs = [];
+    const prefix = (this._route && this._route.prefix) || `/${PANEL_URL}`;
+    if (floors.length > 1) {
+      tabs.push({ path: `${prefix}/${HOUSE_SLUG}`, name: "Haus", iconPath: ICON_HOUSE });
+    }
+    for (const floor of floors) {
+      tabs.push({
+        path: `${prefix}/${floorSlug(floor.id, ALL_FLOORS)}`,
+        name: String(floor.name || floor.id),
+        iconPath: ICON_FLOOR,
+      });
+    }
+    const current = this._stacked && floors.length > 1
+      ? HOUSE_SLUG
+      : floorSlug((this._floor && this._floor.id) || this._floorId, ALL_FLOORS);
+    const key = JSON.stringify([prefix, tabs, current]);
+    if (key === this._tabsKey) return;
+    this._tabsKey = key;
+    frame.route = { prefix, path: `/${current}` };
+    frame.tabs = tabs;
+  }
+
+  /** Eine Etage waehlen -- aus einem Reiter, einem Klick im Haus oder der
+   *  Adresse. `push`: die Adresse nachziehen (nicht, wenn sie die Quelle ist). */
+  _goFloor(next, push = true) {
+    // Eine andere Etage ist ein anderes Bild und wird neu eingepasst.
+    // Der Stapel ist dreimal so hoch wie ein Geschoss; mit seiner
+    // Kamera weitergereicht lag das Erdgeschoss bei 49 % als Briefmarke
+    // in der Mitte eines leeren Fensters. Wer auf dieselbe Etage tippt,
+    // behaelt seinen Ausschnitt.
+    if (next !== this._floorId) this._fitted = false;
+    this._floorId = next;
+    try {
+      window.localStorage.setItem(FLOOR_KEY, next);
+    } catch (err) {
+      // Ohne Speicher beginnt der naechste Besuch eben auf der vollsten Etage.
+    }
+    this._selected = null;
+    if (push && this._frameEl) this._pushFloorUrl();
+    this._render();
+  }
+
+  _pushFloorUrl() {
+    try {
+      const prefix = (this._route && this._route.prefix) || `/${PANEL_URL}`;
+      const target = `${prefix}/${floorSlug(this._floorId, ALL_FLOORS)}`;
+      if (window.location.pathname !== target) {
+        window.history.pushState(null, "", target);
+        window.dispatchEvent(new CustomEvent("location-changed", {
+          detail: { replace: false },
+        }));
+      }
+    } catch (err) {
+      // Ohne Adresszeile bleibt die Etage trotzdem gewechselt.
+    }
+  }
+
+  // ── Eingaben aus den Elementen von Home Assistant ───────
+
+  /** `input`/`change` aus Feldern. Die Auswahl von HA meldet sich mit
+   *  `selected` (siehe unten) und wird hier uebergangen; bei `ha-input`
+   *  kommt "fertig" nicht als `change` an (das ist nicht `composed`),
+   *  sondern wird beim Verlassen des Feldes nachgereicht. */
+  _onField(event, committed) {
+    const target = event.target;
+    const tag = target && target.tagName;
+    if (tag === "HA-SELECT") return;
+    if (tag === "HA-INPUT" || tag === "HA-TEXTFIELD") {
+      if (committed) return;
+      this._onInput(event, false);
+      return;
+    }
+    this._onInput(event, committed);
+  }
+
+  _onSelected(event) {
+    const target = event.target;
+    if (!target || target.tagName !== "HA-SELECT") return;
+    const value = event.detail && event.detail.value;
+    if (value === undefined || value === null) return;
+    // Was wir selbst eingetragen haben, ist keine Wahl des Nutzers.
+    if (String(value) === String(target._eigen)) return;
+    target._eigen = String(value);
+    this._onInput({
+      target: {
+        getAttribute: (name) => target.getAttribute(name),
+        value: String(value),
+        checked: false,
+      },
+    }, true);
+  }
+
+  /** Ein ha-input ist "fertig", wenn der Fokus geht oder Enter kommt. */
+  _commitField(target) {
+    if (!target || (target.tagName !== "HA-INPUT" && target.tagName !== "HA-TEXTFIELD")) {
+      return;
+    }
+    if (target.getAttribute("data-search") !== null) return;
+    if (target._fertig === target.value) return;
+    target._fertig = target.value;
+    this._onInput({ target }, true);
+  }
+
+  _onFieldLeave(event) {
+    this._commitField(event.target);
+  }
+
+  _onFieldKey(event) {
+    if (event.key === "Enter") this._commitField(event.target);
+  }
+
+  // ── Dialoge: ha-dialog, einmal geoeffnet und danach nur nachgefuehrt ──
+
+  /** Die Dialoge dieses Bildes abgleichen.
+   *
+   *  `html` ist die Summe aller `ha-dialog` mit `data-dlg`. Ein Dialog, der
+   *  schon offen ist, behaelt sein Element und bekommt nur neuen Inhalt:
+   *  der Hub meldet sich bei jeder Kleinigkeit, und ein Dialog, der dabei
+   *  jedes Mal zu- und wieder aufgeht, waere unbenutzbar. */
+  _syncDialogs(html) {
+    const host = this._dialogHost;
+    if (!host || typeof document === "undefined") return;
+    const holder = document.createElement("template");
+    holder.innerHTML = html;
+    const wanted = new Map();
+    for (const el of holder.content.children) {
+      if (el.getAttribute && el.getAttribute("data-dlg")) {
+        wanted.set(el.getAttribute("data-dlg"), el);
+      }
+    }
+    const have = new Map();
+    for (const el of host.children) {
+      const key = el.getAttribute("data-dlg");
+      if (key && !el._closing) have.set(key, el);
+    }
+    for (const [key, el] of have) {
+      if (!wanted.has(key)) this._closeDialog(el);
+    }
+    for (const [key, fresh] of wanted) {
+      const current = have.get(key);
+      const source = fresh.outerHTML;
+      if (current) {
+        if (current._source === source) continue;
+        current._source = source;
+        current.headerTitle = fresh.getAttribute("data-title") || "";
+        current.setAttribute("data-title", fresh.getAttribute("data-title") || "");
+        current.replaceChildren(...fresh.childNodes);
+        fillSelects(current);
+        continue;
+      }
+      fresh._source = source;
+      host.append(fresh);
+      fresh.headerTitle = fresh.getAttribute("data-title") || "";
+      fillSelects(fresh);
+      fresh.open = true;
+    }
+  }
+
+  _closeDialog(el) {
+    el._closing = true;
+    el.open = false;
+    // Die Abblendung abwarten, dann ist das Element weg.
+    setTimeout(() => el.remove(), 400);
+  }
+
+  /** Der Nutzer hat einen Dialog geschlossen (Esc, daneben geklickt, Kreuz).
+   *  Das Panel fuehrt dann dieselbe Aktion aus wie sein altes Kreuz. */
+  _onDialogClosed(event) {
+    const el = event.target;
+    if (!el || !el.getAttribute || el.tagName !== "HA-DIALOG") return;
+    if (el._closing || el.getAttribute("data-modal")) return;
+    const closer = el.getAttribute("data-closer");
+    if (!closer) return;
+    el._closing = true;
+    setTimeout(() => el.remove(), 400);
+    const fake = { getAttribute: (name) => (name === closer ? "1" : null) };
+    this._onClick({ composedPath: () => [fake] });
+  }
+
+  /** Eine Rueckfrage. Mit `ha-dialog` ein Versprechen, sonst `window.confirm`
+   *  (ein Wahrheitswert) -- `await` und `_whenConfirmed` vertragen beides. */
+  _confirm({ title, text, confirm = "OK", destructive = false }) {
+    const host = this._dialogHost;
+    if (!host || !haDefined("ha-dialog") || typeof document === "undefined") {
+      return window.confirm(text);
+    }
+    return new Promise((resolve) => {
+      const dialog = document.createElement("ha-dialog");
+      dialog.setAttribute("data-modal", "1");
+      dialog.headerTitle = title || "";
+      dialog.preventScrimClose = true;
+      dialog.innerHTML = `<div>${escapeHtml(text)}</div>`
+        + `<ha-button slot="footer" appearance="plain" data-no="1">Abbrechen</ha-button>`
+        + `<ha-button slot="footer" appearance="filled" variant="${destructive ? "danger" : "brand"}" data-yes="1">${escapeHtml(confirm)}</ha-button>`;
+      let done = false;
+      const finish = (answer) => {
+        if (done) return;
+        done = true;
+        dialog.open = false;
+        setTimeout(() => dialog.remove(), 400);
+        resolve(answer);
+      };
+      dialog.addEventListener("click", (event) => {
+        const path = event.composedPath();
+        const hit = (name) => path.find((el) => el.hasAttribute && el.hasAttribute(name));
+        if (hit("data-yes")) finish(true);
+        else if (hit("data-no")) finish(false);
+        event.stopPropagation();
+      });
+      dialog.addEventListener("closed", (event) => {
+        if (event.target === dialog) finish(false);
+      });
+      host.append(dialog);
+      dialog.open = true;
+    });
+  }
+
+  /** Eine Frage mit Texteingabe. Ergebnis: der Text oder null. */
+  _prompt({ title, label, value = "", confirm = "OK" }) {
+    const host = this._dialogHost;
+    if (!host || !haDefined("ha-dialog") || typeof document === "undefined") {
+      return window.prompt(label, value);
+    }
+    return new Promise((resolve) => {
+      const dialog = document.createElement("ha-dialog");
+      dialog.setAttribute("data-modal", "1");
+      dialog.headerTitle = title || "";
+      dialog.preventScrimClose = true;
+      dialog.innerHTML = haDefined("ha-input")
+        ? `<ha-input label="${escapeHtml(label)}" value="${escapeHtml(value)}" data-ask="1"></ha-input>`
+        : `<label>${escapeHtml(label)} <input value="${escapeHtml(value)}" data-ask="1"></label>`;
+      dialog.insertAdjacentHTML("beforeend",
+        `<ha-button slot="footer" appearance="plain" data-no="1">Abbrechen</ha-button>`
+        + `<ha-button slot="footer" appearance="filled" variant="brand" data-yes="1">${escapeHtml(confirm)}</ha-button>`);
+      let done = false;
+      const finish = (answer) => {
+        if (done) return;
+        done = true;
+        dialog.open = false;
+        setTimeout(() => dialog.remove(), 400);
+        resolve(answer);
+      };
+      const field = () => dialog.querySelector("[data-ask]");
+      dialog.addEventListener("click", (event) => {
+        const path = event.composedPath();
+        const hit = (name) => path.find((el) => el.hasAttribute && el.hasAttribute(name));
+        if (hit("data-yes")) finish(field().value);
+        else if (hit("data-no")) finish(null);
+        event.stopPropagation();
+      });
+      dialog.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") finish(field().value);
+      });
+      dialog.addEventListener("closed", (event) => {
+        if (event.target === dialog) finish(null);
+      });
+      host.append(dialog);
+      dialog.open = true;
+    });
+  }
+
+  /** `fn` ausfuehren, wenn bestaetigt ist -- sofort ohne ha-dialog, sonst
+   *  nach der Antwort. Fuer Stellen, die nicht `async` sind. */
+  _whenConfirmed(options, fn) {
+    const answer = this._confirm(options);
+    if (answer && typeof answer.then === "function") {
+      answer.then((yes) => { if (yes) fn(); });
+    } else if (answer) {
+      fn();
+    }
+  }
+
+  /** Dasselbe fuer eine Texteingabe: `fn(text)`, nie bei Abbruch. */
+  _whenAsked(options, fn) {
+    const answer = this._prompt(options);
+    if (answer && typeof answer.then === "function") {
+      answer.then((text) => { if (text !== null && text !== undefined) fn(text); });
+    } else if (answer !== null && answer !== undefined) {
+      fn(answer);
+    }
+  }
+
+  /** Eine Meldung zeigt Home Assistant selbst (Toast am unteren Rand). */
+  _toast(message) {
+    if (!message || !this._frameEl) return;
+    this.dispatchEvent(new CustomEvent("hass-notification", {
+      detail: { message, duration: 8000 },
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   _render() {
@@ -916,7 +1333,9 @@ class SpatialHubPanel extends HTMLElement {
     this._renderShell();
     const model = this._model;
     if (this._error && !model) {
-      this._root.innerHTML = `<div class="empty">
+      this._root.innerHTML = haDefined("ha-alert")
+        ? `<ha-alert alert-type="error" title="Der Hub antwortet nicht">${escapeHtml(this._error)}</ha-alert>`
+        : `<div class="empty">
         <h2>Der Hub antwortet nicht</h2>
         <p>${escapeHtml(this._error)}</p>
       </div>`;
@@ -927,6 +1346,15 @@ class SpatialHubPanel extends HTMLElement {
     this._root.setAttribute("style", this._themeVars);
     this._root.className = this._shellClasses();
     const bars = this._bars || !this._isPhone();
+    const dialogs = [
+      this._floorDialog ? this._floorDialogHtml() : "",
+      this._themeDialog ? this._themeDialogHtml() : "",
+      this._layerDialog ? this._layerDialogHtml() : "",
+      this._areaDialog ? this._areaDialogHtml() : "",
+      this._shapeDialog ? this._shapeDialogHtml() : "",
+      this._popupHtml(),
+    ].join("");
+    const inline = !this._dialogHost || !haDefined("ha-dialog");
     this._root.innerHTML = `
       ${bars ? this._headerHtml() : ""}
       ${bars ? this._editBarHtml() : ""}
@@ -935,14 +1363,14 @@ class SpatialHubPanel extends HTMLElement {
         <main>${this._stageHtml()}</main>
       </div>
       ${this._showDiagnostics ? this._diagnosticsHtml() : ""}
-      ${this._floorDialog ? this._floorDialogHtml() : ""}
-      ${this._themeDialog ? this._themeDialogHtml() : ""}
-      ${this._layerDialog ? this._layerDialogHtml() : ""}
-      ${this._areaDialog ? this._areaDialogHtml() : ""}
-      ${this._shapeDialog ? this._shapeDialogHtml() : ""}
-      ${this._popupHtml()}
+      ${inline ? dialogs : ""}
       ${this._menuHtml()}
     `;
+    // Mit ha-dialog liegen die Dialoge nicht im Bild, sondern daneben, und
+    // werden nur abgeglichen -- siehe `_syncDialogs`.
+    if (!inline) this._syncDialogs(dialogs);
+    this._syncTabs();
+    this._announceError();
     // The very first plan a user ever sees must be the whole plan. The
     // stacked view is square and taller than any 16:9 window, so without
     // this it opened with the lower storeys already below the fold -- on
@@ -956,6 +1384,19 @@ class SpatialHubPanel extends HTMLElement {
       this._applyCamera();
     }
     this._revealCurrentTab();
+  }
+
+  /** Ein Fehler, den der Hub oder ein Schreibvorgang gemeldet hat, steht
+   *  als Meldung von Home Assistant am unteren Rand -- einmal je Text. Vorher
+   *  blieb er unsichtbar, sobald ein Modell da war. */
+  _announceError() {
+    if (!this._error || !this._frameEl) {
+      this._announced = null;
+      return;
+    }
+    if (this._announced === this._error) return;
+    this._announced = this._error;
+    this._toast(this._error);
   }
 
   /** Keep the storey you are on where you can see it.
@@ -1698,17 +2139,24 @@ class SpatialHubPanel extends HTMLElement {
   _addShape() {
     const floor = this._floor;
     if (!floor) return;
-    const name = window.prompt("Name der Fläche?", "Fläche") || "Fläche";
-    const shape = {
-      id: this._newShapeId(),
-      floor_id: floor.id,
-      name,
-      color: "",
-      points: this._defaultShapePoints(),
-    };
-    this._writeShapes([...(this._model.shapes || []), shape]);
-    this._shapeEdit = shape.id;
-    this._corners = true;
+    this._whenAsked({
+      title: "Neue Fläche",
+      label: "Name der Fläche?",
+      value: "Fläche",
+      confirm: "Anlegen",
+    }, (answer) => {
+      const name = answer || "Fläche";
+      const shape = {
+        id: this._newShapeId(),
+        floor_id: floor.id,
+        name,
+        color: "",
+        points: this._defaultShapePoints(),
+      };
+      this._writeShapes([...(this._model.shapes || []), shape]);
+      this._shapeEdit = shape.id;
+      this._corners = true;
+    });
   }
 
   _writeShapes(shapes) {
@@ -2555,7 +3003,13 @@ class SpatialHubPanel extends HTMLElement {
   async _resetFloor() {
     const floor = this._floor;
     if (!floor) return;
-    if (!window.confirm(`Anordnung von „${floor.name}“ zurücksetzen?`)) return;
+    const yes = await this._confirm({
+      title: "Anordnung zurücksetzen",
+      text: `Anordnung von „${floor.name}“ zurücksetzen?`,
+      confirm: "Zurücksetzen",
+      destructive: true,
+    });
+    if (!yes) return;
 
     const areas = this._visibleAreas.map((area) => ["areas", area.id]);
     const nodes = this._visibleNodes.map((node) => ["nodes", node.id]);
@@ -2609,7 +3063,11 @@ class SpatialHubPanel extends HTMLElement {
 
   async _runAction(actionId, confirm) {
     if (!this._selected) return;
-    if (confirm && !window.confirm(`„${actionId}“ wirklich ausführen?`)) return;
+    if (confirm && !(await this._confirm({
+      title: "Aktion ausführen",
+      text: `„${actionId}“ wirklich ausführen?`,
+      confirm: "Ausführen",
+    }))) return;
     try {
       await this._io.call({
         type: `${DOMAIN}/action`,
