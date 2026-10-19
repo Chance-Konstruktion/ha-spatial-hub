@@ -62,3 +62,7 @@ export const formatValue = (value) => {
 
 /** Wo im Browser die zuletzt gewaehlte Etage liegt. */
 export const FLOOR_KEY = "spatial_hub.floor";
+
+/** Die Adresse des Panels in Home Assistant (`PANEL_URL_PATH` in const.py).
+ *  Darunter liegen die Etagen als Reiter: /spatial/<etage>. */
+export const PANEL_URL = "spatial";
