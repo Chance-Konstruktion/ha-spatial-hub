@@ -231,47 +231,50 @@ async def test_a_timing_out_provider_costs_only_its_own_refresh(
     assert (result.nodes, result.edges) == ([], [])
 
 
-# ── Dokumentierte Fehler, nicht repariert ─────────────────────────────
-# Diese beiden Tests zeigen Verhalten, das falsch ist. Sie sind gruen,
-# weil sie das FALSCHE Ergebnis festhalten -- wer den Fehler behebt, muss
-# sie umdrehen. Einzelheiten im Bericht (BERICHT.md).
+# ── Dieselben Stellen, repariert: eine kaputte Anmeldung kostet nur
+# sich selbst ──────────────────────────────────────────────────────────
+# Ersetzt die frueheren Zeig-Tests test_bug_eine_kaputte_api_version_
+# reisst_die_ganze_ladung_mit und test_bug_ein_icon_set_das_keines_ist_
+# reisst_auch_mit, die das kaputte Verhalten festhielten (BERICHT.md,
+# Fehler 1).
 
 
-def test_bug_eine_kaputte_api_version_reisst_die_ganze_ladung_mit(
-    hass,
+def test_a_broken_api_version_costs_only_its_own_registration(
+    hass, caplog
 ):
-    """FALSCHES Verhalten, absichtlicherweise gruen -- siehe BERICHT.md.
-
-    Eine Anmeldung ist Daten von Dritten. async_load_providers verspricht
-    im Docstring, unbrauchbare Anmeldungen mit einer Warnung zu ueberspringen
-    ("Ignoring provider %s") -- und genau das tut es fuer ProviderError.
-    Aber from_registration ruft int() ueber api_version ungeprueft: ein
-    Anbieter, der dort "drei" statt 3 schreibt, loest ValueError aus, und
-    der Fehler laeuft an dem except ProviderError vorbei. Der komplette
-    Anbieter-Lauf bricht zusammen -- auch die voellig gesunden Anmeldungen
-    sind weg, jeder Modellaufbau scheitert.
-
-    Erwartet gemaess dem eigenen Fehlerisolationversprechen: der kaputte
-    Anbieter wird uebersprungen und gewarnt, die gesunden bleiben.
-    Tatsaechlich: ValueError.
+    """int() over a third party's api_version must not escape the
+    except ProviderError: a registration that writes "drei" where a
+    number belongs is skipped and warned about, like any unusable
+    registration -- and the healthy ones stay loaded.
     """
     hass.data["spatial_hub_providers"] = {
         "gut": _registration(),
         "kaputt": _registration(provider_id="kaputt", api_version="drei"),
     }
-    with pytest.raises(ValueError, match="invalid literal"):
-        async_load_providers(hass)
+    providers = async_load_providers(hass)
+    assert set(providers) == {"demo"}, (
+        "one broken registration must not take the healthy ones down"
+    )
+    assert "Ignoring provider kaputt" in caplog.text, (
+        "the developer must find out why their provider is missing"
+    )
 
 
-def test_bug_ein_icon_set_das_keines_ist_reisst_auch_mit(hass):
-    """FALSCHES Verhalten, absichtlicherweise gruen -- siehe BERICHT.md.
-
-    Dasselbe Loch, eine Zeile weiter: dict(42) loest TypeError aus und
-    passiert async_load_providers' except ProviderError ebenfalls.
-    Erwartet: Ueberspringen mit Warnung. Tatsaechlich: TypeError.
+def test_an_icon_set_that_is_not_one_costs_only_its_own_registration(
+    hass, caplog
+):
+    """Same hole, same rule: dict() over a non-iterable icon_set raises
+    TypeError, which used to escape except ProviderError and kill the
+    whole load (BERICHT.md, Fehler 1). Now: skip, warn, keep the rest.
     """
     hass.data["spatial_hub_providers"] = {
-        "kaputt": _registration(icon_set=42),
+        "gut": _registration(),
+        "kaputt": _registration(provider_id="kaputt", icon_set=42),
     }
-    with pytest.raises(TypeError):
-        async_load_providers(hass)
+    providers = async_load_providers(hass)
+    assert set(providers) == {"demo"}, (
+        "one broken registration must not take the healthy ones down"
+    )
+    assert "Ignoring provider kaputt" in caplog.text, (
+        "the developer must find out why their provider is missing"
+    )

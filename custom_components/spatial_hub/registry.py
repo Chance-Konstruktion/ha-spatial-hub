@@ -139,7 +139,15 @@ class Provider:
         if not provider_id:
             raise ProviderError("registration without provider_id")
 
-        api_version = int(raw.get("api_version") or 1)
+        # An unusable api_version voids the whole registration: the hub
+        # cannot guess which API this provider speaks, so there is nothing
+        # safe to fall back to.
+        try:
+            api_version = int(raw.get("api_version") or 1)
+        except (TypeError, ValueError) as err:
+            raise ProviderError(
+                f"{provider_id} has an unusable 'api_version' ({err})"
+            ) from err
         if api_version > API_VERSION:
             raise ProviderError(
                 f"{provider_id} speaks provider API v{api_version}, "
@@ -182,6 +190,15 @@ class Provider:
                 )
             ]
 
+        # Same contract as api_version: something that is not a mapping
+        # is a broken registration, not an empty icon set.
+        try:
+            icon_set = dict(raw.get("icon_set") or {})
+        except (TypeError, ValueError) as err:
+            raise ProviderError(
+                f"{provider_id} has an unusable 'icon_set' ({err})"
+            ) from err
+
         return cls(
             id=provider_id,
             name=str(raw.get("name") or provider_id),
@@ -189,7 +206,7 @@ class Provider:
             version=str(raw.get("version") or ""),
             capabilities=Capabilities.from_dict(raw.get("capabilities")),
             layers=layers,
-            icon_set=dict(raw.get("icon_set") or {}),
+            icon_set=icon_set,
             panel_url=_safe_url(raw.get("panel_url")),
             data_fn=data_fn,
             history_fn=raw.get("history") if callable(raw.get("history")) else None,
