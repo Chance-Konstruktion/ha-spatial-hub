@@ -536,3 +536,244 @@ def test_an_ordinary_move_keeps_the_short_answer(hass):
     )
 
     assert "siblings" not in connection.result
+
+
+# ── Wenn der Hub weg ist, sagt jeder Befehl das ───────────────────────
+
+
+@pytest.mark.parametrize(
+    ("command", "msg", "is_async"),
+    [
+        ("websocket_model", {"id": 1}, True),
+        ("websocket_layout_set",
+         {"id": 1, "section": "nodes", "key": "a", "values": {}}, False),
+        ("websocket_layout_reset", {"id": 1, "section": "nodes", "key": "a"}, False),
+        ("websocket_history",
+         {"id": 1, "kind": "node", "item_id": "demo:a", "hours": 24}, True),
+        ("websocket_action",
+         {"id": 1, "kind": "node", "item_id": "demo:a", "action": "x", "data": {}},
+         True),
+        ("websocket_subscribe", {"id": 1}, False),
+        ("websocket_diagnostics", {"id": 1}, True),
+    ],
+)
+async def test_every_command_reports_not_found_when_the_hub_is_gone(
+    hass, connection, command, msg, is_async
+):
+    """A renderer connecting before setup finishes gets an answer, not
+    silence -- and every command answers with the same code, so a card
+    does not need one retry rule per command."""
+    handler = getattr(ws, command)
+    if is_async:
+        await handler(hass, connection, msg)
+    else:
+        handler(hass, connection, msg)
+    assert connection.errors[0] == (1, "not_found", "Spatial Hub not set up")
+
+
+async def test_a_raising_action_is_reported_not_a_crash(hass, hub, connection):
+    """The action runs provider code. What it raises is that provider's
+    answer to report -- the connection must survive it."""
+    def explode(kind, item, action, data):
+        raise RuntimeError("schaltkontakt klemmt")
+
+    hass.data["spatial_hub_providers"]["demo"]["action"] = explode
+
+    await ws.websocket_action(
+        hass, connection,
+        {"id": 1, "kind": "node", "item_id": "demo:a", "action": "reboot",
+         "data": {}},
+    )
+    assert connection.errors[0][1] == "action_failed"
+    assert "schaltkontakt klemmt" in connection.errors[0][2]
+    assert connection.errors[0][0] == 1
+
+
+async def test_an_action_that_returns_no_dict_still_says_success(hass, hub,
+                                                                 connection):
+    """A provider that answers "ok" means it. The hub wraps what it got
+    rather than making the renderer guess what None meant."""
+    hass.data["spatial_hub_providers"]["demo"]["action"] = (
+        lambda kind, item, action, data: "ok"
+    )
+
+    await ws.websocket_action(
+        hass, connection,
+        {"id": 1, "kind": "node", "item_id": "demo:a", "action": "reboot",
+         "data": {}},
+    )
+    assert connection.results[1] == {"success": True}
+
+
+def test_facets_reports_what_the_house_has(hass, connection):
+    """The rule editor builds against what actually exists here, so a
+    layer nobody can configure is never offered."""
+    from homeassistant.helpers import entity_registry as er
+    from tests.conftest import FakeEntity
+
+    entities = er.async_get(hass).entities
+    entities["light.a"] = FakeEntity("light.a", name="A")
+    entities["light.b"] = FakeEntity("light.b", name="B")
+    entities["sensor.c"] = FakeEntity("sensor.c", name="C")
+    entities["sensor.c"].labels = {"sicherheit"}
+
+    ws.websocket_facets(hass, connection, {"id": 1})
+    facets = connection.results[1]
+
+    assert facets["domains"] == [
+        {"value": "light", "count": 2},
+        {"value": "sensor", "count": 1},
+    ], "sorted by how often a domain occurs, then by name"
+    assert facets["labels"] == [{"value": "sicherheit", "count": 1}]
+    assert facets["max_entities"] > 0
+
+
+def test_an_unknown_entity_cannot_be_moved(hass):
+    """A typo in the entity id must not look like a successful move."""
+    from homeassistant.helpers import entity_registry as er
+    from tests.conftest import FakeEntity
+
+    er.async_get(hass).entities["sensor.da"] = FakeEntity("sensor.da")
+    connection = _Connection()
+
+    ws.websocket_area_assign(
+        hass, connection,
+        {"id": 1, "type": "x", "entity_id": "sensor.wo", "area_id": "kueche"},
+    )
+    assert connection.error[0] == "not_found"
+    assert "sensor.wo" in connection.error[1]
+
+
+def test_a_move_whose_device_has_vanished_is_refused(hass):
+    """The entity still names a device that no longer exists. Reporting
+    it beats guessing whether the entity itself should move."""
+    from homeassistant.helpers import entity_registry as er
+    from tests.conftest import FakeEntity
+
+    _house(hass)
+    er.async_get(hass).entities["sensor.waise"] = FakeEntity(
+        "sensor.waise", device_id="weg"
+    )
+    connection = _Connection()
+
+    ws.websocket_area_assign(
+        hass, connection,
+        {"id": 1, "type": "x", "entity_id": "sensor.waise",
+         "area_id": "kueche"},
+    )
+    assert connection.error[0] == "not_found"
+    assert "weg" in connection.error[1]
+
+
+def test_a_subscription_that_reconnects_receives_again(hass, hub, connection):
+    """Unsubscribe and subscribe again -- the normal cycle when a card is
+    rebuilt. The second subscription is a new listener on the hub, not the
+    old one resurrected, and it works like the first."""
+    ws.websocket_subscribe(hass, connection, {"id": 1})
+    connection.subscriptions[1]()
+    assert hub.async_notify("layout") is None
+    assert connection.messages == []
+
+    ws.websocket_subscribe(hass, connection, {"id": 2})
+    hub.async_notify("layout")
+    assert connection.messages == [{"id": 2, "event": {"reason": "layout"}}]
+
+
+class _Push:
+    """A connection that can hold subscriptions, like the fixture one."""
+
+    def __init__(self) -> None:
+        self.messages: list = []
+        self.subscriptions: dict = {}
+
+    def send_result(self, _id, result=None) -> None:
+        pass
+
+    def send_error(self, _id, code, message) -> None:
+        pass
+
+    def send_message(self, message) -> None:
+        self.messages.append(message)
+
+
+def test_two_cards_both_hear_the_same_change(hass, hub):
+    """Two renderers on one floor plan: neither subscription disturbs the
+    other, and closing one keeps the other alive."""
+    connections = [_Push(), _Push()]
+
+    for index, conn in enumerate(connections):
+        ws.websocket_subscribe(hass, conn, {"id": index + 1})
+
+    hub.async_notify("layout")
+    assert [len(conn.messages) for conn in connections] == [1, 1]
+
+    connections[0].subscriptions[1]()
+    hub.async_notify("layout")
+    assert len(connections[0].messages) == 1, "closed connection hears nothing"
+    assert len(connections[1].messages) == 2, "open connection keeps hearing"
+
+
+# ── Grenzen, die der Befehlsschema durchsetzt ─────────────────────────
+
+
+def test_a_theme_sticks_to_its_limits(hass, hub, connection):
+    """Everything inside the limits is stored verbatim."""
+    ws.websocket_layout_set(
+        hass, connection,
+        {"id": 1, "section": "settings", "key": "view",
+         "values": {"theme": {
+             "preset": "neon", "node_size": 3, "house_weight": 1.6,
+             "snap_reach": 0.4, "labels": "never", "node_shape": "square",
+             "accent": "#00e5ff",
+         }}},
+    )
+    assert connection.results[1] == {"success": True}
+    theme = hub.store.get("settings", "view")["theme"]
+    assert theme["node_size"] == 3
+    assert theme["house_weight"] == 1.6
+    assert theme["snap_reach"] == 0.4
+    assert theme["labels"] == "never"
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"node_size": 3.1}, {"node_size": 0.39},
+        {"house_weight": 1.7}, {"house_weight": 0.1},
+        {"snap_reach": 3.01}, {"snap_reach": 0.3},
+        {"labels": "sometimes"}, {"node_shape": "hexagon"},
+        {"edge_style": "wavy"}, {"room_style": "dotted"},
+        {"preset": {"neon": True}},
+        {"accent": "x" * 65},
+    ],
+)
+def test_a_theme_beyond_its_limits_is_refused(values):
+    """The dial's ends exist so a stored mistake cannot turn the plan
+    unreadable -- and the refusal happens here, not in the renderer."""
+    with pytest.raises(vol.Invalid):
+        _layout_values({"theme": values})
+
+
+def test_an_outline_is_a_box_somewhere_on_the_plan(hass, hub, connection):
+    """A stated building line is the user's business; the limits only
+    keep it in the same coordinate system as everything else."""
+    outline = {"x": -0.9, "y": -0.9, "width": 2.9, "height": 2.9}
+    ws.websocket_layout_set(
+        hass, connection,
+        {"id": 1, "section": "floors", "key": "eg", "values": {"outline": outline}},
+    )
+    assert hub.store.get("floors", "eg")["outline"] == outline
+
+
+@pytest.mark.parametrize(
+    "outline",
+    [
+        {"x": -1.1, "y": 0, "width": 1, "height": 1},
+        {"x": 0, "y": 2.1, "width": 1, "height": 1},
+        {"x": 0, "y": 0, "width": 0, "height": 1},
+        {"x": 0, "y": 0, "width": 1, "height": 3.1},
+    ],
+)
+def test_an_outline_beyond_the_plan_is_refused(outline):
+    with pytest.raises(vol.Invalid):
+        _layout_values({"outline": outline})

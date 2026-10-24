@@ -38,6 +38,12 @@ def _float_or_none(value: Any) -> float | None:
         return None
 
 
+def _float_or(value: Any, default: float) -> float:
+    """Like ``x or default``, but 0 is a value, not an omission."""
+    number = _float_or_none(value)
+    return default if number is None else number
+
+
 @dataclass(slots=True)
 class Position:
     """A point on the floor plan, in normalised 0..1 floor coordinates.
@@ -251,7 +257,7 @@ class Edge:
             value=_float_or_none(data.get("value")),
             quality=_str(data.get("quality"), QUALITY_UNKNOWN),
             color=_str(data.get("color")),
-            width=_float_or_none(data.get("width")) or 2.0,
+            width=_float_or(data.get("width"), 2.0),
             directed=bool(data.get("directed")),
             dashed=bool(data.get("dashed")),
             animated=bool(data.get("animated")),
@@ -298,8 +304,8 @@ class Layer:
             id=layer_id,
             name=_str(data.get("name"), layer_id),
             icon=_str(data.get("icon")),
-            z_index=int(_float_or_none(data.get("z_index")) or DEFAULT_Z_INDEX),
-            opacity=_float_or_none(data.get("opacity")) or DEFAULT_LAYER_OPACITY,
+            z_index=int(_float_or(data.get("z_index"), DEFAULT_Z_INDEX)),
+            opacity=_float_or(data.get("opacity"), DEFAULT_LAYER_OPACITY),
             visible=bool(data.get("visible", True)),
             provider_id=provider_id or _str(data.get("provider_id")),
         )

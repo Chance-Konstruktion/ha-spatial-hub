@@ -237,3 +237,182 @@ def test_das_renderer_kit_durchschaut_eine_leere_datei(tmp_path):
 def test_beide_kits_tragen_dieselbe_fassungsnummer():
     """Zwei Dateien, die zusammen kopiert werden, muessen zusammen altern."""
     assert provider_kit.SDK_VERSION == renderer_kit.SDK_VERSION
+
+
+# ── Der Provider-Kit-Regeln schlimmste Faelle im Einzelnen ────────────
+
+
+def _anbieter(nodes, capabilities=None, **extra):
+    registration = {
+        "provider_id": "pruefling",
+        "api_version": 1,
+        "name": "Pruefling",
+        "capabilities": capabilities or {"nodes": True},
+        "data": lambda: {"nodes": nodes, "edges": []},
+    }
+    registration.update(extra)
+    return registration
+
+def test_anker_die_keine_liste_sind_fallen_auf():
+    probleme = provider_kit.check(_anbieter(
+        [{"id": "a", "anchors": "b"}]))
+    assert any("anchors must be a list" in p for p in probleme)
+
+
+def test_ein_anker_der_kein_dict_ist_faellt_auf():
+    probleme = provider_kit.check(_anbieter([{"id": "a", "anchors": ["b"]}]))
+    assert any("anchor must be a dict" in p for p in probleme)
+
+
+def test_ein_anker_ohne_ziel_faellt_auf():
+    probleme = provider_kit.check(_anbieter(
+        [{"id": "a", "anchors": [{"weight": 1}]}]))
+    assert any("anchor without an id" in p for p in probleme)
+
+
+def test_ein_anker_ins_leere_faellt_auf():
+    """Anchors at a node this payload never delivered resolve to nothing:
+    the hub draws the device in the middle of the plan. Wrong place is
+    worse than drawn nowhere -- so the kit hears about it here."""
+    probleme = provider_kit.check(_anbieter(
+        [{"id": "a", "anchors": [{"id": "phantom", "weight": 1}]}]))
+    assert any("not one of your own nodes" in p for p in probleme)
+
+
+def test_ein_anker_auf_sich_selbst_faellt_auf():
+    probleme = provider_kit.check(_anbieter(
+        [{"id": "a", "anchors": [{"id": "a", "weight": 1}]}]))
+    assert any("anchors at itself" in p for p in probleme)
+
+
+def test_ein_ankergewicht_das_keine_zahl_ist_faellt_auf():
+    probleme = provider_kit.check(_anbieter([
+        {"id": "a"},
+        {"id": "b", "anchors": [{"id": "a", "weight": "schwer"}]},
+    ]))
+    assert any("must be a number" in p for p in probleme)
+
+
+def test_ein_ankergewicht_unter_null_faellt_auf():
+    """Fast immer eine Division, die schiefging -- im Mittel wuerde sie
+    den Knoten an eine Stelle ziehen, an der niemand gemessen hat."""
+    probleme = provider_kit.check(_anbieter([
+        {"id": "a"},
+        {"id": "b", "anchors": [{"id": "a", "weight": 0}]},
+    ]))
+    assert any("not positive" in p for p in probleme)
+
+    probleme = provider_kit.check(_anbieter([
+        {"id": "a"},
+        {"id": "b", "anchors": [{"id": "a", "weight": -2}]},
+    ]))
+    assert any("not positive" in p for p in probleme)
+
+
+def test_ein_ankergewicht_ohne_ende_faellt_auf():
+    probleme = provider_kit.check(_anbieter([
+        {"id": "a"},
+        {"id": "b", "anchors": [{"id": "a", "weight": float("inf")}]},
+    ]))
+    assert any("not finite" in p for p in probleme)
+
+
+def test_gut_geformte_anker_fallen_nicht_auf():
+    probleme = provider_kit.check(_anbieter([
+        {"id": "a", "anchors": [{"id": "b", "weight": 2}]},
+        {"id": "b"},
+    ]))
+    assert not [p for p in probleme if "anchor" in p.lower()]
+
+
+def test_aktionen_ohne_action_callable_fallen_auf():
+    probleme = provider_kit.check(_anbieter(
+        [{"id": "a", "actions": [{"id": "reboot"}]}]))
+    assert any("registered no action callable" in p for p in probleme), probleme
+
+
+def test_eine_aktion_ohne_id_faellt_auf():
+    probleme = provider_kit.check(_anbieter(
+        [{"id": "a", "actions": [{"label": "Neustart"}]}],
+        capabilities={"nodes": True, "actions": True},
+        action=lambda kind, item, act, data: {"success": True},
+    ))
+    assert any("has no id" in p for p in probleme), probleme
+
+
+def test_ein_anbieter_mit_aktionen_faellt_nicht_auf():
+    probleme = provider_kit.check(_anbieter(
+        [{"id": "a", "actions": [{"id": "reboot"}]}],
+        capabilities={"nodes": True, "actions": True},
+        action=lambda kind, item, act, data: {"success": True},
+    ))
+    assert not [p for p in probleme if "action" in p.lower()], probleme
+
+
+def test_ein_async_data_callable_wird_abgewartet():
+    import asyncio
+
+    async def daten():
+        return {"nodes": [{"id": "a"}]}
+
+    probleme = provider_kit.check(_anbieter(None, data=daten))
+    assert probleme == [], probleme
+
+
+def test_ein_kit_ohne_implementierung_sagt_was_zu_tun_ist():
+    suite = provider_kit.SpatialHubConformance()
+    with pytest.raises(NotImplementedError, match="build_registration"):
+        suite.registration
+
+
+def test_custom_icons_ohne_icon_set_fallen_auf():
+    probleme = provider_kit.check(_anbieter(
+        [{"id": "a"}], capabilities={"nodes": True, "custom_icons": True}))
+    assert any("icon_set is empty" in p for p in probleme), probleme
+
+
+# ── Die eigene Ausnahme des Renderer-Kits ist auch ein Weg ────────────
+
+
+def _renderer_klasse(**attribute):
+    suite = renderer_kit.SpatialHubRendererConformance()
+    for name, wert in attribute.items():
+        setattr(suite, name, wert)
+    return suite
+
+
+def test_ein_bearbeitender_renderer_darf_schreiben_wenn_er_es_sagt():
+    """read_only = False ist eine erklaerte Ausnahme, kein Schlupfloch:
+    die beiden Regeln steigen aus, statt einen Editor fälschlich anzuklagen."""
+    suite = _renderer_klasse(read_only=False)
+    suite.renderer_files = lambda: []
+    assert suite.test_a_read_only_renderer_needs_almost_nothing() is None
+    assert suite.test_it_never_writes_the_users_arrangement() is None
+
+
+def test_ein_kit_ohne_implementierung_weist_den_weg():
+    suite = _renderer_klasse()
+    with pytest.raises(NotImplementedError, match="renderer_files"):
+        suite.code
+
+
+# ── Die Helfer des Shims ──────────────────────────────────────────────
+
+
+def _shim():
+    spec = importlib.util.spec_from_file_location(
+        "shim_modul", WURZEL / "sdk" / "spatial_hub_provider.py")
+    modul = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modul)
+    return modul
+
+
+def test_anchor_baut_was_der_hub_versteht():
+    anker = _shim().anchor("proxy-kueche", 0.8)
+    assert anker == {"id": "proxy-kueche", "weight": 0.8}
+
+
+def test_node_mit_ankern_trägt_sie_im_ergebnis():
+    shim = _shim()
+    knoten = shim.node("tag-1", anchors=[shim.anchor("proxy", 1.0)])
+    assert knoten["anchors"] == [{"id": "proxy", "weight": 1.0}]

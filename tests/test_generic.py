@@ -560,3 +560,137 @@ def test_devices_without_connections_are_never_merged(hass):
     from conftest import FakeDevice
 
     assert hardware_key(FakeDevice("a")) != hardware_key(FakeDevice("b"))
+
+
+from homeassistant.helpers import device_registry as dr  # noqa: E402
+from homeassistant.helpers import entity_registry as er  # noqa: E402
+
+# ── Weitere Kriterien und das, was sie aus den Registern holen ────────
+
+
+def test_device_classes_narrow_to_what_the_sensor_is(house):
+    from tests.conftest import FakeEntity
+
+    entities = er.async_get(house).entities
+    entities["binary_sensor.bewegung"] = FakeEntity("binary_sensor.bewegung")
+    entities["binary_sensor.bewegung"].original_device_class = "motion"
+    entities["sensor.temperatur"].original_device_class = "temperature"
+
+    assert _match(house, device_classes=["motion"]) == ["binary_sensor.bewegung"]
+
+
+def test_a_device_class_named_only_in_the_state_counts(house):
+    """Older integrations never write original_device_class; the state
+    carries it instead. A layer rule must still find the sensor."""
+    from tests.conftest import FakeEntity
+
+    house.states.set("binary_sensor.fenster", "off", device_class="window")
+    entities = er.async_get(house).entities
+    entities["binary_sensor.fenster"] = FakeEntity("binary_sensor.fenster",
+                                                   area_id="wohnzimmer")
+
+    assert _match(house, device_classes=["window"]) == ["binary_sensor.fenster"]
+
+
+def test_an_area_rule_finds_the_entity_through_its_device(house):
+    """light.kueche has no area of its own -- its board sits in the
+    kitchen, and that is where the dot is."""
+    assert "light.kueche" in _match(house, areas=["kueche"])
+    assert "light.kueche" not in _match(house, areas=["wohnzimmer"])
+
+
+def test_a_device_with_unreadable_connections_is_its_own_box(house):
+    """hardware_key sorts pairs of (kind, value). Junk in connections
+    must not crash the sort -- the device simply has no hardware identity
+    that would match another."""
+    dr.async_get(house).devices["kaputt"] = FakeDevice("kaputt")
+    dr.async_get(house).devices["kaputt"].connections = {42}
+
+    assert generic.hardware_key(dr.async_get(house).devices["kaputt"]) == (
+        "device_id", "kaputt"
+    )
+    assert generic.physical_siblings(
+        house, dr.async_get(house).devices["kaputt"]
+    ) == []
+
+
+def test_topology_skips_what_it_cannot_resolve(house):
+    """No via on the device, or a via naming a device that does not
+    exist: both are silence, not errors -- and not invented nodes."""
+    devices = dr.async_get(house).devices
+    devices["losgeloest"] = FakeDevice("losgeloest")
+    devices["verwaist"] = FakeDevice("verwaist", via_device_id="phantom")
+
+    entities = er.async_get(house).entities
+    entities["light.losgeloest"] = FakeEntity("light.losgeloest",
+                                              device_id="losgeloest")
+    entities["light.verwaist"] = FakeEntity("light.verwaist",
+                                            device_id="verwaist")
+
+    extra = generic.topology(house, ["light.losgeloest", "light.verwaist"])
+    assert extra == {"nodes": [], "edges": []}
+
+
+def test_two_entities_behind_one_bridge_share_the_via_node(house):
+    """The bridge is one node; each entity behind it is its own edge."""
+    devices = dr.async_get(house).devices
+    devices["bridge"] = FakeDevice("bridge", name="Bridge")
+    devices["plug_a"] = FakeDevice("plug_a", via_device_id="bridge")
+    devices["plug_b"] = FakeDevice("plug_b", via_device_id="bridge")
+
+    entities = er.async_get(house).entities
+    entities["light.a"] = FakeEntity("light.a", device_id="plug_a")
+    entities["light.b"] = FakeEntity("light.b", device_id="plug_b")
+
+    extra = generic.topology(house, ["light.a", "light.b"])
+
+    assert [n["id"] for n in extra["nodes"]] == ["via:bridge"]
+    assert extra["nodes"][0]["label"] == "Bridge"
+    assert sorted(e["source"] for e in extra["edges"]) == ["light.a", "light.b"]
+    assert all(e["target"] == "via:bridge" and e["quality"] == "unknown"
+               for e in extra["edges"])
+
+
+def test_facets_count_labels_and_device_classes(house):
+    from tests.conftest import FakeEntity
+
+    entities = er.async_get(house).entities
+    entities["binary_sensor.bewegung"] = FakeEntity("binary_sensor.bewegung",
+                                                    name="Bewegung")
+    entities["binary_sensor.bewegung"].labels = {"sicherheit"}
+    entities["sensor.temperatur"].original_device_class = "temperature"
+
+    facets = generic.async_facets(house)
+    werte = {eintrag["value"]: eintrag["count"]
+             for eintrag in facets["labels"]}
+    assert werte.get("sicherheit") == 1
+    klassen = {eintrag["value"]: eintrag["count"]
+               for eintrag in facets["device_classes"]}
+    assert klassen.get("temperature") == 1
+
+
+def test_siblings_of_nothing_is_nothing(house):
+    assert generic.physical_siblings(house, None) == []
+
+
+def test_an_entity_without_a_device_contributes_no_topology(house):
+    """A template light has no board to be reached through."""
+    entities = er.async_get(house).entities
+    entities["light.frei"] = FakeEntity("light.frei")
+
+    extra = generic.topology(house, ["light.frei", "light.frei"])
+    assert extra == {"nodes": [], "edges": []}
+
+
+def test_the_same_entity_twice_yields_one_edge(house):
+    """The caller owns the list; a duplicate must not double the edge."""
+    devices = dr.async_get(house).devices
+    devices["bridge"] = FakeDevice("bridge", name="Bridge")
+    devices["plug"] = FakeDevice("plug", via_device_id="bridge")
+    entities = er.async_get(house).entities
+    entities["light.a"] = FakeEntity("light.a", device_id="plug")
+
+    extra = generic.topology(house, ["light.a", "light.a"])
+
+    assert len(extra["edges"]) == 1
+    assert [n["id"] for n in extra["nodes"]] == ["via:bridge"]
