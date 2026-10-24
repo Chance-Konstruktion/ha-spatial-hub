@@ -116,30 +116,29 @@ def test_edge_garbage_falls_back_to_the_defaults():
     assert edge.value is None
 
 
-# ── Dokumentierter Fehler, nicht repariert ────────────────────────────
+# ── Dokumentierter Fehler, repariert ──────────────────────────────────
 
 
-def test_bug_opacity_null_wird_zur_voreinstellung():
-    """FALSCHES Verhalten, absichtlicherweise gruen -- siehe BERICHT.md.
-
-    Die Spezifikation (docs/SPECIFICATION.md, § Layer) erlaubt opacity
-    0..1. Layer.from_dict liest sie mit ``_float_or_none(...) or
-    DEFAULT_LAYER_OPACITY`` -- und 0 ist falsy, also bekommt ein Anbieter,
-    der eine Ebene mit opacity 0 meldet, die Voreinstellung 1.0. Dieselbe
-    Zeile macht aus z_index 0 die 10, Edge.from_dict aus width 0 die 2.0.
-
-    Erwartet gemaess Spezifikation: 0. Tatsaechlich: 1.0.
+def test_zero_a_provider_states_is_zero_not_the_default():
+    """Ersetzt den Zeig-Test test_bug_opacity_null_wird_zur_
+    voreinstellung (BERICHT.md, Fehler 2): ``x or DEFAULT`` kann
+    "nicht angegeben" von "0 angegeben" nicht unterscheiden -- aber 0
+    ist laut Spezifikation (docs/SPECIFICATION.md, § Layer und § Edge)
+    ein gueltiger Wert. Ein Anbieter, der eine Ebene bewusst unsichtbar
+    meldet, eine Boden-Ebene mit z_index 0 sortiert oder eine
+    Haarlinie-Edge zeichnet, bekommt seine 0 -- nicht stillschweigend
+    die Voreinstellung.
     """
-    assert Layer.from_dict({"id": "licht", "opacity": 0}).opacity == 1.0, (
-        "Fehler dokumentiert, nicht gebilligt: laut Spezifikation ist 0 "
-        "ein gueltiger Wert fuer opacity"
-    )
-    assert Layer.from_dict({"id": "licht", "z_index": 0}).z_index == 10, (
-        "Fehler dokumentiert, nicht gebilligt: 0 ist eine gueltige "
-        "Zeichenreihenfolge"
-    )
+    assert Layer.from_dict({"id": "licht", "opacity": 0}).opacity == 0
+    assert Layer.from_dict({"id": "licht", "z_index": 0}).z_index == 0
     assert Edge.from_dict(
         {"source": "a", "target": "b", "width": 0}
-    ).width == 2.0, (
-        "Fehler dokumentiert, nicht gebilligt: 0 ist eine gueltige Breite"
-    )
+    ).width == 0
+
+
+def test_a_missing_value_still_gets_the_default():
+    """Die Kehrseite derselben Stelle: was nicht angegeben wurde,
+    bekommt weiterhin die Voreinstellung."""
+    assert Layer.from_dict({"id": "licht"}).opacity == 1.0
+    assert Layer.from_dict({"id": "licht"}).z_index == 10
+    assert Edge.from_dict({"source": "a", "target": "b"}).width == 2.0
