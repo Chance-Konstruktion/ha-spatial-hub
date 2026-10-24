@@ -1177,3 +1177,309 @@ async def test_a_malformed_custom_shape_is_dropped_not_guessed_at(hass, hub):
     })
     model = await hub.async_model()
     assert [shape["id"] for shape in model["shapes"]] == ["ok"]
+
+
+# ── Randfaelle, die erst auffallen, wenn etwas fehlt ──────────────────
+
+
+def test_provider_lookup_by_id(hass, hub):
+    _register(hass)
+    assert hub.provider("demo").id == "demo"
+    assert hub.provider("fehlt") is None
+
+
+@pytest.mark.asyncio
+async def test_a_provider_with_an_icon_set_publishes_it(hass, hub):
+    """Custom SVG icons ride along in the model, keyed by provider, so a
+    second renderer can draw the same marks without asking the provider."""
+    _register(hass, icon_set={"lamp": {"body": "<circle r='4'/>"}})
+    model = await hub.async_model()
+    assert model["icon_sets"]["demo"] == {"lamp": {"body": "<circle r='4'/>"}}
+
+
+@pytest.mark.asyncio
+async def test_a_stored_scale_rotation_and_label_offset_are_applied(hass, hub):
+    """Position is not the only thing the user may adjust -- the stored
+    answer wins over the provider's for every knob the store keeps."""
+    _register(hass)
+    hub.store.update("nodes", "demo:a", {
+        "scale": 1.5, "rotation": 45, "label_offset": {"x": 1, "y": -1},
+    })
+    model = await hub.async_model()
+    node = next(n for n in model["nodes"] if n["id"] == "demo:a")
+    assert node["scale"] == 1.5
+    assert node["rotation"] == 45
+    assert node["label_offset"] == {"x": 1, "y": -1}
+
+
+@pytest.mark.asyncio
+async def test_a_stored_hidden_flag_takes_a_node_off_the_plan(hass, hub):
+    """Hidden via the store, not the provider: the node comes back when
+    the flag is gone, so it must be listed, not deleted."""
+    _register(hass)
+    hub.store.update("nodes", "demo:a", {"hidden": True})
+    model = await hub.async_model()
+    assert [n["id"] for n in model["hidden"]["nodes"]] == ["demo:a"]
+    assert model["nodes"] == []
+    assert model["edges"] == [], "an edge to a hidden node goes nowhere"
+
+
+@pytest.mark.asyncio
+async def test_history_from_a_raising_provider_is_empty(hass, hub):
+    """Third-party history code failing is a gap in the graph, not an
+    error page over the whole floor plan."""
+    def explodiert(kind, item, hours):
+        raise ZeroDivisionError("division by zero")
+
+    _register(hass, history=explodiert)
+    assert await hub.async_history("node", "demo:a", 24) == []
+
+
+@pytest.mark.asyncio
+async def test_history_that_is_not_a_list_is_empty(hass, hub):
+    _register(hass, history=lambda kind, item, hours: {"werte": [1]})
+    assert await hub.async_history("node", "demo:a", 24) == []
+
+
+@pytest.mark.asyncio
+async def test_a_floor_that_is_itself_outdoors_never_becomes_the_ground(
+    hass, hub
+):
+    """A floor named "Garten" holds the garden, but it is not the storey
+    the garden wraps around. Without that distinction the garden picked
+    itself as ground and stayed a storey forever.
+
+    With no indoor storey at all there is also no soil for the virtual
+    areas to hang on -- they stay where they are, marked as virtual, and
+    nothing crashes.
+    """
+    from homeassistant.helpers import area_registry as ar, floor_registry as fr
+
+    fr.async_get(hass).floors = [FakeFloor("gruen", "Garten", level=0)]
+    ar.async_get(hass).areas = [
+        FakeArea("rasen", "Rasen", floor_id="gruen"),
+        FakeArea("cloud", "Cloud", floor_id="gruen"),
+    ]
+
+    model = await hub.async_model()
+
+    assert [floor["id"] for floor in model["floors"]] == ["gruen"], (
+        "the floor is still in use, so it is kept"
+    )
+    assert not any(floor.get("ground") for floor in model["floors"])
+    rasen = next(a for a in model["areas"] if a["id"] == "rasen")
+    assert rasen["kind"] == "outdoor"
+    assert rasen.get("floor_id") == "gruen"
+    cloud = next(a for a in model["areas"] if a["id"] == "cloud")
+    assert cloud["kind"] == "outdoor", (
+        "the floor's kind passes down to everything standing on it -- "
+        "an area named Cloud on a floor named Garten is outdoors, because "
+        "the floor the user named wins over the name they did not"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_stated_virtual_floor_without_a_storey_keeps_its_areas(
+    hass, hub
+):
+    """A "floor" stated as virtual, with no indoor storey anywhere: there
+    is no soil to hang the virtual areas on. They stay where they are,
+    marked as virtual -- inventing a storey for them was exactly the
+    thing that got taken away."""
+    from homeassistant.helpers import area_registry as ar, floor_registry as fr
+
+    fr.async_get(hass).floors = [FakeFloor("wolke", "Wolke", level=0)]
+    ar.async_get(hass).areas = [FakeArea("cloud", "Cloud", floor_id="wolke")]
+    hub.store.update("floors", "wolke", {"kind": "virtual"})
+
+    model = await hub.async_model()
+
+    cloud = next(a for a in model["areas"] if a["id"] == "cloud")
+    assert cloud.get("virtual") is True
+    assert cloud.get("floor_id") == "wolke"
+    assert [floor["id"] for floor in model["floors"]] == ["wolke"], (
+        "the floor still holds the area, so it is not dissolved"
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_lowest_storey_is_none_when_there_are_only_unassigned(
+    hass, hub
+):
+    """_lowest_floor skips the unassigned plane; with nothing else left it
+    has no answer, and the caller must cope."""
+    from custom_components.spatial_hub.hub import SpatialHub
+
+    assert SpatialHub._lowest_floor(hub, []) is None
+    assert SpatialHub._lowest_floor(
+        hub, [{"id": UNASSIGNED_FLOOR_ID, "unassigned": True,
+               "kind": "indoor"}]
+    ) is None
+
+
+# ── Eigene Angaben des Anbieters, eigene Angaben des Nutzers ──────────
+
+
+@pytest.mark.asyncio
+async def test_a_stored_icon_and_color_win_over_the_provider(hass, hub):
+    _register(hass)
+    hub.store.update("nodes", "demo:a", {"icon": "mdi:star", "color": "#123456"})
+    model = await hub.async_model()
+    node = next(n for n in model["nodes"] if n["id"] == "demo:a")
+    assert node["icon"] == "mdi:star"
+    assert node["color"] == "#123456"
+
+
+@pytest.mark.asyncio
+async def test_an_async_history_callable_is_awaited(hass, hub):
+    async def verlauf(kind, item, hours):
+        return [{"value": 2}]
+
+    _register(hass, history=verlauf)
+    assert await hub.async_history("node", "demo:a", 24) == [{"value": 2}]
+
+
+@pytest.mark.asyncio
+async def test_an_async_action_callable_is_awaited(hass, hub):
+    async def schalten(kind, item, action, data):
+        return {"success": True, "action": action}
+
+    _register(hass, action=schalten)
+    assert await hub.async_action("node", "demo:a", "reboot", {}) == {
+        "success": True, "action": "reboot",
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_provider_without_actions_refuses_them(hass, hub):
+    """capabilities never promised actions, so there is no callable: the
+    answer is a refusal, not a silent success."""
+    _register(hass, action=None)
+    with pytest.raises(LookupError, match="accepts no actions"):
+        await hub.async_action("node", "demo:a", "reboot", {})
+
+
+@pytest.mark.asyncio
+async def test_a_shape_with_a_point_that_is_not_a_dict_is_dropped(hass, hub):
+    """A point list of 42 and dicts is not a shape anyone can draw."""
+    hub.store.update("settings", "view", {
+        "custom_shapes": [
+            {"id": "ein-punkt-weg", "floor_id": "eg",
+             "points": [42, {"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}]},
+            {"id": "nur-noch-zwei", "floor_id": "eg",
+             "points": [{"x": 0, "y": 0}, 42, {"x": 1, "y": 1}]},
+        ],
+    })
+    model = await hub.async_model()
+    formen = {shape["id"]: shape for shape in model["shapes"]}
+    assert set(formen) == {"ein-punkt-weg"}, (
+        "der Muellpunkt faellt weg, die drei echten Ecken bleiben")
+    assert [p for p in formen["ein-punkt-weg"]["points"]] == [
+        {"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 1.0, "y": 1.0},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_the_garden_floor_hands_its_outdoors_to_the_real_ground(
+    hass, hub
+):
+    """An outdoor area sitting on a "floor" that is itself outdoors moves
+    to the actual ground floor -- and a storey left with nothing on it
+    goes away, because it was never a storey."""
+    from homeassistant.helpers import area_registry as ar, floor_registry as fr
+
+    fr.async_get(hass).floors = [
+        FakeFloor("eg", "Erdgeschoss", level=0),
+        FakeFloor("gruen", "Garten", level=1),
+    ]
+    ar.async_get(hass).areas = [
+        FakeArea("wohnzimmer", "Wohnzimmer", floor_id="eg"),
+        FakeArea("rasen", "Rasen", floor_id="gruen"),
+    ]
+
+    model = await hub.async_model()
+
+    ids = [floor["id"] for floor in model["floors"]]
+    assert ids == ["eg"], f"die Garten-Etage ist mit umgezogen: {ids}"
+    rasen = next(a for a in model["areas"] if a["id"] == "rasen")
+    assert rasen["floor_id"] == "eg"
+    assert rasen.get("outdoor") is True
+    eg = next(floor for floor in model["floors"] if floor["id"] == "eg")
+    assert eg.get("ground") is True
+    assert eg.get("has_outdoor") is True
+
+
+@pytest.mark.asyncio
+async def test_two_nodes_anchoring_each_other_land_in_the_middle(hass, hub):
+    """Anchors are deliberately not solved transitively: two nodes that
+    only name each other have no measurement to stand on, so both fall
+    back to the middle of the plan instead of chasing each other."""
+    _register(hass, data=lambda: {
+        "nodes": [
+            {"id": "a", "anchors": [{"id": "b", "weight": 3}]},
+            {"id": "b", "anchors": [{"id": "a", "weight": 3}]},
+        ],
+        "edges": [],
+    })
+    model = await hub.async_model()
+    positionen = {n["id"]: n["position"] for n in model["nodes"]}
+    assert positionen["demo:a"] == {"x": 0.5, "y": 0.5, "z": 0.0}
+    assert positionen["demo:b"] == {"x": 0.5, "y": 0.5, "z": 0.0}
+    for node in model["nodes"]:
+        assert node["metadata"]["auto_position"] is True
+
+
+@pytest.mark.asyncio
+async def test_an_entity_says_what_it_is_even_when_the_provider_did_not(
+    hass, hub
+):
+    """Icon and state come from Home Assistant when the provider only
+    named the entity -- including "unavailable", which is a fact about
+    the device, not a state anyone styled."""
+    _register(hass, data=lambda: {"nodes": ["light.wohnzimmer"], "edges": []})
+    hass.states.set("light.wohnzimmer", "unavailable",
+                    friendly_name="Stehlampe", icon="mdi:floor-lamp")
+
+    model = await hub.async_model()
+    node = model["nodes"][0]
+    assert node["label"] == "Stehlampe"
+    assert node["icon"] == "mdi:floor-lamp"
+    assert node["state"] == "unknown", (
+        "unavailable is translated, not passed through as a fourth state")
+
+
+@pytest.mark.asyncio
+async def test_a_house_without_a_floor_registry_still_builds(hass, hub,
+                                                             monkeypatch):
+    """Home Assistant before 2024.4 has no floor registry. The hub
+    answers with no floors rather than with an exception."""
+    from custom_components.spatial_hub import discovery
+
+    def alt(h):
+        raise AttributeError("no floor registry in this core")
+
+    monkeypatch.setattr(discovery.fr, "async_get", alt)
+    model = await hub.async_model()
+    assert len(model["floors"]) == 1
+    etage = model["floors"][0]
+    assert (etage["id"], etage["name"], etage["level"], etage["icon"]) == (
+        "default", "Home", 0, "",
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_provider_stated_position_is_never_moved(hass, hub):
+    """The provider knows where its device is. Auto-placement only fills
+    the blanks -- it does not second-guess an answer that was given."""
+    _register(hass, data=lambda: {
+        "nodes": [
+            {"id": "fest", "position": {"x": 0.9, "y": 0.1}},
+            {"id": "frei"},
+        ],
+        "edges": [],
+    })
+    model = await hub.async_model()
+    positionen = {n["id"]: n["position"] for n in model["nodes"]}
+    assert positionen["demo:fest"]["x"] == 0.9
+    assert positionen["demo:fest"]["y"] == 0.1
+    assert positionen["demo:fest"] != positionen["demo:frei"]

@@ -142,3 +142,136 @@ def test_load_providers_skips_the_invalid_ones(hass):
     }
     providers = async_load_providers(hass)
     assert set(providers) == {"demo"}
+
+
+# ── Kaputte Anmeldungen: gemeldet statt geglaubt ──────────────────────
+
+
+def test_a_registration_that_is_not_a_dict_is_refused():
+    with pytest.raises(ProviderError):
+        Provider.from_registration("gib mir alles")
+    with pytest.raises(ProviderError):
+        Provider.from_registration(None)
+
+
+def test_a_panel_url_that_leaves_the_house_is_dropped():
+    """A renderer turns panel_url into a link the user clicks. Third-party
+    data decides where that goes -- so only a path inside this instance
+    survives."""
+    assert Provider.from_registration(
+        _registration(panel_url="/powerline")
+    ).panel_url == "/powerline"
+    for url in ("javascript:alert(1)", "https://example.com/x", "//host/y",
+                "/x" * 200):
+        assert Provider.from_registration(
+            _registration(panel_url=url)
+        ).panel_url == "", url
+
+
+def test_uncallable_history_and_action_are_reported_and_ignored():
+    """A string where a callable belongs is a typo. Ignoring it keeps the
+    layer alive; keeping it would hand the hub a bomb for later."""
+    provider = Provider.from_registration(
+        _registration(history="bald", action=42)
+    )
+    assert provider.history_fn is None
+    assert provider.action_fn is None
+    assert any("'history' is not callable" in w for w in provider.warnings)
+    assert any("'action' is not callable" in w for w in provider.warnings)
+
+
+def test_a_bad_layer_is_skipped_and_reported():
+    provider = Provider.from_registration(
+        _registration(layers=[{"no_id": True}, {"id": "guter_layer"}])
+    )
+    assert [layer.id for layer in provider.layers] == ["guter_layer"]
+    assert any("skipped bad layer" in w for w in provider.warnings), (
+        "the developer must hear why a layer they wrote does not exist"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_payload_that_is_neither_dict_nor_list_is_reported():
+    provider = Provider.from_registration(_registration(data=lambda: 42))
+    result = await provider.async_fetch()
+    assert result.error == "data returned int, expected dict or list"
+    assert result.as_status()["ok"] is False
+
+
+@pytest.mark.asyncio
+async def test_nodes_that_are_not_a_list_are_reported():
+    provider = Provider.from_registration(
+        _registration(data=lambda: {"nodes": "light.kitchen"})
+    )
+    result = await provider.async_fetch()
+    assert result.nodes == []
+    assert any("nodes must be a list, got str" in w for w in result.warnings)
+
+
+@pytest.mark.asyncio
+async def test_a_timing_out_provider_costs_only_its_own_refresh(
+    monkeypatch,
+):
+    """A hung integration must not hang the floor plan. Ten seconds are
+    too long to wait out in a test, so the limit is turned down here --
+    the mechanism under test is the same one."""
+    import asyncio
+
+    from custom_components.spatial_hub import registry
+
+    monkeypatch.setattr(registry, "DATA_TIMEOUT", 0.05)
+
+    async def dauert_ewig():
+        await asyncio.sleep(5)
+
+    provider = Provider.from_registration(_registration(data=dauert_ewig))
+    result = await provider.async_fetch()
+
+    assert result.error is not None and "timed out" in result.error
+    assert (result.nodes, result.edges) == ([], [])
+
+
+# ── Dokumentierte Fehler, nicht repariert ─────────────────────────────
+# Diese beiden Tests zeigen Verhalten, das falsch ist. Sie sind gruen,
+# weil sie das FALSCHE Ergebnis festhalten -- wer den Fehler behebt, muss
+# sie umdrehen. Einzelheiten im Bericht (BERICHT.md).
+
+
+def test_bug_eine_kaputte_api_version_reisst_die_ganze_ladung_mit(
+    hass,
+):
+    """FALSCHES Verhalten, absichtlicherweise gruen -- siehe BERICHT.md.
+
+    Eine Anmeldung ist Daten von Dritten. async_load_providers verspricht
+    im Docstring, unbrauchbare Anmeldungen mit einer Warnung zu ueberspringen
+    ("Ignoring provider %s") -- und genau das tut es fuer ProviderError.
+    Aber from_registration ruft int() ueber api_version ungeprueft: ein
+    Anbieter, der dort "drei" statt 3 schreibt, loest ValueError aus, und
+    der Fehler laeuft an dem except ProviderError vorbei. Der komplette
+    Anbieter-Lauf bricht zusammen -- auch die voellig gesunden Anmeldungen
+    sind weg, jeder Modellaufbau scheitert.
+
+    Erwartet gemaess dem eigenen Fehlerisolationversprechen: der kaputte
+    Anbieter wird uebersprungen und gewarnt, die gesunden bleiben.
+    Tatsaechlich: ValueError.
+    """
+    hass.data["spatial_hub_providers"] = {
+        "gut": _registration(),
+        "kaputt": _registration(provider_id="kaputt", api_version="drei"),
+    }
+    with pytest.raises(ValueError, match="invalid literal"):
+        async_load_providers(hass)
+
+
+def test_bug_ein_icon_set_das_keines_ist_reisst_auch_mit(hass):
+    """FALSCHES Verhalten, absichtlicherweise gruen -- siehe BERICHT.md.
+
+    Dasselbe Loch, eine Zeile weiter: dict(42) loest TypeError aus und
+    passiert async_load_providers' except ProviderError ebenfalls.
+    Erwartet: Ueberspringen mit Warnung. Tatsaechlich: TypeError.
+    """
+    hass.data["spatial_hub_providers"] = {
+        "kaputt": _registration(icon_set=42),
+    }
+    with pytest.raises(TypeError):
+        async_load_providers(hass)

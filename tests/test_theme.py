@@ -215,3 +215,57 @@ def test_every_colour_that_can_come_out_empty_has_a_fallback():
             assert fallback[key].get(word, "").startswith("#"), (
                 f"{key}[{word!r}] has no fallback colour"
             )
+
+
+# ── Was der Nutzer ueberschreiben darf, und wo die Klemmen sitzen ─────
+
+
+def test_the_user_may_turn_every_dial_the_presets_know():
+    """A preset is a starting point; each of its dials is one the user
+    can turn without giving up the rest."""
+    resolved = theme.resolve({"theme": {
+        "preset": "classic",
+        "node_shape": "rounded", "labels": "hover",
+        "edge_style": "curved", "room_style": "filled",
+    }})
+    assert resolved["node_shape"] == "rounded"
+    assert resolved["labels"] == "hover"
+    assert resolved["edge_style"] == "curved"
+    assert resolved["room_style"] == "filled"
+    assert resolved["state_colors"]["online"] == "#43a047", (
+        "the preset's own colours survive the dials"
+    )
+
+
+def test_the_user_may_state_the_three_host_colours():
+    """accent, surface and ink are what no preset ever sets -- they are
+    exactly the fields a user's own theme has opinions about."""
+    resolved = theme.resolve({"theme": {
+        "accent": "#ff0000", "surface": "#ffffff", "ink": "#000000",
+    }})
+    assert resolved["accent"] == "#ff0000"
+    assert resolved["surface"] == "#ffffff"
+    assert resolved["ink"] == "#000000"
+
+
+def test_a_colour_that_is_not_a_string_is_ignored():
+    resolved = theme.resolve({"theme": {"accent": 0xFF0000}})
+    assert resolved["accent"] == "", "an int is not a colour; keep inheriting"
+
+
+def test_house_weight_never_lets_the_house_disappear():
+    """A stored zero would erase the building and leave a panel that
+    looks broken, with the setting that did it three dialogs away."""
+    assert theme.resolve({"theme": {"house_weight": 0}})["house_weight"] == 0.2
+    assert theme.resolve({"theme": {"house_weight": 9}})["house_weight"] == 1.6
+    assert theme.resolve({"theme": {"house_weight": 1.2}})["house_weight"] == 1.2
+
+
+def test_snap_reach_is_clamped_to_a_usable_window():
+    assert theme.resolve({"theme": {"snap_reach": 0}})["snap_reach"] == 0.4
+    assert theme.resolve({"theme": {"snap_reach": 100}})["snap_reach"] == 3.0
+
+
+def test_node_size_is_clamped_the_same_way_for_a_float():
+    assert theme.resolve({"theme": {"node_size": 1.5}})["node_size"] == 1.5
+    assert theme.resolve({"theme": {"node_size": -4}})["node_size"] == 0.4

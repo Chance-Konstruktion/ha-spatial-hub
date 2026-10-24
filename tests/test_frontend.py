@@ -306,3 +306,31 @@ def test_stale_gzip_is_dropped_matching_one_kept(tmp_path):
     (tmp_path / "c.js.gz").write_bytes(gzip.compress(b"waise"))
     assert sorted(drop_stale_gzip(tmp_path)) == ["a.js.gz", "c.js.gz"]
     assert (tmp_path / "b.js.gz").exists()
+
+
+def test_eine_unlesbare_gzip_packung_wird_uebersprungen_nicht_geloescht(tmp_path):
+    """HACS legt neben jede Datei eine .gz. Eine Packung, die sich nicht
+    lesen laesst, wird nicht auf Verdacht geloescht -- der Check springt
+    weiter und die naechste Datei wird noch geprueft. Eine .gz ohne ihre
+    Quelle dagegen ist per Definition veraltet und fliegt raus."""
+    import gzip
+
+    from custom_components.spatial_hub.frontend import drop_stale_gzip
+
+    quelle = tmp_path / "panel.js"
+    quelle.write_text("export const panel = true;", encoding="utf-8")
+    gut = tmp_path / "panel.js.gz"
+    gut.write_bytes(gzip.compress(quelle.read_bytes()))
+    # Quelle existiert, Packung ist Muell: beim Pruefen unlesbar.
+    kaputt = tmp_path / "kaputt.js.gz"
+    (tmp_path / "kaputt.js").write_text("export const alt = true;",
+                                        encoding="utf-8")
+    kaputt.write_bytes(b"\x00\x01garbage")
+    # Quelle weg, Packung uebrig: veraltet.
+    (tmp_path / "alt.js.gz").write_bytes(gzip.compress(b"alt"))
+
+    weg = drop_stale_gzip(tmp_path)
+
+    assert weg == ["alt.js.gz"]
+    assert kaputt.exists(), "unlesbar heisst nicht unbesehen wegwerfen"
+    assert gut.is_file()

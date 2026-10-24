@@ -140,3 +140,26 @@ def test_jede_dokudatei_im_repo_kommt_auch_vor():
     assert not fehlt, (
         f"{fehlt} liegen in docs/, stehen aber nicht in SEITEN -- die Seite "
         "waechst sonst nicht mit der Dokumentation mit")
+
+
+def test_bauen_räumt_einen_vorhandenen_zielordner_weg(tmp_path):
+    """Ein zweiter Lauf darf keine alten Seiten liegen lassen -- sonst
+    bleibt eine gelöschte Doku-Seite für immer auf dem Server stehen."""
+    ziel = tmp_path / "public"
+    ziel.mkdir()
+    (ziel / "alt.html").write_text("veraltet", encoding="utf-8")
+
+    seite.bauen(ziel)
+
+    assert not (ziel / "alt.html").exists()
+    assert len(list(ziel.glob("*.html"))) == len(seite.SEITEN)
+
+
+def test_eine_fehlende_quelle_bricht_laut_ab(tmp_path, monkeypatch):
+    """Die Seitenliste nennt eine Datei, die es nicht gibt: lieber rot
+    mit Namen als eine halbe Seite ohne Hinweis."""
+    monkeypatch.setattr(seite, "SEITEN", [
+        ("gibt-es-nicht.md", "phantom.html", "Phantom"),
+    ])
+    with pytest.raises(SystemExit, match="gibt-es-nicht.md"):
+        seite.bauen(tmp_path / "public")

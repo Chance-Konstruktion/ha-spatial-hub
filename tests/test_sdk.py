@@ -566,3 +566,65 @@ async def test_a_signal_carrying_a_payload_does_not_explode(hass):
         "the hub re-fetches anyway, so whatever the signal carried is none "
         "of its business -- but it must not throw"
     )
+
+
+# ── Der Installer, direkt gerufen (die Laufergebnisse oben pruefen das
+#    Skript per Subprocess; diese Tests schauen in die Funktionen selbst) ──
+
+
+def _installer():
+    spec = importlib.util.spec_from_file_location("install_modul", SDK / "install.py")
+    modul = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modul)
+    return modul
+
+
+def test_the_domain_falls_back_to_the_folder_name(tmp_path):
+    """A target with no manifest yet -- the folder is all anyone has."""
+    installer = _installer()
+    assert installer._domain_of(tmp_path) == tmp_path.name
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text('{"name": "keine domain drin"}')
+    assert installer._domain_of(tmp_path) == tmp_path.name
+
+
+def test_the_sdk_version_comes_from_the_shim():
+    installer = _installer()
+    version = installer._sdk_version()
+    assert version == CURRENT_SDK_VERSION
+
+
+def test_an_installed_version_of_zero_is_a_hand_written_copy(tmp_path):
+    installer = _installer()
+    (tmp_path / SHIM).write_text("keine Versionsnummer drin\n")
+    assert installer._installed_version(tmp_path / SHIM) == 0
+    assert installer._installed_version(tmp_path / "fehlt.py") is None
+
+
+def test_install_into_a_missing_folder_reports_and_fails(tmp_path, capsys):
+    installer = _installer()
+    assert installer.install(tmp_path / "nope", None) == 1
+    assert "not a directory" in capsys.readouterr().err
+
+
+def test_install_prints_next_steps_with_the_domain(tmp_path, capsys):
+    installer = _installer()
+    ziel = tmp_path / "meine_integration"
+    ziel.mkdir()
+    assert installer.install(ziel, None) == 0
+    ausgabe = capsys.readouterr().out
+    assert "copied" in ausgabe
+    assert 'hass.registrations["meine_integration"]' in ausgabe
+
+
+def test_install_reads_a_manifest_domain_and_fills_the_kit_in(tmp_path, capsys):
+    installer = _installer()
+    ziel = tmp_path / "integration"
+    ziel.mkdir()
+    (ziel / "manifest.json").write_text('{"domain": "meine_domain"}')
+    tests = tmp_path / "tests"
+
+    assert installer.install(ziel, tests) == 0
+    ausgabe = capsys.readouterr().out
+    assert 'hass.registrations["meine_domain"]' in ausgabe
+    assert (tests / KIT).is_file(), "the conformance kit lands in the tests"
