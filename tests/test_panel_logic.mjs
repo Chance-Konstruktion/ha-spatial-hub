@@ -753,6 +753,40 @@ test("accent, surface and ink reach the page as variables", () => {
   assert.match(view._themeVars, /--fp-ink:#eeeeee/);
 });
 
+
+test("untrusted colour strings cannot escape CSS or SVG attributes", () => {
+  const hostile = 'red; background-image:url(https://example.invalid/pixel)';
+  const quoteAttack = 'red" onload="alert(1)';
+  assert.equal(colour.safeColour(hostile), "");
+  assert.equal(colour.safeColour(quoteAttack), "");
+  assert.equal(colour.safeColour("#12aBcD"), "#12aBcD");
+  assert.equal(colour.safeColour("rebeccapurple"), "rebeccapurple");
+  assert.equal(colour.safeColour("rgb(10, 20, 30)"), "rgb(10, 20, 30)");
+
+  const configured = panel(model({
+    theme: theme({ accent: hostile, surface: quoteAttack, ink: hostile }),
+    nodes: [node("a:one", { color: quoteAttack })],
+  }));
+  assert.equal(configured._themeVars, "");
+  const markup = configured._nodeHtml(configured._model.nodes[0]);
+  assert.doesNotMatch(markup, /onload=/i);
+  assert.doesNotMatch(markup, /background-image:url/i);
+
+  const stack = panel(model({
+    nodes: [node("a:one", { color: hostile })],
+  }), { floor: null })._stackHtml();
+  assert.doesNotMatch(stack, /background-image:url/i);
+  assert.doesNotMatch(stack, /onload=/i);
+});
+
+test("malformed provider colours fall back to the shared state palette", () => {
+  const value = colour.nodeColour(
+    theme(), node("a:one", { color: "red;stroke-width:999" }),
+    { default_color: 'red" onclick="alert(1)' },
+  );
+  assert.equal(value, colour.stateColour(theme(), "online"));
+});
+
 test("the theme's node size multiplies the user's own scale", () => {
   const view = panel(model({ theme: theme({ node_size: 2 }) }));
   assert.match(view._nodeHtml(node("a:x", { scale: 1.5 })), /--node-scale:3/);
