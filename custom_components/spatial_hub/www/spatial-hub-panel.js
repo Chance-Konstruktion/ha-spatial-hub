@@ -1622,11 +1622,13 @@ class SpatialHubPanel extends HTMLElement {
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       this._pan = null;
       this._flushRender();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }
 
   /** Two fingers: the same zoom, driven by the distance between them. */
