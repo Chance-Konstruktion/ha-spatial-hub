@@ -1156,6 +1156,43 @@ async def test_a_custom_shape_has_no_area_behind_it_at_all(hass, hub):
 
 
 @pytest.mark.asyncio
+async def test_persisted_shapes_reject_nonfinite_boolean_and_out_of_range_points(
+    hass, hub
+):
+    valid_points = [
+        {"x": 0.1, "y": 0.1},
+        {"x": 0.8, "y": 0.1},
+        {"x": 0.8, "y": 0.8},
+    ]
+    shapes = [
+        {"id": "nan", "floor_id": "eg", "points": [
+            {"x": float("nan"), "y": 0.1}, *valid_points[1:],
+        ]},
+        {"id": "infinite", "floor_id": "eg", "points": [
+            {"x": 0.1, "y": float("inf")}, *valid_points[1:],
+        ]},
+        {"id": "boolean", "floor_id": "eg", "points": [
+            {"x": True, "y": False}, *valid_points[1:],
+        ]},
+        {"id": "outside", "floor_id": "eg", "points": [
+            {"x": 900, "y": 0.1}, *valid_points[1:],
+        ]},
+        {"id": "valid", "floor_id": "eg", "points": valid_points},
+    ]
+    hub.store.update("settings", "view", {"custom_shapes": shapes})
+
+    model = await hub.async_model()
+
+    assert [shape["id"] for shape in model["shapes"]] == ["valid"]
+    assert all(
+        -4 <= point[axis] <= 5 and point[axis] == point[axis]
+        for shape in model["shapes"]
+        for point in shape["points"]
+        for axis in ("x", "y")
+    )
+
+
+@pytest.mark.asyncio
 async def test_a_malformed_custom_shape_is_dropped_not_guessed_at(hass, hub):
     """Nothing in Home Assistant can validate these on the way in."""
     hub.store.update("settings", "view", {
