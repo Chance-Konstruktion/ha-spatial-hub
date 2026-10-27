@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from custom_components.spatial_hub.registry import (
@@ -93,6 +95,21 @@ async def test_broken_items_are_dropped_not_the_payload():
     assert [node.id for node in result.nodes] == ["demo:good"]
     assert result.edges == []
     assert len(result.warnings) == 3, "each dropped item is reported"
+
+
+@pytest.mark.asyncio
+async def test_future_returned_by_provider_is_awaited():
+    """The provider contract accepts awaitables, not only coroutine objects."""
+    future = asyncio.get_running_loop().create_future()
+    future.set_result({"nodes": [{"id": "future"}]})
+    provider = Provider.from_registration(
+        _registration(data=lambda: future)
+    )
+
+    result = await provider.async_fetch()
+
+    assert [node.id for node in result.nodes] == ["demo:future"]
+    assert result.error is None
 
 
 @pytest.mark.asyncio
