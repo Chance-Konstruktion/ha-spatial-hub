@@ -248,6 +248,21 @@ def test_the_user_may_state_the_three_host_colours():
     assert resolved["ink"] == "#000000"
 
 
+def test_stored_css_declaration_injection_never_reaches_a_renderer():
+    resolved = theme.resolve({
+        "theme": {
+            "preset": "classic",
+            "accent": "red; position:fixed",
+            "state_colors": {"offline": "red; background-image:url(https://example.invalid)"},
+            "quality_colors": {"poor": "url(https://example.invalid/pixel)"},
+        }
+    })
+
+    assert resolved["accent"] == theme.PRESETS["classic"]["accent"]
+    assert resolved["state_colors"]["offline"] == theme.PRESETS["classic"]["state_colors"]["offline"]
+    assert resolved["quality_colors"]["poor"] == theme.PRESETS["classic"]["quality_colors"]["poor"]
+
+
 def test_a_colour_that_is_not_a_string_is_ignored():
     resolved = theme.resolve({"theme": {"accent": 0xFF0000}})
     assert resolved["accent"] == "", "an int is not a colour; keep inheriting"
