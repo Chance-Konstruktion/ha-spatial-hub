@@ -56,6 +56,30 @@ async def test_model_has_floors_areas_and_provider_data(hass, hub):
 
 
 @pytest.mark.asyncio
+async def test_preexisting_layout_colors_are_sanitized_before_model_output(hass, hub):
+    _register(hass)
+    hub.store.update("nodes", "demo:a", {"color": "red; position:fixed"})
+    hub.store.update("settings", "view", {
+        "custom_shapes": [{
+            "id": "annotation",
+            "floor_id": "eg",
+            "name": "Annotation",
+            "color": "url(https://example.invalid/pixel)",
+            "points": [
+                {"x": 0.1, "y": 0.1},
+                {"x": 0.9, "y": 0.1},
+                {"x": 0.9, "y": 0.9},
+            ],
+        }]
+    })
+
+    model = await hub.async_model()
+
+    assert model["nodes"][0]["color"] == ""
+    assert model["shapes"][0]["color"] == ""
+
+
+@pytest.mark.asyncio
 async def test_node_lands_in_the_centre_of_its_area(hass, hub):
     _register(hass)
     model = await hub.async_model()
