@@ -36,7 +36,7 @@ _CSS_COLOR_UNSAFE = re.compile(r"[;{}<>\"'!\\\x00-\x1f\x7f]")
 _CSS_ACTIVE_FUNCTION = re.compile(r"\b(?:url|expression)\s*\(", re.IGNORECASE)
 
 
-def safe_css_color(value: Any) -> str:
+def safe_css_color(value: Any) -> str | None:
     """Keep a CSS colour value from escaping its style declaration.
 
     Values such as node colours, theme accents and custom SVG defaults are
@@ -45,17 +45,20 @@ def safe_css_color(value: Any) -> str:
     controls, quotes, backslashes and active URL/expression functions. This
     intentionally preserves normal CSS colours, rgb/hsl functions and
     variable references without trying to reimplement the browser's grammar.
+
+    Empty text is a legitimate inherit/default value; None means unsafe.
     """
     if not isinstance(value, str):
-        return ""
+        return None
     colour = value.strip()
+    if not colour:
+        return ""
     if (
-        not colour
-        or len(colour) > 64
+        len(colour) > 64
         or _CSS_COLOR_UNSAFE.search(colour)
         or _CSS_ACTIVE_FUNCTION.search(colour)
     ):
-        return ""
+        return None
     return colour
 
 
@@ -219,7 +222,7 @@ class Node:
             position=Position.from_dict(data.get("position")),
             state=_str(data.get("state"), STATE_UNKNOWN),
             icon=_str(data.get("icon")),
-            color=safe_css_color(data.get("color")),
+            color=safe_css_color(data.get("color")) or "",
             entity_id=_str(data.get("entity_id")) or None,
             device_id=_str(data.get("device_id")) or None,
             anchors=_anchors(data.get("anchors")),
