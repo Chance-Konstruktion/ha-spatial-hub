@@ -747,6 +747,23 @@ def test_a_theme_sticks_to_its_limits(hass, hub, connection):
         {"accent": "x" * 65},
     ],
 )
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"theme": {"accent": "red; position:fixed"}},
+        {"color": "red; position:fixed"},
+        {"custom_shapes": [{
+            "id": "annotation", "floor_id": "eg", "name": "Annotation",
+            "color": "url(https://example.invalid/pixel)",
+            "points": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}],
+        }]},
+    ],
+)
+def test_style_values_cannot_escape_their_css_declaration(values):
+    with pytest.raises(vol.Invalid):
+        _layout_values(values)
+
+
 def test_a_theme_beyond_its_limits_is_refused(values):
     """The dial's ends exist so a stored mistake cannot turn the plan
     unreadable -- and the refusal happens here, not in the renderer."""
