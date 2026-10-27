@@ -67,7 +67,7 @@ import {
 } from "./panel-markup.js";
 import { ALL_FLOORS, formatValue, pretty } from "./panel-const.js";
 import { houseScene } from "./panel-house3d.js";
-import { animationClass } from "./panel-colour.js";
+import { animationClass, safeColour } from "./panel-colour.js";
 import {
   dialogShell,
   haAlert,
@@ -991,6 +991,7 @@ export const ANSICHT = {
               ).toFixed(2)}%`,
           )
           .join(",");
+        const colour = safeColour(shape.color);
         const centre = centreOf(shape.points);
         const left = inFrame(centre.x, frame).toFixed(2);
         const top = inFrameY(centre.y, frame).toFixed(2);
@@ -998,7 +999,7 @@ export const ANSICHT = {
         return `
           <div class="custom-shape" data-shape="${escapeHtml(shape.id)}"
                style="clip-path:polygon(${polygon});${
-                 shape.color ? `background:${escapeHtml(shape.color)};` : ""
+                 colour ? `background:${colour};` : ""
                }"></div>
           <span class="custom-shape-name" style="left:${left}%; top:${top}%;">
             ${escapeHtml(shape.name)}
