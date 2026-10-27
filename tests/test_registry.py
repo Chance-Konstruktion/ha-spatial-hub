@@ -96,6 +96,35 @@ async def test_broken_items_are_dropped_not_the_payload():
 
 
 @pytest.mark.asyncio
+async def test_nonfinite_numbers_are_sanitized_before_the_model_is_rendered():
+    provider = Provider.from_registration(
+        _registration(
+            data=lambda: {
+                "nodes": [
+                    {"id": "bad_xy", "position": {"x": float("nan"), "y": 0.5}},
+                    {"id": "bad_z", "position": {
+                        "x": 0.2, "y": 0.3, "z": float("inf")
+                    }},
+                ],
+                "edges": [{
+                    "source": "bad_xy", "target": "bad_z",
+                    "value": float("inf"), "width": float("nan"),
+                }],
+            }
+        )
+    )
+
+    result = await provider.async_fetch()
+    nodes = {node.id: node for node in result.nodes}
+    edge = result.edges[0]
+
+    assert nodes["demo:bad_xy"].position is None
+    assert nodes["demo:bad_z"].position.z == 0.0
+    assert edge.value is None
+    assert edge.width == 2.0
+
+
+@pytest.mark.asyncio
 async def test_a_bare_entity_id_is_a_complete_node():
     """The shortest possible node definition -- HA knows the rest."""
     provider = Provider.from_registration(
