@@ -74,14 +74,14 @@ _SVG_ATTRIBUTES = frozenset({
     "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
     "stroke-dasharray", "stroke-dashoffset", "stroke-opacity", "opacity",
 })
-_SVG_NUMBER = r"[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?"
-_SVG_NUMBER_LIST = re.compile(rf"^[\\s,]*{_SVG_NUMBER}(?:[\\s,]+{_SVG_NUMBER})*[\\s,]*$")
+_SVG_NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+_SVG_NUMBER_LIST = re.compile(rf"^[\s,]*{_SVG_NUMBER}(?:[\s,]+{_SVG_NUMBER})*[\s,]*$")
 _SVG_LENGTH = re.compile(rf"^{_SVG_NUMBER}(?:%|px|em|rem)?$")
 _SVG_COLOR = re.compile(r"^(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]+)$")
-_SVG_PATH = re.compile(r"^[MmZzLlHhVvCcSsQqTtAaEe0-9+.,\\-\\s]+$")
+_SVG_PATH = re.compile(r"^[MmZzLlHhVvCcSsQqTtAaEe0-9+.,\-\s]+$")
 _SVG_TRANSFORM = re.compile(
-    rf"^(?:(?:matrix|translate|scale|rotate|skewX|skewY)\\s*"
-    rf"\\(\\s*[0-9eE+.,\\-\\s]+\\)\\s*)+$"
+    rf"^(?:(?:matrix|translate|scale|rotate|skewX|skewY)\s*"
+    rf"\(\s*[0-9eE+.,\-\s]+\)\s*)+$"
 )
 
 
@@ -134,7 +134,7 @@ def _sanitize_svg(value: Any) -> str:
         not isinstance(value, str)
         or not value
         or len(value.encode("utf-8", errors="ignore")) > _MAX_SVG_BYTES
-        or re.search(r"<!\\s*(?:DOCTYPE|ENTITY)", value, re.IGNORECASE)
+        or re.search(r"<!\s*(?:DOCTYPE|ENTITY)", value, re.IGNORECASE)
     ):
         return ""
     try:
