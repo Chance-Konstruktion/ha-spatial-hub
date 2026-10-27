@@ -30,6 +30,7 @@ whatever it gets back.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -244,7 +245,7 @@ class Provider:
         try:
             async with asyncio.timeout(DATA_TIMEOUT):
                 payload = self.data_fn()
-                if asyncio.iscoroutine(payload):
+                if inspect.isawaitable(payload):
                     payload = await payload
         except TimeoutError:
             _LOGGER.warning("Provider %s timed out delivering data", self.id)
