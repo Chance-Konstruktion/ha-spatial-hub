@@ -287,7 +287,7 @@ class Edge:
             label=_str(data.get("label")),
             value=_float_or_none(data.get("value")),
             quality=_str(data.get("quality"), QUALITY_UNKNOWN),
-            color=_str(data.get("color")),
+            color=safe_css_color(data.get("color")) or "",
             width=_float_or(data.get("width"), 2.0),
             directed=bool(data.get("directed")),
             dashed=bool(data.get("dashed")),
