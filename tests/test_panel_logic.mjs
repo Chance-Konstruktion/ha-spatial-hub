@@ -464,6 +464,24 @@ test("auto_position is housekeeping and stays out of the popup", () => {
   assert.match(html, /Tx rate/);
 });
 
+test("the panel subscribes before its first model fetch", async () => {
+  const view = panel();
+  const order = [];
+  view._haReady = async () => { order.push("ha-ready"); };
+  view._refresh = async () => { order.push("refresh"); };
+  view._io = {
+    subscribe: async (_message, _handler) => {
+      order.push("subscribe");
+      return () => {};
+    },
+  };
+
+  await view._connect();
+
+  assert.deepEqual(order, ["ha-ready", "subscribe", "refresh"]);
+});
+
+
 test("a selected item that vanished mid-refresh closes quietly", () => {
   const view = panel();
   view._selected = { kind: "node", id: "a:gone" };
