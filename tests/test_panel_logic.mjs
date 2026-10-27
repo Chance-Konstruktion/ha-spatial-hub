@@ -495,6 +495,35 @@ test("auto_position is housekeeping and stays out of the popup", () => {
   assert.match(html, /Tx rate/);
 });
 
+test("a refresh requested during an in-flight fetch is replayed", async () => {
+  const view = panel();
+  view._render = () => {};
+  let releaseFirst;
+  let calls = 0;
+  const stale = model({ nodes: [node("a:stale")] });
+  const fresh = model({ nodes: [node("a:fresh")] });
+  view._io = {
+    call() {
+      calls += 1;
+      if (calls === 1) {
+        return new Promise((resolve) => { releaseFirst = resolve; });
+      }
+      return Promise.resolve(fresh);
+    },
+  };
+
+  const first = view._refresh();
+  assert.equal(calls, 1, "the first model request is in flight");
+  await view._refresh();
+  releaseFirst(stale);
+  await first;
+
+  assert.equal(calls, 2, "a pending notification triggers one new model fetch");
+  assert.equal(view._model.nodes[0].id, "a:fresh",
+               "the final model includes the later change");
+});
+
+
 test("a selected item that vanished mid-refresh closes quietly", () => {
   const view = panel();
   view._selected = { kind: "node", id: "a:gone" };
