@@ -173,6 +173,14 @@ class SpatialHub:
         the user's stored arrangement wins over both.
         """
         providers = self.providers
+        # A removed provider has no current status. Without pruning, its last
+        # successful fetch remains in diagnostics indefinitely after unload.
+        active_provider_ids = set(providers)
+        self._status = {
+            provider_id: status
+            for provider_id, status in self._status.items()
+            if provider_id in active_provider_ids
+        }
         floors = discovery.async_floors(self.hass)
         areas = discovery.async_areas(self.hass)
         # Before nodes are placed: a node inherits its area's floor, so the
