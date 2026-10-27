@@ -327,3 +327,30 @@ def test_provider_inline_svg_rejects_non_svg_and_oversized_payloads():
         assert provider.icon_set == {}
 
 
+@pytest.mark.asyncio
+async def test_provider_css_colors_cannot_inject_style_declarations():
+    hostile_colour = "red; position:fixed"
+    provider = Provider.from_registration(
+        _registration(
+            data=lambda: {
+                "nodes": [{"id": "n", "color": hostile_colour}],
+                "edges": [{
+                    "source": "n", "target": "n", "color": hostile_colour
+                }],
+            },
+            icon_set={
+                "custom": {
+                    "svg": "<svg/>",
+                    "default_color": hostile_colour,
+                }
+            },
+        )
+    )
+
+    result = await provider.async_fetch()
+
+    assert result.nodes[0].color == ""
+    assert result.edges[0].color == ""
+    assert "default_color" not in provider.icon_set["custom"]
+    assert any("unsafe default_color" in warning for warning in provider.warnings)
+
