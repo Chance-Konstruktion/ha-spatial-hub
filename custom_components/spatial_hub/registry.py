@@ -62,6 +62,9 @@ def _safe_url(value: Any) -> str:
 
 
 _SVG_NS = "http://www.w3.org/2000/svg"
+# Serialize sanitized icons as a default SVG namespace so HTML fragment parsing
+# recreates real SVG elements rather than literal prefixed tag names.
+ET.register_namespace("", _SVG_NS)
 _MAX_SVG_BYTES = 16_384
 _SVG_TAGS = frozenset({
     "svg", "g", "path", "circle", "ellipse", "rect", "line",
@@ -166,8 +169,7 @@ def _sanitize_svg(value: Any) -> str:
     cleaned_root = clean(original)
     if cleaned_root is None:
         return ""
-    # A canonical SVG namespace is attached even if the provider omitted it.
-    cleaned_root.set("xmlns", _SVG_NS)
+    # ElementTree emits the canonical namespace on the root element.
     try:
         return ET.tostring(cleaned_root, encoding="unicode", short_empty_elements=True)
     except (TypeError, ValueError):
