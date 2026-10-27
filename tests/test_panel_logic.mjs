@@ -227,6 +227,37 @@ const stage = () => {
 
 // ── What belongs on screen ─────────────────────────────────
 
+test("stored background values must be raster data URLs before CSS interpolation", () => {
+  const unsafe = "');background-image:url(https://example.invalid/pixel);/*";
+  const png =
+    "data:image/png;base64," +
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j8noAAAAASUVORK5CYII=";
+
+  const floor = {
+    id: "eg", name: "Erdgeschoss", level: 0, icon: "", background: unsafe,
+  };
+  const floorHtml = panel(model({
+    floors: [floor], nodes: [], edges: [],
+  }))._stageHtml();
+  assert.doesNotMatch(floorHtml, /background-image:url/i);
+
+  const room = {
+    id: "room", name: "Zimmer", floor_id: "eg",
+    position: at(0.5, 0.5), size: { width: 0.3, height: 0.3 },
+    background: unsafe,
+  };
+  const areaHtml = panel(model({
+    areas: [room], nodes: [], edges: [],
+  }))._areasHtml(new Map());
+  assert.doesNotMatch(areaHtml, /background-image:url/i);
+
+  const valid = panel(model({
+    floors: [{ ...floor, background: png }], nodes: [], edges: [],
+  }))._stageHtml();
+  assert.ok(valid.includes("background-image:url('data:image/png;base64,"));
+});
+
+
 test("only the selected floor is drawn", () => {
   const view = panel(
     model({ nodes: [node("a:down"), node("a:up", { floor_id: "og" })] }),
