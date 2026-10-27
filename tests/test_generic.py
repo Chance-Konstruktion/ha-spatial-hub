@@ -242,6 +242,15 @@ def test_facets_report_what_the_house_actually_has(house):
 # ── The one that is the architecture ──────────────────────
 
 
+def test_custom_layer_preserves_explicit_zero_z_index(hass):
+    """Zero is a valid draw-order value, not a request for the default."""
+    layer = generic.registration(
+        hass, {"id": "low", "name": "Low layer", "z_index": 0}
+    )
+
+    assert layer["layers"][0]["z_index"] == 0
+
+
 def test_the_generic_adapter_gets_no_shortcut_into_the_hub(house):
     """It registers exactly as a third party does, or it proves nothing.
 
