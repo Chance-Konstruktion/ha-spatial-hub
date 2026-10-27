@@ -55,7 +55,16 @@ def _safe_url(value: Any) -> str:
     should be handing them.
     """
     url = str(value or "").strip()
-    if not url.startswith("/") or url.startswith("//") or len(url) > 256:
+    # Browsers treat backslashes as slashes for special URLs, and strip
+    # ASCII tab/newline controls during URL parsing. Without rejecting them,
+    # an apparently local path can be interpreted as a network-path URL.
+    if (
+        not url.startswith("/")
+        or url.startswith("//")
+        or "\\" in url
+        or any(ord(char) < 0x20 or ord(char) == 0x7F for char in url)
+        or len(url) > 256
+    ):
         return ""
     return url
 
