@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -57,6 +59,119 @@ def _safe_url(value: Any) -> str:
     if not url.startswith("/") or url.startswith("//") or len(url) > 256:
         return ""
     return url
+
+
+_SVG_NS = "http://www.w3.org/2000/svg"
+_MAX_SVG_BYTES = 16_384
+_SVG_TAGS = frozenset({
+    "svg", "g", "path", "circle", "ellipse", "rect", "line",
+    "polyline", "polygon", "title", "desc",
+})
+_SVG_ATTRIBUTES = frozenset({
+    "viewBox", "width", "height", "x", "y", "x1", "y1", "x2", "y2",
+    "cx", "cy", "r", "rx", "ry", "d", "points", "transform",
+    "fill", "fill-rule", "fill-opacity", "stroke", "stroke-width",
+    "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
+    "stroke-dasharray", "stroke-dashoffset", "stroke-opacity", "opacity",
+})
+_SVG_NUMBER = r"[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?"
+_SVG_NUMBER_LIST = re.compile(rf"^[\\s,]*{_SVG_NUMBER}(?:[\\s,]+{_SVG_NUMBER})*[\\s,]*$")
+_SVG_LENGTH = re.compile(rf"^{_SVG_NUMBER}(?:%|px|em|rem)?$")
+_SVG_COLOR = re.compile(r"^(?:#[0-9a-fA-F]{3,8}|[a-zA-Z]+)$")
+_SVG_PATH = re.compile(r"^[MmZzLlHhVvCcSsQqTtAaEe0-9+.,\\-\\s]+$")
+_SVG_TRANSFORM = re.compile(
+    rf"^(?:(?:matrix|translate|scale|rotate|skewX|skewY)\\s*"
+    rf"\\(\\s*[0-9eE+.,\\-\\s]+\\)\\s*)+$"
+)
+
+
+def _svg_name(name: str) -> str:
+    """Strip an XML namespace from an element or attribute name."""
+    return name.rsplit("}", 1)[-1]
+
+
+def _safe_svg_attribute(name: str, value: str) -> str | None:
+    """Keep only passive, bounded SVG presentation attributes."""
+    if name not in _SVG_ATTRIBUTES or any(
+        ord(char) < 0x20 or ord(char) == 0x7F for char in value
+    ):
+        return None
+    if name in {"fill", "stroke"}:
+        return value if _SVG_COLOR.fullmatch(value) else None
+    if name in {"fill-rule"}:
+        return value if value in {"nonzero", "evenodd"} else None
+    if name in {"stroke-linecap"}:
+        return value if value in {"butt", "round", "square"} else None
+    if name in {"stroke-linejoin"}:
+        return value if value in {"miter", "round", "bevel"} else None
+    if name == "d":
+        return value if _SVG_PATH.fullmatch(value) else None
+    if name == "transform":
+        return value if _SVG_TRANSFORM.fullmatch(value) else None
+    if name in {"viewBox", "points", "stroke-dasharray"}:
+        return (
+            value
+            if value == "none" and name == "stroke-dasharray"
+            or _SVG_NUMBER_LIST.fullmatch(value)
+            else None
+        )
+    if name in {"width", "height"}:
+        return value if _SVG_LENGTH.fullmatch(value) else None
+    # Coordinates, radii, line widths and opacity are numeric only. This
+    # prevents URL, CSS and markup syntax from crossing into SVG attributes.
+    return value if re.fullmatch(_SVG_NUMBER, value) else None
+
+
+def _sanitize_svg(value: Any) -> str:
+    """Return a small, passive SVG; untrusted provider markup is never rendered raw.
+
+    Custom icons are inserted into the panel with innerHTML. Accepting the
+    original string would allow script/foreignObject elements, event-handler
+    attributes, styles, or external references to execute in the HA UI.
+    Only basic geometry elements and numeric/presentation attributes survive.
+    """
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value.encode("utf-8", errors="ignore")) > _MAX_SVG_BYTES
+        or re.search(r"<!\\s*(?:DOCTYPE|ENTITY)", value, re.IGNORECASE)
+    ):
+        return ""
+    try:
+        original = ET.fromstring(value)
+    except (ET.ParseError, ValueError):
+        return ""
+    if _svg_name(original.tag) != "svg":
+        return ""
+
+    def clean(element: ET.Element) -> ET.Element | None:
+        tag = _svg_name(element.tag)
+        if tag not in _SVG_TAGS:
+            return None
+        cleaned = ET.Element(f"{{{_SVG_NS}}}{tag}")
+        for raw_name, raw_value in element.attrib.items():
+            name = _svg_name(raw_name)
+            safe_value = _safe_svg_attribute(name, str(raw_value))
+            if safe_value is not None:
+                cleaned.set(name, safe_value)
+        if tag in {"title", "desc"}:
+            # Text is escaped by ElementTree on serialization and kept short.
+            cleaned.text = (element.text or "")[:256]
+        for child in element:
+            safe_child = clean(child)
+            if safe_child is not None:
+                cleaned.append(safe_child)
+        return cleaned
+
+    cleaned_root = clean(original)
+    if cleaned_root is None:
+        return ""
+    # A canonical SVG namespace is attached even if the provider omitted it.
+    cleaned_root.set("xmlns", _SVG_NS)
+    try:
+        return ET.tostring(cleaned_root, encoding="unicode", short_empty_elements=True)
+    except (TypeError, ValueError):
+        return ""
 
 
 class ProviderError(Exception):
@@ -193,11 +308,27 @@ class Provider:
         # Same contract as api_version: something that is not a mapping
         # is a broken registration, not an empty icon set.
         try:
-            icon_set = dict(raw.get("icon_set") or {})
+            raw_icon_set = dict(raw.get("icon_set") or {})
         except (TypeError, ValueError) as err:
             raise ProviderError(
                 f"{provider_id} has an unusable 'icon_set' ({err})"
             ) from err
+        icon_set: dict[str, Any] = {}
+        for icon_name, raw_icon in raw_icon_set.items():
+            if not isinstance(raw_icon, dict):
+                warnings.append(
+                    f"icon_set entry {icon_name!r} is not a mapping and was ignored"
+                )
+                continue
+            safe_svg = _sanitize_svg(raw_icon.get("svg"))
+            if not safe_svg:
+                warnings.append(
+                    f"icon_set entry {icon_name!r} has invalid or unsafe SVG and was ignored"
+                )
+                continue
+            icon = dict(raw_icon)
+            icon["svg"] = safe_svg
+            icon_set[str(icon_name)] = icon
 
         return cls(
             id=provider_id,
