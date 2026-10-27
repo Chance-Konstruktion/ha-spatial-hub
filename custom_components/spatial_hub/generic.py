@@ -390,7 +390,7 @@ def registration(hass: HomeAssistant, config: dict[str, Any]) -> dict[str, Any]:
                 "id": f"{PROVIDER_PREFIX}{layer_id}",
                 "name": name,
                 "icon": str(config.get("icon") or ""),
-                "z_index": int(config.get("z_index") or 10),
+                "z_index": int(config.get("z_index", 10) if config.get("z_index") is not None else 10),
             }
         ],
         "data": data,

@@ -7,6 +7,9 @@ export all use exactly these commands.
 
 from __future__ import annotations
 
+import math
+import re
+
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
@@ -38,6 +41,32 @@ def _validated_colour(value: str) -> str:
 
 
 _COLOUR = vol.All(str, vol.Length(max=64), _validated_colour)
+
+
+def _reject_non_finite_numbers(value):
+    """Reject NaN and infinity anywhere in a validated layout payload.
+
+    Range comparisons alone do not reject NaN: both nan < min and
+    nan > max are false, so a string such as "nan" could otherwise be
+    coerced and persisted as a floating-point value.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        raise vol.Invalid("numbers must be finite")
+    if isinstance(value, dict):
+        for item in value.values():
+            _reject_non_finite_numbers(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _reject_non_finite_numbers(item)
+    return value
+# The renderer places background strings inside a CSS url(...). The editor
+# uploads a local image as a data URL, so arbitrary CSS/URL strings and SVG
+# documents are not needed here. Accept only bounded, base64 raster images.
+_BACKGROUND_DATA_URL = re.compile(
+    r"^data:image/(?:png|jpeg|webp|gif|avif);base64,"
+    r"(?:[A-Za-z0-9+/]{4})*"
+    r"(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$"
+)
 
 # A theme colours the shared vocabulary -- node states and edge qualities --
 # never an integration. See theme.py for why that distinction matters.
@@ -238,55 +267,58 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
             ["nodes", "layers", "floors", "areas", "settings"]
         ),
         vol.Required("key"): str,
-        vol.Required("values"): {
-            vol.Optional("theme"): vol.Any(None, _THEME_SCHEMA),
-            vol.Optional("custom_layers"): vol.Any(
-                None, vol.All([_CUSTOM_LAYER_SCHEMA], vol.Length(max=25))
-            ),
-            vol.Optional("custom_shapes"): vol.Any(
-                None, vol.All([_CUSTOM_SHAPE_SCHEMA], vol.Length(max=40))
-            ),
-            vol.Optional("position"): vol.Any(None, _POSITION_SCHEMA),
-            vol.Optional("size"): vol.Any(None, _SIZE_SCHEMA),
-            vol.Optional("label_offset"): vol.Any(None, dict),
-            vol.Optional("icon"): vol.Any(None, str),
-            vol.Optional("color"): vol.Any(None, _COLOUR),
-            vol.Optional("scale"): vol.Any(
-                None, vol.All(vol.Coerce(float), vol.Range(min=0.2, max=5))
-            ),
-            vol.Optional("rotation"): vol.Any(
-                None, vol.All(vol.Coerce(float), vol.Range(min=-360, max=360))
-            ),
-            vol.Optional("hidden"): vol.Any(None, bool),
-            vol.Optional("visible"): vol.Any(None, bool),
-            vol.Optional("z_index"): vol.Any(None, vol.Coerce(int)),
-            vol.Optional("opacity"): vol.Any(
-                None, vol.All(vol.Coerce(float), vol.Range(min=0, max=1))
-            ),
-            vol.Optional("background"): vol.Any(None, str),
-            vol.Optional("aspect"): vol.Any(
-                None, vol.All(vol.Coerce(float), vol.Range(min=0.1, max=10))
-            ),
-            vol.Optional("name"): vol.Any(None, str),
-            vol.Optional("order"): vol.Any(None, vol.Coerce(int)),
-            vol.Optional("outline"): vol.Any(None, _OUTLINE_SCHEMA),
-            vol.Optional("shape"): vol.Any(None, _SHAPE_SCHEMA),
-            # Openings in this room's walls.
-            vol.Optional("doors"): vol.Any(None, _DOORS_SCHEMA),
-            # Rooms this one is *not* sharing a wall with, however much
-            # the geometry says otherwise. A party wall between two flats
-            # really is two walls.
-            vol.Optional("unjoined"): vol.Any(None, _UNJOINED_SCHEMA),
-            vol.Optional("plot"): vol.Any(None, _PLOT_SCHEMA),
-            # How wide the house is in metres -- the expert's one number.
-            vol.Optional("metres"): vol.Any(
-                None, vol.All(vol.Coerce(float), vol.Range(min=1, max=200))
-            ),
-            # What an area is, and where it may be drawn.
-            vol.Optional("kind"): vol.Any(None, vol.In(list(AREA_KINDS))),
-            vol.Optional("in_sandwich"): vol.Any(None, bool),
-            vol.Optional("single_only"): vol.Any(None, bool),
-        },
+        vol.Required("values"): vol.All(
+            {
+                vol.Optional("theme"): vol.Any(None, _THEME_SCHEMA),
+                vol.Optional("custom_layers"): vol.Any(
+                    None, vol.All([_CUSTOM_LAYER_SCHEMA], vol.Length(max=25))
+                ),
+                vol.Optional("custom_shapes"): vol.Any(
+                    None, vol.All([_CUSTOM_SHAPE_SCHEMA], vol.Length(max=40))
+                ),
+                vol.Optional("position"): vol.Any(None, _POSITION_SCHEMA),
+                vol.Optional("size"): vol.Any(None, _SIZE_SCHEMA),
+                vol.Optional("label_offset"): vol.Any(None, dict),
+                vol.Optional("icon"): vol.Any(None, str),
+                vol.Optional("color"): vol.Any(None, _COLOUR),
+                vol.Optional("scale"): vol.Any(
+                    None, vol.All(vol.Coerce(float), vol.Range(min=0.2, max=5))
+                ),
+                vol.Optional("rotation"): vol.Any(
+                    None, vol.All(vol.Coerce(float), vol.Range(min=-360, max=360))
+                ),
+                vol.Optional("hidden"): vol.Any(None, bool),
+                vol.Optional("visible"): vol.Any(None, bool),
+                vol.Optional("z_index"): vol.Any(None, vol.Coerce(int)),
+                vol.Optional("opacity"): vol.Any(
+                    None, vol.All(vol.Coerce(float), vol.Range(min=0, max=1))
+                ),
+                vol.Optional("background"): vol.Any(None, str),
+                vol.Optional("aspect"): vol.Any(
+                    None, vol.All(vol.Coerce(float), vol.Range(min=0.1, max=10))
+                ),
+                vol.Optional("name"): vol.Any(None, str),
+                vol.Optional("order"): vol.Any(None, vol.Coerce(int)),
+                vol.Optional("outline"): vol.Any(None, _OUTLINE_SCHEMA),
+                vol.Optional("shape"): vol.Any(None, _SHAPE_SCHEMA),
+                # Openings in this room's walls.
+                vol.Optional("doors"): vol.Any(None, _DOORS_SCHEMA),
+                # Rooms this one is *not* sharing a wall with, however much
+                # the geometry says otherwise. A party wall between two flats
+                # really is two walls.
+                vol.Optional("unjoined"): vol.Any(None, _UNJOINED_SCHEMA),
+                vol.Optional("plot"): vol.Any(None, _PLOT_SCHEMA),
+                # How wide the house is in metres -- the expert's one number.
+                vol.Optional("metres"): vol.Any(
+                    None, vol.All(vol.Coerce(float), vol.Range(min=1, max=200))
+                ),
+                # What an area is, and where it may be drawn.
+                vol.Optional("kind"): vol.Any(None, vol.In(list(AREA_KINDS))),
+                vol.Optional("in_sandwich"): vol.Any(None, bool),
+                vol.Optional("single_only"): vol.Any(None, bool),
+            },
+            _reject_non_finite_numbers,
+        ),
     }
 )
 @callback
@@ -302,9 +334,19 @@ def websocket_layout_set(hass: HomeAssistant, connection, msg: dict) -> None:
         return
 
     background = msg["values"].get("background")
-    if isinstance(background, str) and len(background.encode()) > MAX_BACKGROUND_BYTES:
-        connection.send_error(msg["id"], "invalid_format", "Background image too large")
-        return
+    if isinstance(background, str):
+        if len(background.encode()) > MAX_BACKGROUND_BYTES:
+            connection.send_error(
+                msg["id"], "invalid_format", "Background image too large"
+            )
+            return
+        if not _BACKGROUND_DATA_URL.fullmatch(background):
+            connection.send_error(
+                msg["id"],
+                "invalid_format",
+                "Background must be a base64 PNG, JPEG, WebP, GIF or AVIF image",
+            )
+            return
 
     hub.store.update(msg["section"], msg["key"], msg["values"])
     hub.async_notify("layout")

@@ -52,6 +52,7 @@ def test_anchor_garbage_is_dropped_piece_by_piece():
             "kein dict",
             {"weight": 2},                      # no id
             {"id": "b", "weight": "schwer"},    # weight not a number
+            {"id": "b", "weight": 10**1000},     # too large for float()
             {"id": "b", "weight": 0},           # zero pulls nowhere
             {"id": "b", "weight": -1},          # negative pushes off-plan
             {"id": "b", "weight": float("nan")},
@@ -142,3 +143,32 @@ def test_a_missing_value_still_gets_the_default():
     assert Layer.from_dict({"id": "licht"}).opacity == 1.0
     assert Layer.from_dict({"id": "licht"}).z_index == 10
     assert Edge.from_dict({"source": "a", "target": "b"}).width == 2.0
+
+
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), float("-inf"), 10**1000]
+)
+def test_invalid_position_coordinates_are_rejected(value):
+    """Invalid numeric values must not cross the websocket model boundary."""
+    assert Position.from_dict({"x": value, "y": 0.5}) is None
+    assert Position.from_dict({"x": 0.5, "y": value}) is None
+
+    # An unusable height is optional; retain the established zero default.
+    position = Position.from_dict({"x": 0.5, "y": 0.5, "z": value})
+    assert position.z == 0.0
+
+
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), float("-inf"), 10**1000]
+)
+def test_invalid_layer_and_edge_values_fall_back_safely(value):
+    """A single bad numeric field must not poison the complete model."""
+    layer = Layer.from_dict({"id": "licht", "z_index": value, "opacity": value})
+    assert layer.z_index == 10
+    assert layer.opacity == 1.0
+
+    edge = Edge.from_dict({
+        "source": "a", "target": "b", "width": value, "value": value,
+    })
+    assert edge.width == 2.0
+    assert edge.value is None

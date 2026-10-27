@@ -13,7 +13,9 @@ not blank the user's floor plan.
 from __future__ import annotations
 
 import re
+import math
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Any
 
 from .const import (
@@ -63,10 +65,17 @@ def safe_css_color(value: Any) -> str | None:
 
 
 def _float_or_none(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
+    # bool is a subclass of int in Python, but true/false are not meaningful
+    # coordinates, measurements, widths or opacity values in this API.
+    if isinstance(value, bool):
         return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    # NaN and infinities pass float() but are not valid JSON numbers and can
+    # poison coordinates, edge metrics, and other renderer-facing fields.
+    return number if math.isfinite(number) else None
 
 
 def _float_or(value: Any, default: float) -> float:
@@ -154,7 +163,7 @@ def _anchors(raw: Any) -> list[dict[str, Any]]:
             continue
         try:
             gewicht = float(eintrag.get("weight", 1.0))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
         if gewicht <= 0 or gewicht != gewicht or gewicht in (
             float("inf"), float("-inf")

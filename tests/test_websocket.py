@@ -76,6 +76,42 @@ def test_layout_set_rejects_an_oversized_background(hass, hub, connection):
     assert hub.store.get("floors", "eg") == {}
 
 
+def test_layout_set_rejects_background_urls_and_active_formats(hass, hub, connection):
+    unsafe = [
+        "https://example.invalid/background.png",
+        "');background-image:url(https://example.invalid/pixel);/*",
+        "data:image/svg+xml;base64,PHN2Zy8+",
+        "data:text/html;base64,PGgxPkhlbGxvPC9oMT4=",
+        "data:image/png;base64,",
+    ]
+
+    for index, background in enumerate(unsafe):
+        ws.websocket_layout_set(
+            hass,
+            connection,
+            {"id": index + 1, "section": "floors", "key": f"bad-{index}",
+             "values": {"background": background}},
+        )
+        assert connection.errors[-1][1] == "invalid_format"
+        assert hub.store.get("floors", f"bad-{index}") == {}
+
+
+def test_layout_set_accepts_a_raster_image_data_url(hass, hub, connection):
+    background = (
+        "data:image/png;base64,"
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j8noAAAAASUVORK5CYII="
+    )
+    ws.websocket_layout_set(
+        hass,
+        connection,
+        {"id": 1, "section": "areas", "key": "wohnzimmer",
+         "values": {"background": background}},
+    )
+
+    assert connection.results[1] == {"success": True}
+    assert hub.store.get("areas", "wohnzimmer")["background"] == background
+
+
 def test_layout_set_ignores_keys_the_section_does_not_own(hass, hub, connection):
     ws.websocket_layout_set(
         hass,
@@ -747,6 +783,13 @@ def test_a_theme_sticks_to_its_limits(hass, hub, connection):
         {"accent": "x" * 65},
     ],
 )
+def test_a_theme_beyond_its_limits_is_refused(values):
+    """The dial's ends exist so a stored mistake cannot turn the plan
+    unreadable -- and the refusal happens here, not in the renderer."""
+    with pytest.raises(vol.Invalid):
+        _layout_values({"theme": values})
+
+
 @pytest.mark.parametrize(
     "values",
     [
@@ -762,13 +805,6 @@ def test_a_theme_sticks_to_its_limits(hass, hub, connection):
 def test_style_values_cannot_escape_their_css_declaration(values):
     with pytest.raises(vol.Invalid):
         _layout_values(values)
-
-
-def test_a_theme_beyond_its_limits_is_refused(values):
-    """The dial's ends exist so a stored mistake cannot turn the plan
-    unreadable -- and the refusal happens here, not in the renderer."""
-    with pytest.raises(vol.Invalid):
-        _layout_values({"theme": values})
 
 
 def test_an_outline_is_a_box_somewhere_on_the_plan(hass, hub, connection):
@@ -794,3 +830,17 @@ def test_an_outline_is_a_box_somewhere_on_the_plan(hass, hub, connection):
 def test_an_outline_beyond_the_plan_is_refused(outline):
     with pytest.raises(vol.Invalid):
         _layout_values({"outline": outline})
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"position": {"x": "nan", "y": 0.5}},
+        {"size": {"width": "nan", "height": 1}},
+        {"theme": {"node_size": "nan"}},
+    ],
+)
+def test_layout_schema_rejects_non_finite_numbers(values):
+    """Float coercion must not let NaN bypass range validation."""
+    with pytest.raises(vol.Invalid):
+        _layout_values(values)

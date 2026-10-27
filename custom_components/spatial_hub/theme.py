@@ -19,7 +19,6 @@ from __future__ import annotations
 from typing import Any
 
 from .const import (
-from .models import safe_css_color
     QUALITY_FAIR,
     QUALITY_GOOD,
     QUALITY_POOR,
@@ -30,6 +29,7 @@ from .models import safe_css_color
     STATE_ONLINE,
     STATE_UNKNOWN,
 )
+from .models import safe_css_color
 
 # An empty colour means "whatever Home Assistant's own theme says". That is
 # the default, and it is why installing the hub does not fight the theme

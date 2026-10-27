@@ -30,6 +30,7 @@ whatever it gets back.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -54,7 +55,16 @@ def _safe_url(value: Any) -> str:
     should be handing them.
     """
     url = str(value or "").strip()
-    if not url.startswith("/") or url.startswith("//") or len(url) > 256:
+    # Browsers treat backslashes as slashes for special URLs, and strip
+    # ASCII tab/newline controls during URL parsing. Without rejecting them,
+    # an apparently local path can be interpreted as a network-path URL.
+    if (
+        not url.startswith("/")
+        or url.startswith("//")
+        or "\\" in url
+        or any(ord(char) < 0x20 or ord(char) == 0x7F for char in url)
+        or len(url) > 256
+    ):
         return ""
     return url
 
@@ -260,7 +270,7 @@ class Provider:
         try:
             async with asyncio.timeout(DATA_TIMEOUT):
                 payload = self.data_fn()
-                if asyncio.iscoroutine(payload):
+                if inspect.isawaitable(payload):
                     payload = await payload
         except TimeoutError:
             _LOGGER.warning("Provider %s timed out delivering data", self.id)
