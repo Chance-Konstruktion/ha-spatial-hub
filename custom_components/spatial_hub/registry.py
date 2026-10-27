@@ -206,12 +206,12 @@ class Provider:
             icon = dict(raw_icon)
             if "default_color" in icon:
                 colour = safe_css_color(icon["default_color"])
-                if icon["default_color"] and not colour:
+                if icon["default_color"] and colour is None:
                     warnings.append(
                         f"icon_set entry {icon_name!r} has an unsafe default_color; ignored"
                     )
                     icon.pop("default_color")
-                elif colour:
+                elif colour is not None:
                     icon["default_color"] = colour
             icon_set[str(icon_name)] = icon
 
