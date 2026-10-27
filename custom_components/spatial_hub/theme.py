@@ -172,7 +172,7 @@ def resolve(stored: Any) -> dict[str, Any]:
         value = theme.get(key)
         if isinstance(value, str):
             colour = safe_css_color(value)
-            if colour:
+            if colour is not None:
                 resolved[key] = colour
 
     size = theme.get("node_size")
