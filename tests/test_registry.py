@@ -317,6 +317,8 @@ def test_provider_inline_svg_rejects_non_svg_and_oversized_payloads():
     for svg in (
         '<div>not svg</div>',
         '<!DOCTYPE svg [<!ENTITY x "boom">]><svg>&x;</svg>',
+        '<svg>' + ('<g>' * 1_200) + '<path d="M0 0 L1 1"/>' +
+            ('</g>' * 1_200) + '</svg>',
         '<svg>' + (' ' * 16_385) + '</svg>',
     ):
         provider = Provider.from_registration(
