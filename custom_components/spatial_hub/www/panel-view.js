@@ -324,7 +324,7 @@ export const ANSICHT = {
         return `<line class="stack-edge ${across ? "across" : ""}"
           style="--layer-opacity:${this._providerOpacity(edge.id)}"
           x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"
-          stroke="${this._qualityColour(edge.quality)}"
+          stroke="${escapeHtml(this._qualityColour(edge.quality))}"
           stroke-width="${across ? 5 : 3}"
           ${edge.dashed ? 'stroke-dasharray="10 7"' : ""}
           data-edge="${escapeHtml(edge.id)}"/>`;
@@ -365,7 +365,7 @@ export const ANSICHT = {
                    style="--layer-opacity:${this._providerOpacity(node.id)}"
                    data-at-x="${at.x}" data-at-y="${at.y}"
                    transform="translate(${at.x},${at.y}) scale(${scale})">
-          <circle r="14" fill="${this._nodeColour(node)}"/>
+          <circle r="14" fill="${escapeHtml(this._nodeColour(node))}"/>
           ${this._stackIconHtml(node)}
           <text class="stack-label" y="${
             (STACK_LABEL_DROP + spot.shift / (scale || 1)).toFixed(1)
