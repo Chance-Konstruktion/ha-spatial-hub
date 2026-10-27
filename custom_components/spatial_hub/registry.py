@@ -144,7 +144,7 @@ def _sanitize_svg(value: Any) -> str:
         return ""
     try:
         original = ET.fromstring(value)
-    except (ET.ParseError, ValueError):
+    except (ET.ParseError, RecursionError, ValueError):
         return ""
     if _svg_name(original.tag) != "svg":
         return ""
