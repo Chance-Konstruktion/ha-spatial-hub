@@ -56,6 +56,37 @@ globalThis.customElements = { define() {} };
 globalThis.window = { addEventListener() {}, removeEventListener() {},
                       confirm: () => true, prompt: () => "Fläche" };
 
+/** Eine lokale Fenster-Attrappe, die globale Pointer-Listener zaehlt. */
+function trackingWindow() {
+  const previous = globalThis.window;
+  const listeners = new Map();
+  globalThis.window = {
+    ...previous,
+    addEventListener(type, callback) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type).add(callback);
+    },
+    removeEventListener(type, callback) {
+      listeners.get(type)?.delete(callback);
+    },
+    dispatchEvent(event) {
+      for (const callback of [...(listeners.get(event.type) || [])]) {
+        callback(event);
+      }
+      return true;
+    },
+  };
+  return {
+    listeners,
+    dispatch(type) {
+      globalThis.window.dispatchEvent({ type, preventDefault() {} });
+    },
+    restore() {
+      globalThis.window = previous;
+    },
+  };
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 const { SpatialHubPanel, HA_COLOURS, joinsOf, drawsTheWall } = await import(
   pathToFileURL(
@@ -575,6 +606,53 @@ test("dragging snaps to the grid, and Shift lets go of it", () => {
   view._onPointerMove(pointer(313, 487, { shift: true }));
   view._onPointerUp();
   assert.deepEqual(view._written[0][2].position, { x: 0.313, y: 0.487 });
+});
+
+test("pointercancel cleans up an interrupted node drag", () => {
+  const tracked = trackingWindow();
+  try {
+    const view = panel(model(), { edit: true, what: "icons" });
+    view._showFlush = () => {};
+    view._storeDrag = () => {};
+    const target = element({ "data-node": "a:one", _class: "node" });
+
+    view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
+    assert.ok(view._drag, "the drag started");
+    assert.equal(tracked.listeners.get("pointercancel")?.size, 1);
+
+    tracked.dispatch("pointercancel");
+
+    assert.equal(view._drag, null, "the cancelled drag is closed");
+    for (const type of ["pointermove", "pointerup", "pointercancel"]) {
+      assert.equal(tracked.listeners.get(type)?.size || 0, 0,
+                   `${type} listeners are removed`);
+    }
+  } finally {
+    tracked.restore();
+  }
+});
+
+test("pointercancel closes an interrupted pan", () => {
+  const tracked = trackingWindow();
+  try {
+    const view = panel();
+    view._applyCamera = () => {};
+    view._flushRender = () => {};
+
+    view._startPan(pointer(10, 20));
+    assert.ok(view._pan, "the pan started");
+    assert.equal(tracked.listeners.get("pointercancel")?.size, 1);
+
+    tracked.dispatch("pointercancel");
+
+    assert.equal(view._pan, null, "the cancelled pan is closed");
+    for (const type of ["pointermove", "pointerup", "pointercancel"]) {
+      assert.equal(tracked.listeners.get(type)?.size || 0, 0,
+                   `${type} listeners are removed`);
+    }
+  } finally {
+    tracked.restore();
+  }
 });
 
 test("a drag never leaves the floor plan", () => {
