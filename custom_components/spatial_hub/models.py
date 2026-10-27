@@ -12,6 +12,7 @@ not blank the user's floor plan.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from math import isfinite
 from typing import Any
@@ -33,13 +34,17 @@ def _str(value: Any, default: str = "") -> str:
 
 
 def _float_or_none(value: Any) -> float | None:
+    # bool is a subclass of int in Python, but true/false are not meaningful
+    # coordinates, measurements, widths or opacity values in this API.
+    if isinstance(value, bool):
+        return None
     try:
         number = float(value)
     except (TypeError, ValueError, OverflowError):
         return None
-    # float() accepts NaN and infinity. Those values are not valid spatial
-    # coordinates or measurements and can make the websocket model invalid JSON.
-    return number if isfinite(number) else None
+    # NaN and infinities pass float() but are not valid JSON numbers and can
+    # poison coordinates, edge metrics, and other renderer-facing fields.
+    return number if math.isfinite(number) else None
 
 
 def _float_or(value: Any, default: float) -> float:

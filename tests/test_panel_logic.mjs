@@ -258,6 +258,37 @@ const stage = () => {
 
 // ── What belongs on screen ─────────────────────────────────
 
+test("stored background values must be raster data URLs before CSS interpolation", () => {
+  const unsafe = "');background-image:url(https://example.invalid/pixel);/*";
+  const png =
+    "data:image/png;base64," +
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j8noAAAAASUVORK5CYII=";
+
+  const floor = {
+    id: "eg", name: "Erdgeschoss", level: 0, icon: "", background: unsafe,
+  };
+  const floorHtml = panel(model({
+    floors: [floor], nodes: [], edges: [],
+  }))._stageHtml();
+  assert.doesNotMatch(floorHtml, /background-image:url/i);
+
+  const room = {
+    id: "room", name: "Zimmer", floor_id: "eg",
+    position: at(0.5, 0.5), size: { width: 0.3, height: 0.3 },
+    background: unsafe,
+  };
+  const areaHtml = panel(model({
+    areas: [room], nodes: [], edges: [],
+  }))._areasHtml(new Map());
+  assert.doesNotMatch(areaHtml, /background-image:url/i);
+
+  const valid = panel(model({
+    floors: [{ ...floor, background: png }], nodes: [], edges: [],
+  }))._stageHtml();
+  assert.ok(valid.includes("background-image:url('data:image/png;base64,"));
+});
+
+
 test("only the selected floor is drawn", () => {
   const view = panel(
     model({ nodes: [node("a:down"), node("a:up", { floor_id: "og" })] }),
@@ -521,6 +552,23 @@ test("a refresh requested during an in-flight fetch is replayed", async () => {
   assert.equal(calls, 2, "a pending notification triggers one new model fetch");
   assert.equal(view._model.nodes[0].id, "a:fresh",
                "the final model includes the later change");
+});
+
+test("the panel subscribes before its first model fetch", async () => {
+  const view = panel();
+  const order = [];
+  view._haReady = async () => { order.push("ha-ready"); };
+  view._refresh = async () => { order.push("refresh"); };
+  view._io = {
+    subscribe: async (_message, _handler) => {
+      order.push("subscribe");
+      return () => {};
+    },
+  };
+
+  await view._connect();
+
+  assert.deepEqual(order, ["ha-ready", "subscribe", "refresh"]);
 });
 
 

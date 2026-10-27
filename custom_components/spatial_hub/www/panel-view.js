@@ -76,6 +76,18 @@ import {
   haToggle,
 } from "./panel-ha.js";
 
+const BACKGROUND_DATA_URL = new RegExp(
+  "^data:image/(?:png|jpeg|webp|gif|avif);base64," +
+    "(?:[A-Za-z0-9+/]{4})*" +
+    "(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$",
+);
+const safeBackground = (value) =>
+  typeof value === "string" &&
+  value.length <= 4 * 1024 * 1024 &&
+  BACKGROUND_DATA_URL.test(value)
+    ? value
+    : "";
+
 // Ein Hinweis unter dem Plan: eine Meldung von HA, sonst der Absatz von frueher.
 const hint = (inner, extra = "") =>
   haDefined("ha-alert")
@@ -630,7 +642,7 @@ export const ANSICHT = {
     const aspect = (
       houseAspect * (frameShape.span / spanY(frameShape))
     ).toFixed(4);
-    const background = floor && floor.background;
+    const background = safeBackground(floor && floor.background);
     const edges = this._visibleEdges;
     // Die Waende der Etagenansicht samt dem Versatz, den die
     // Raumnamen brauchen, um neben dem Mauerwerk zu stehen. Beides
@@ -1234,9 +1246,10 @@ export const ANSICHT = {
               )
               .join(",")})"></div>`
           : "";
-        const areaBackground = area.background
+        const background = safeBackground(area.background);
+        const areaBackground = background
           ? `<div class="area-background" style="background-image:url('${escapeHtml(
-              area.background,
+              background,
             )}');${
               shaped
                 ? `clip-path:polygon(${shapeOf(area)
@@ -1772,7 +1785,7 @@ export const ANSICHT = {
         <h3>Hintergrundbild</h3>
         <label class="field">
           <span>Bild für diesen Raum</span>
-          <input type="file" accept="image/*" data-area-background="1">
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" data-area-background="1">
         </label>
         ${
           area.background
@@ -2165,7 +2178,7 @@ export const ANSICHT = {
         <p class="note">Ein gescannter Grundriss zum Nachzeichnen. Der Hub
         speichert es, jeder Renderer bekommt es mit dem Modell.</p>
         <label class="field">
-          <input type="file" accept="image/*" data-background="1">
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" data-background="1">
         </label>
         ${
           floor.background

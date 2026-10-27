@@ -8,6 +8,7 @@ export all use exactly these commands.
 from __future__ import annotations
 
 import math
+import re
 
 import voluptuous as vol
 
@@ -49,6 +50,14 @@ def _reject_non_finite_numbers(value):
         for item in value:
             _reject_non_finite_numbers(item)
     return value
+# The renderer places background strings inside a CSS url(...). The editor
+# uploads a local image as a data URL, so arbitrary CSS/URL strings and SVG
+# documents are not needed here. Accept only bounded, base64 raster images.
+_BACKGROUND_DATA_URL = re.compile(
+    r"^data:image/(?:png|jpeg|webp|gif|avif);base64,"
+    r"(?:[A-Za-z0-9+/]{4})*"
+    r"(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$"
+)
 
 # A theme colours the shared vocabulary -- node states and edge qualities --
 # never an integration. See theme.py for why that distinction matters.
@@ -316,9 +325,19 @@ def websocket_layout_set(hass: HomeAssistant, connection, msg: dict) -> None:
         return
 
     background = msg["values"].get("background")
-    if isinstance(background, str) and len(background.encode()) > MAX_BACKGROUND_BYTES:
-        connection.send_error(msg["id"], "invalid_format", "Background image too large")
-        return
+    if isinstance(background, str):
+        if len(background.encode()) > MAX_BACKGROUND_BYTES:
+            connection.send_error(
+                msg["id"], "invalid_format", "Background image too large"
+            )
+            return
+        if not _BACKGROUND_DATA_URL.fullmatch(background):
+            connection.send_error(
+                msg["id"],
+                "invalid_format",
+                "Background must be a base64 PNG, JPEG, WebP, GIF or AVIF image",
+            )
+            return
 
     hub.store.update(msg["section"], msg["key"], msg["values"])
     hub.async_notify("layout")

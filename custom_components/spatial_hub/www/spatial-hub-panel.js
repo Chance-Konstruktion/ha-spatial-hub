@@ -358,10 +358,10 @@ class SpatialHubPanel extends HTMLElement {
   // ── Data ────────────────────────────────────────────────
 
   async _connect() {
-    // Erst die Bausteine von HA, dann das erste Bild: sonst zeichnet das
-    // Panel einmal schlicht und baut sich danach um.
+    // Erst die Bausteine von HA, dann das Live-Abo und zuletzt das erste
+    // Bild. Würden wir zuerst laden, könnte eine Änderung zwischen Antwort
+    // und Abo verloren gehen, bis irgendwann das nächste Signal eintrifft.
     await this._haReady();
-    await this._refresh();
     try {
       // The hub pushes a reason, never the model: a renderer that does not
       // care about the changed layer simply ignores the hint.
@@ -373,6 +373,7 @@ class SpatialHubPanel extends HTMLElement {
       // Losing live updates is not worth losing the floor plan over.
       console.warn("Spatial Hub: no live updates", err);
     }
+    await this._refresh();
   }
 
   async _refresh() {

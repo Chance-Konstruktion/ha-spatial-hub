@@ -113,6 +113,41 @@ async def test_future_returned_by_provider_is_awaited():
 
 
 @pytest.mark.asyncio
+async def test_nonfinite_and_boolean_numbers_are_sanitized_before_rendering():
+    provider = Provider.from_registration(
+        _registration(
+            data=lambda: {
+                "nodes": [
+                    {"id": "bad_xy", "position": {"x": float("nan"), "y": 0.5}},
+                    {"id": "bad_z", "position": {
+                        "x": 0.2, "y": 0.3, "z": float("inf")
+                    }},
+                    {"id": "bad_bool", "position": {"x": True, "y": 0.5}},
+                ],
+                "edges": [
+                    {"source": "bad_xy", "target": "bad_z",
+                     "value": float("inf"), "width": float("nan")},
+                    {"source": "bad_z", "target": "bad_bool",
+                     "value": True, "width": False},
+                ],
+            }
+        )
+    )
+
+    result = await provider.async_fetch()
+    nodes = {node.id: node for node in result.nodes}
+    infinite_edge, boolean_edge = result.edges
+
+    assert nodes["demo:bad_xy"].position is None
+    assert nodes["demo:bad_z"].position.z == 0.0
+    assert nodes["demo:bad_bool"].position is None
+    assert infinite_edge.value is None
+    assert infinite_edge.width == 2.0
+    assert boolean_edge.value is None
+    assert boolean_edge.width == 2.0
+
+
+@pytest.mark.asyncio
 async def test_a_bare_entity_id_is_a_complete_node():
     """The shortest possible node definition -- HA knows the rest."""
     provider = Provider.from_registration(
