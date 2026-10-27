@@ -339,6 +339,53 @@ def test_an_icon_set_that_is_not_one_costs_only_its_own_registration(
     )
 
 
+def test_provider_inline_svg_is_sanitized_before_rendering():
+    provider = Provider.from_registration(
+        _registration(
+            icon_set={
+                "custom": {
+                    "svg": (
+                        '<svg viewBox="0 0 24 24" onload="alert(1)">'
+                        '<path d="M0 0 L24 24" fill="currentColor" '
+                        'onclick="alert(2)"/>'
+                        '<script>alert(3)</script>'
+                        '<foreignObject><div>active content</div></foreignObject>'
+                        '</svg>'
+                    )
+                },
+                "malformed": {"svg": "<svg><script>"},
+            }
+        )
+    )
+
+    svg = provider.icon_set["custom"]["svg"]
+
+    assert svg.startswith('<svg xmlns="http://www.w3.org/2000/svg"')
+    assert "<path" in svg, "safe geometry is retained"
+    assert "viewBox=" in svg
+    assert "onload" not in svg
+    assert "onclick" not in svg
+    assert "script" not in svg
+    assert "foreignObject" not in svg
+    assert "malformed" not in provider.icon_set
+    assert any("malformed" in warning and "unsafe SVG" in warning
+               for warning in provider.warnings)
+
+
+def test_provider_inline_svg_rejects_non_svg_and_oversized_payloads():
+    for svg in (
+        '<div>not svg</div>',
+        '<!DOCTYPE svg [<!ENTITY x "boom">]><svg>&x;</svg>',
+        '<svg>' + ('<g>' * 1_200) + '<path d="M0 0 L1 1"/>' +
+            ('</g>' * 1_200) + '</svg>',
+        '<svg>' + (' ' * 16_385) + '</svg>',
+    ):
+        provider = Provider.from_registration(
+            _registration(icon_set={"bad": {"svg": svg}})
+        )
+        assert provider.icon_set == {}
+
+
 @pytest.mark.asyncio
 async def test_provider_css_colors_cannot_inject_style_declarations():
     hostile_colour = "red; position:fixed"

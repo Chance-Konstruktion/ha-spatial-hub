@@ -1253,9 +1253,13 @@ def test_provider_lookup_by_id(hass, hub):
 async def test_a_provider_with_an_icon_set_publishes_it(hass, hub):
     """Custom SVG icons ride along in the model, keyed by provider, so a
     second renderer can draw the same marks without asking the provider."""
-    _register(hass, icon_set={"lamp": {"body": "<circle r='4'/>"}})
+    _register(hass, icon_set={"lamp": {
+        "svg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'>"
+               "<circle r='4'/></svg>"
+    }})
     model = await hub.async_model()
-    assert model["icon_sets"]["demo"] == {"lamp": {"body": "<circle r='4'/>"}}
+    published = model["icon_sets"]["demo"]["lamp"]["svg"]
+    assert "<circle" in published and "<svg" in published
 
 
 @pytest.mark.asyncio
