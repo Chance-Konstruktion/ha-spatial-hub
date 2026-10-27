@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Any
 
 from .const import (
@@ -131,7 +132,7 @@ def _anchors(raw: Any) -> list[dict[str, Any]]:
             continue
         try:
             gewicht = float(eintrag.get("weight", 1.0))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
         if gewicht <= 0 or gewicht != gewicht or gewicht in (
             float("inf"), float("-inf")

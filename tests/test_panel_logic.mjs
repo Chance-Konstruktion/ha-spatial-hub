@@ -56,6 +56,37 @@ globalThis.customElements = { define() {} };
 globalThis.window = { addEventListener() {}, removeEventListener() {},
                       confirm: () => true, prompt: () => "Fläche" };
 
+/** Eine lokale Fenster-Attrappe, die globale Pointer-Listener zaehlt. */
+function trackingWindow() {
+  const previous = globalThis.window;
+  const listeners = new Map();
+  globalThis.window = {
+    ...previous,
+    addEventListener(type, callback) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type).add(callback);
+    },
+    removeEventListener(type, callback) {
+      listeners.get(type)?.delete(callback);
+    },
+    dispatchEvent(event) {
+      for (const callback of [...(listeners.get(event.type) || [])]) {
+        callback(event);
+      }
+      return true;
+    },
+  };
+  return {
+    listeners,
+    dispatch(type) {
+      globalThis.window.dispatchEvent({ type, preventDefault() {} });
+    },
+    restore() {
+      globalThis.window = previous;
+    },
+  };
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 const { SpatialHubPanel, HA_COLOURS, joinsOf, drawsTheWall } = await import(
   pathToFileURL(
@@ -495,6 +526,34 @@ test("auto_position is housekeeping and stays out of the popup", () => {
   assert.match(html, /Tx rate/);
 });
 
+test("a refresh requested during an in-flight fetch is replayed", async () => {
+  const view = panel();
+  view._render = () => {};
+  let releaseFirst;
+  let calls = 0;
+  const stale = model({ nodes: [node("a:stale")] });
+  const fresh = model({ nodes: [node("a:fresh")] });
+  view._io = {
+    call() {
+      calls += 1;
+      if (calls === 1) {
+        return new Promise((resolve) => { releaseFirst = resolve; });
+      }
+      return Promise.resolve(fresh);
+    },
+  };
+
+  const first = view._refresh();
+  assert.equal(calls, 1, "the first model request is in flight");
+  await view._refresh();
+  releaseFirst(stale);
+  await first;
+
+  assert.equal(calls, 2, "a pending notification triggers one new model fetch");
+  assert.equal(view._model.nodes[0].id, "a:fresh",
+               "the final model includes the later change");
+});
+
 test("the panel subscribes before its first model fetch", async () => {
   const view = panel();
   const order = [];
@@ -624,6 +683,53 @@ test("dragging snaps to the grid, and Shift lets go of it", () => {
   view._onPointerMove(pointer(313, 487, { shift: true }));
   view._onPointerUp();
   assert.deepEqual(view._written[0][2].position, { x: 0.313, y: 0.487 });
+});
+
+test("pointercancel cleans up an interrupted node drag", () => {
+  const tracked = trackingWindow();
+  try {
+    const view = panel(model(), { edit: true, what: "icons" });
+    view._showFlush = () => {};
+    view._storeDrag = () => {};
+    const target = element({ "data-node": "a:one", _class: "node" });
+
+    view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
+    assert.ok(view._drag, "the drag started");
+    assert.equal(tracked.listeners.get("pointercancel")?.size, 1);
+
+    tracked.dispatch("pointercancel");
+
+    assert.equal(view._drag, null, "the cancelled drag is closed");
+    for (const type of ["pointermove", "pointerup", "pointercancel"]) {
+      assert.equal(tracked.listeners.get(type)?.size || 0, 0,
+                   `${type} listeners are removed`);
+    }
+  } finally {
+    tracked.restore();
+  }
+});
+
+test("pointercancel closes an interrupted pan", () => {
+  const tracked = trackingWindow();
+  try {
+    const view = panel();
+    view._applyCamera = () => {};
+    view._flushRender = () => {};
+
+    view._startPan(pointer(10, 20));
+    assert.ok(view._pan, "the pan started");
+    assert.equal(tracked.listeners.get("pointercancel")?.size, 1);
+
+    tracked.dispatch("pointercancel");
+
+    assert.equal(view._pan, null, "the cancelled pan is closed");
+    for (const type of ["pointermove", "pointerup", "pointercancel"]) {
+      assert.equal(tracked.listeners.get(type)?.size || 0, 0,
+                   `${type} listeners are removed`);
+    }
+  } finally {
+    tracked.restore();
+  }
 });
 
 test("a drag never leaves the floor plan", () => {
@@ -800,6 +906,40 @@ test("accent, surface and ink reach the page as variables", () => {
   assert.match(view._themeVars, /--fp-accent:#ff0000/);
   assert.match(view._themeVars, /--fp-surface:#111111/);
   assert.match(view._themeVars, /--fp-ink:#eeeeee/);
+});
+
+
+test("untrusted colour strings cannot escape CSS or SVG attributes", () => {
+  const hostile = 'red; background-image:url(https://example.invalid/pixel)';
+  const quoteAttack = 'red" onload="alert(1)';
+  assert.equal(colour.safeColour(hostile), "");
+  assert.equal(colour.safeColour(quoteAttack), "");
+  assert.equal(colour.safeColour("#12aBcD"), "#12aBcD");
+  assert.equal(colour.safeColour("rebeccapurple"), "rebeccapurple");
+  assert.equal(colour.safeColour("rgb(10, 20, 30)"), "rgb(10, 20, 30)");
+
+  const configured = panel(model({
+    theme: theme({ accent: hostile, surface: quoteAttack, ink: hostile }),
+    nodes: [node("a:one", { color: quoteAttack })],
+  }));
+  assert.equal(configured._themeVars, "");
+  const markup = configured._nodeHtml(configured._model.nodes[0]);
+  assert.doesNotMatch(markup, /onload=/i);
+  assert.doesNotMatch(markup, /background-image:url/i);
+
+  const stack = panel(model({
+    nodes: [node("a:one", { color: hostile })],
+  }), { floor: null })._stackHtml();
+  assert.doesNotMatch(stack, /background-image:url/i);
+  assert.doesNotMatch(stack, /onload=/i);
+});
+
+test("malformed provider colours fall back to the shared state palette", () => {
+  const value = colour.nodeColour(
+    theme(), node("a:one", { color: "red;stroke-width:999" }),
+    { default_color: 'red" onclick="alert(1)' },
+  );
+  assert.equal(value, colour.stateColour(theme(), "online"));
 });
 
 test("the theme's node size multiplies the user's own scale", () => {
@@ -3236,6 +3376,18 @@ test("no shapes on a floor that never got one", () => {
   assert.equal(panel(model())._shapesHtml(), "");
   assert.deepEqual(panel(model())._shapes, []);
 });
+
+test("custom shape colours cannot inject additional CSS declarations", () => {
+  const html = panel(withShapes([{
+    id: "unsafe", floor_id: "eg", name: "Unsafe",
+    color: "red; background-image:url(https://example.invalid/pixel)",
+    points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }],
+  }]))._shapesHtml();
+
+  assert.match(html, /clip-path:polygon/);
+  assert.doesNotMatch(html, /background-image:url/i);
+});
+
 
 test("a shape only shows up on the floor it was drawn on", () => {
   const data = withShapes([

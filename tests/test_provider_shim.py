@@ -73,6 +73,20 @@ def test_one_call_is_the_whole_integration(hass):
     assert hass.data[shim.DATA_PROVIDERS] == {}, "unload withdraws automatically"
 
 
+async def test_removed_provider_status_is_pruned_from_diagnostics(hass, hub):
+    """A deregistered provider must not remain in the diagnostic snapshot."""
+    entry = FakeEntry()
+    shim.spatial_provider(hass, entry, name="Demo", data=lambda: [])
+
+    await hub.async_model()
+    assert "demo" in hub.status
+
+    entry.unload()
+    await hub.async_model()
+
+    assert "demo" not in hub.status
+
+
 def test_coordinator_updates_notify_the_hub(hass, hub):
     entry, coordinator = FakeEntry(), FakeCoordinator()
     seen = []
@@ -173,6 +187,25 @@ async def test_builders_produce_what_the_hub_expects(hass, hub):
     assert (edge["source"], edge["target"]) == ("demo:a", "demo:b")
     assert edge["quality"] == "good"
     assert edge["metadata"]["rate"] == 560
+
+
+async def test_edge_builder_preserves_zero_numeric_values(hass, hub):
+    """Zero is data, not a missing value that should trigger a default."""
+    shim.spatial_provider(
+        hass,
+        FakeEntry(),
+        name="Demo",
+        data=lambda: {
+            "nodes": [shim.node("a", label="A"), shim.node("b", label="B")],
+            "edges": [shim.edge("a", "b", value=0, width=0)],
+        },
+    )
+
+    model = await hub.async_model()
+    edge = model["edges"][0]
+
+    assert edge["value"] == 0
+    assert edge["width"] == 0
 
 
 def test_the_shim_works_with_no_hub_installed(hass):

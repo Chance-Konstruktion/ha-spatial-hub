@@ -30,6 +30,30 @@ const HA_COLOURS = {
   poor: "var(--error-color, #f44336)",
 };
 
+/** Accept only inert CSS colour tokens from provider/model/theme data.
+ *
+ * These values are interpolated into SVG paint attributes, inline style
+ * custom properties, and the page's style attribute. HTML escaping alone
+ * does not stop a semicolon from starting another CSS declaration.
+ */
+const SAFE_HEX = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const SAFE_RGB = /^(?:rgb|rgba|hsl|hsla)\([0-9.%+\s,/-]+\)$/i;
+const SAFE_VARIABLE =
+  /^var\(--[a-z0-9_-]+(?:\s*,\s*(?:#[0-9a-f]{3,8}|[a-z]+|(?:rgb|rgba|hsl|hsla)\([0-9.%+\s,/-]+\))\s*)?\)$/i;
+const SAFE_NAME = /^[a-z]+$/i;
+
+const safeColour = (value) => {
+  if (typeof value !== "string" || value.length > 64) return "";
+  const candidate = value.trim();
+  if (
+    SAFE_HEX.test(candidate) ||
+    SAFE_RGB.test(candidate) ||
+    SAFE_VARIABLE.test(candidate) ||
+    SAFE_NAME.test(candidate)
+  ) return candidate;
+  return "";
+};
+
 /** Which provider a namespaced id belongs to. */
 const providerOf = (itemId) => String(itemId || "").split(":")[0];
 
@@ -43,11 +67,11 @@ const providerOf = (itemId) => String(itemId || "").split(":")[0];
  *  the hub was supposed to stop.
  */
 const vocabularyColour = (theme, group, word, spare) => {
-  const themed = ((theme || {})[group] || {})[word];
+  const themed = safeColour(((theme || {})[group] || {})[word]);
   if (themed) return themed;
   if (HA_COLOURS[word]) return HA_COLOURS[word];
-  const fallback = ((theme || {}).fallback || {})[group] || {};
-  return fallback[word] || spare;
+  const fallback = safeColour((((theme || {}).fallback || {})[group] || {})[word]);
+  return fallback || spare;
 };
 
 const STATE_SPARE = "var(--fp-accent, var(--primary-color, #03a9f4))";
@@ -62,15 +86,20 @@ const qualityColour = (theme, quality) =>
 /** The colour of one node: what it was given, what its provider's icon set
  *  says, and only then the state vocabulary. */
 const nodeColour = (theme, node, custom) =>
-  node.color || (custom && custom.default_color) || stateColour(theme, node.state);
+  safeColour(node && node.color) ||
+  safeColour(custom && custom.default_color) ||
+  stateColour(theme, node && node.state);
 
 /** Theme values a renderer cannot express in CSS alone. */
 const themeVars = (theme) => {
   const parts = [];
   if (!theme) return "";
-  if (theme.accent) parts.push(`--fp-accent:${theme.accent}`);
-  if (theme.surface) parts.push(`--fp-surface:${theme.surface}`);
-  if (theme.ink) parts.push(`--fp-ink:${theme.ink}`);
+  const accent = safeColour(theme.accent);
+  const surface = safeColour(theme.surface);
+  const ink = safeColour(theme.ink);
+  if (accent) parts.push(`--fp-accent:${accent}`);
+  if (surface) parts.push(`--fp-surface:${surface}`);
+  if (ink) parts.push(`--fp-ink:${ink}`);
   // Wie deutlich das Haus selbst da ist. Ein Grundriss ohne Innenwände
   // ist eine Fläche mit Punkten darauf und sagt nicht mehr, wo man
   // steht; ein Grundriss mit vollen Wänden erschlägt die Geräte, um die
@@ -141,6 +170,7 @@ const animationClass = (custom) =>
 export {
   animationClass,
   HA_COLOURS,
+  safeColour,
   STATE_SPARE,
   QUALITY_SPARE,
   providerOf,

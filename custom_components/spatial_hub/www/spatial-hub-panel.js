@@ -18,36 +18,18 @@ import { EINGABEN } from "./panel-input.js";
 import { ALL_FLOORS, CLUSTER_THRESHOLD, DOMAIN, FIT, FLOOR_KEY, PANEL_URL, PHONE, ZOOM } from "./panel-const.js";
 import {
   STACK,
-  centreOf,
   roomLabelSize,
   labelBox,
   spanRangeAt,
   slideClear,
   PIN,
   ROOM_LABEL,
-  insetOf,
-  along,
-  wallRuns,
-  capsOf,
-  wallsOf,
-  FRONT_WALL,
-  BACK_WALL,
-  houseMetres,
-  metre,
-  houseWeight,
   snapReach,
   frameOf,
   spanY,
   minY,
-  yFrame,
-  inFrame,
-  inFrameY,
-  RECTANGLE,
   shapeOf,
-  hasShape,
   boxOf,
-  SIDE,
-  SIDE_NAME,
   JOIN_GAP,
   SNAP_REACH,
   joinable,
@@ -59,10 +41,6 @@ import {
   fold,
   doorsOf,
   openingKind,
-  SIDE_NAMES,
-  sideName,
-  STAIR_WORDS,
-  isStairs,
   projectOnto,
   stackHeight,
   DIM,
@@ -91,9 +69,6 @@ import {
   roomPolygon,
   cornersOf,
   labelPointOf,
-  cornerHandlesHtml,
-  doorsHtml,
-  sparklineHtml,
   escapeHtml,
 } from "./panel-markup.js";
 import {
@@ -134,6 +109,7 @@ class SpatialHubPanel extends HTMLElement {
     this._diagnostics = null;
     this._unsubscribe = null;
     this._pending = false;
+    this._refreshWanted = false;
     this._edit = false;
     // Bearbeiten heißt zweierlei, und beides gleichzeitig heißt keins von
     // beiden: Wände ziehen zwischen zwanzig Gerätepunkten trifft immer den
@@ -401,19 +377,31 @@ class SpatialHubPanel extends HTMLElement {
   }
 
   async _refresh() {
-    if (this._pending) return;
+    // A notification during an in-flight request must not be dropped: the
+    // first response may have read provider data just before it changed.
+    // Queue one follow-up and keep coalescing any further notifications
+    // until a request completes without a newer change.
+    if (this._pending) {
+      this._refreshWanted = true;
+      return;
+    }
     this._pending = true;
     try {
-      this._model = await this._io.call({ type: `${DOMAIN}/model` });
-      this._error = null;
-      if (this._floorId === null) this._floorId = this._startFloor();
-    } catch (err) {
-      this._error = err && err.message ? err.message : String(err);
+      do {
+        this._refreshWanted = false;
+        try {
+          this._model = await this._io.call({ type: `${DOMAIN}/model` });
+          this._error = null;
+          if (this._floorId === null) this._floorId = this._startFloor();
+        } catch (err) {
+          this._error = err && err.message ? err.message : String(err);
+        }
+        if (this._showDiagnostics) await this._loadDiagnostics();
+      } while (this._refreshWanted);
+      this._render();
     } finally {
       this._pending = false;
     }
-    if (this._showDiagnostics) await this._loadDiagnostics();
-    this._render();
   }
 
   async _loadDiagnostics() {
@@ -1623,11 +1611,13 @@ class SpatialHubPanel extends HTMLElement {
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       this._pan = null;
       this._flushRender();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }
 
   /** Two fingers: the same zoom, driven by the distance between them. */

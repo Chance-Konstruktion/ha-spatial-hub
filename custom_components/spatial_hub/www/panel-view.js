@@ -17,11 +17,8 @@
  */
 import {
   AREA_KIND,
-  BACK_WALL,
-  FRONT_WALL,
   PLAN,
   SIDE_NAME,
-  STACK,
   capsOf,
   centreOf,
   drawsTheWall,
@@ -44,7 +41,6 @@ import {
   roomLabelSpot,
   declutter,
   PIN,
-  roomLabelSize,
   ROOM_LABEL,
   LABEL,
   DIM,
@@ -55,8 +51,6 @@ import {
   shapeOf,
   snapReach,
   spanY,
-  wallPolygonsOf,
-  wallsOf,
 } from "./panel-geometry.js";
 import {
   cornerHandlesHtml,
@@ -67,7 +61,7 @@ import {
 } from "./panel-markup.js";
 import { ALL_FLOORS, formatValue, pretty } from "./panel-const.js";
 import { houseScene } from "./panel-house3d.js";
-import { animationClass } from "./panel-colour.js";
+import { animationClass, safeColour } from "./panel-colour.js";
 import {
   dialogShell,
   haAlert,
@@ -336,7 +330,7 @@ export const ANSICHT = {
         return `<line class="stack-edge ${across ? "across" : ""}"
           style="--layer-opacity:${this._providerOpacity(edge.id)}"
           x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"
-          stroke="${this._qualityColour(edge.quality)}"
+          stroke="${escapeHtml(this._qualityColour(edge.quality))}"
           stroke-width="${across ? 5 : 3}"
           ${edge.dashed ? 'stroke-dasharray="10 7"' : ""}
           data-edge="${escapeHtml(edge.id)}"/>`;
@@ -377,7 +371,7 @@ export const ANSICHT = {
                    style="--layer-opacity:${this._providerOpacity(node.id)}"
                    data-at-x="${at.x}" data-at-y="${at.y}"
                    transform="translate(${at.x},${at.y}) scale(${scale})">
-          <circle r="14" fill="${this._nodeColour(node)}"/>
+          <circle r="14" fill="${escapeHtml(this._nodeColour(node))}"/>
           ${this._stackIconHtml(node)}
           <text class="stack-label" y="${
             (STACK_LABEL_DROP + spot.shift / (scale || 1)).toFixed(1)
@@ -1003,6 +997,7 @@ export const ANSICHT = {
               ).toFixed(2)}%`,
           )
           .join(",");
+        const colour = safeColour(shape.color);
         const centre = centreOf(shape.points);
         const left = inFrame(centre.x, frame).toFixed(2);
         const top = inFrameY(centre.y, frame).toFixed(2);
@@ -1010,7 +1005,7 @@ export const ANSICHT = {
         return `
           <div class="custom-shape" data-shape="${escapeHtml(shape.id)}"
                style="clip-path:polygon(${polygon});${
-                 shape.color ? `background:${escapeHtml(shape.color)};` : ""
+                 colour ? `background:${colour};` : ""
                }"></div>
           <span class="custom-shape-name" style="left:${left}%; top:${top}%;">
             ${escapeHtml(shape.name)}

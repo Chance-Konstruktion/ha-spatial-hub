@@ -813,3 +813,17 @@ def test_an_outline_is_a_box_somewhere_on_the_plan(hass, hub, connection):
 def test_an_outline_beyond_the_plan_is_refused(outline):
     with pytest.raises(vol.Invalid):
         _layout_values({"outline": outline})
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"position": {"x": "nan", "y": 0.5}},
+        {"size": {"width": "nan", "height": 1}},
+        {"theme": {"node_size": "nan"}},
+    ],
+)
+def test_layout_schema_rejects_non_finite_numbers(values):
+    """Float coercion must not let NaN bypass range validation."""
+    with pytest.raises(vol.Invalid):
+        _layout_values(values)

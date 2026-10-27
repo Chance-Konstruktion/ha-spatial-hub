@@ -322,10 +322,12 @@ export const EINGABEN = {
     const up = (upEvent) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       this._onPointerUp(upEvent);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   },
 
   _onPointerMove(event) {
