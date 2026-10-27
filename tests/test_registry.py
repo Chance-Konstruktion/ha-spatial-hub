@@ -168,6 +168,13 @@ def test_a_panel_url_that_leaves_the_house_is_dropped():
         ).panel_url == "", url
 
 
+def test_panel_url_rejects_backslashes_and_control_characters():
+    for url in (r"/\evil.example/path", "/x\n//evil.example", "/foo\tbar"):
+        assert Provider.from_registration(
+            _registration(panel_url=url)
+        ).panel_url == "", repr(url)
+
+
 def test_uncallable_history_and_action_are_reported_and_ignored():
     """A string where a callable belongs is a typo. Ignoring it keeps the
     layer alive; keeping it would hand the hub a bomb for later."""
