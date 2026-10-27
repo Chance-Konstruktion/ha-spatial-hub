@@ -66,6 +66,7 @@ _SVG_NS = "http://www.w3.org/2000/svg"
 # recreates real SVG elements rather than literal prefixed tag names.
 ET.register_namespace("", _SVG_NS)
 _MAX_SVG_BYTES = 16_384
+_MAX_SVG_DEPTH = 32
 _SVG_TAGS = frozenset({
     "svg", "g", "path", "circle", "ellipse", "rect", "line",
     "polyline", "polygon", "title", "desc",
@@ -148,7 +149,9 @@ def _sanitize_svg(value: Any) -> str:
     if _svg_name(original.tag) != "svg":
         return ""
 
-    def clean(element: ET.Element) -> ET.Element | None:
+    def clean(element: ET.Element, depth: int = 0) -> ET.Element | None:
+        if depth > _MAX_SVG_DEPTH:
+            raise ValueError("SVG nesting exceeds the supported depth")
         tag = _svg_name(element.tag)
         if tag not in _SVG_TAGS:
             return None
@@ -162,7 +165,7 @@ def _sanitize_svg(value: Any) -> str:
             # Text is escaped by ElementTree on serialization and kept short.
             cleaned.text = (element.text or "")[:256]
         for child in element:
-            safe_child = clean(child)
+            safe_child = clean(child, depth + 1)
             if safe_child is not None:
                 cleaned.append(safe_child)
         return cleaned
