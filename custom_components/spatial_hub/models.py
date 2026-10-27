@@ -33,9 +33,13 @@ def _str(value: Any, default: str = "") -> str:
 
 
 def _float_or_none(value: Any) -> float | None:
+    # bool is a subclass of int in Python, but true/false are not meaningful
+    # coordinates, measurements, widths or opacity values in this API.
+    if isinstance(value, bool):
+        return None
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     # NaN and infinities pass float() but are not valid JSON numbers and can
     # poison coordinates, edge metrics, and other renderer-facing fields.
