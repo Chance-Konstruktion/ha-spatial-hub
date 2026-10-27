@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from typing import Any, Callable
 
 from homeassistant.core import HomeAssistant, callback
@@ -335,8 +336,27 @@ class SpatialHub:
                 if not isinstance(point, dict):
                     continue
                 x, y = point.get("x"), point.get("y")
-                if isinstance(x, (int, float)) and isinstance(y, (int, float)):
-                    points.append({"x": float(x), "y": float(y)})
+                if (
+                    isinstance(x, bool)
+                    or isinstance(y, bool)
+                    or not isinstance(x, (int, float))
+                    or not isinstance(y, (int, float))
+                ):
+                    continue
+                try:
+                    x_value, y_value = float(x), float(y)
+                except OverflowError:
+                    continue
+                # Old .storage entries may bypass the WebSocket schema.
+                # Non-finite or out-of-contract points make invalid SVG/CSS
+                # geometry and must not reach a renderer.
+                if (
+                    math.isfinite(x_value)
+                    and math.isfinite(y_value)
+                    and -4 <= x_value <= 5
+                    and -4 <= y_value <= 5
+                ):
+                    points.append({"x": x_value, "y": y_value})
             if len(points) < 3:
                 continue
             shapes.append({
