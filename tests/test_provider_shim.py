@@ -175,6 +175,25 @@ async def test_builders_produce_what_the_hub_expects(hass, hub):
     assert edge["metadata"]["rate"] == 560
 
 
+async def test_edge_builder_preserves_zero_numeric_values(hass, hub):
+    """Zero is data, not a missing value that should trigger a default."""
+    shim.spatial_provider(
+        hass,
+        FakeEntry(),
+        name="Demo",
+        data=lambda: {
+            "nodes": [shim.node("a", label="A"), shim.node("b", label="B")],
+            "edges": [shim.edge("a", "b", value=0, width=0)],
+        },
+    )
+
+    model = await hub.async_model()
+    edge = model["edges"][0]
+
+    assert edge["value"] == 0
+    assert edge["width"] == 0
+
+
 def test_the_shim_works_with_no_hub_installed(hass):
     """Nothing here may depend on the hub being set up."""
     entry = FakeEntry()
