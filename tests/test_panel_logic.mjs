@@ -3222,6 +3222,18 @@ test("no shapes on a floor that never got one", () => {
   assert.deepEqual(panel(model())._shapes, []);
 });
 
+test("custom shape colours cannot inject additional CSS declarations", () => {
+  const html = panel(withShapes([{
+    id: "unsafe", floor_id: "eg", name: "Unsafe",
+    color: "red; background-image:url(https://example.invalid/pixel)",
+    points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }],
+  }]))._shapesHtml();
+
+  assert.match(html, /clip-path:polygon/);
+  assert.doesNotMatch(html, /background-image:url/i);
+});
+
+
 test("a shape only shows up on the floor it was drawn on", () => {
   const data = withShapes([
     { id: "flur", floor_id: "eg", name: "Flur", color: "",
