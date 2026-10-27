@@ -32,9 +32,9 @@ from .models import safe_css_color
 def _validated_colour(value: str) -> str:
     """Reject CSS declaration injection in values interpolated into styles."""
     colour = safe_css_color(value)
-    if value.strip() and not colour:
+    if value.strip() and colour is None:
         raise vol.Invalid("not a safe CSS colour")
-    return colour
+    return colour or ""
 
 
 _COLOUR = vol.All(str, vol.Length(max=64), _validated_colour)
