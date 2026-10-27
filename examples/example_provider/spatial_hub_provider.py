@@ -319,7 +319,14 @@ def edge(
         "color": color,
         "width": width,
     }
-    result.update({key: value for key, value in optional.items() if value})
+    # Zero is a meaningful numeric value (e.g. a measured value of 0 or an
+    # intentionally invisible edge with width=0). Only omit absent values
+    # and empty strings; truthiness would silently replace zero with defaults.
+    result.update({
+        key: value
+        for key, value in optional.items()
+        if value is not None and (key in {"value", "width"} or value != "")
+    })
     result.update({"directed": directed, "dashed": dashed, "animated": animated})
     if metadata:
         result["metadata"] = metadata
