@@ -335,7 +335,7 @@ class SpatialHub:
                 "id": shape_id,
                 "floor_id": floor_id,
                 "name": str(shape.get("name") or "Fläche"),
-                "color": safe_css_color(shape.get("color")),
+                "color": safe_css_color(shape.get("color")) or "",
                 "points": points,
             })
         return shapes
