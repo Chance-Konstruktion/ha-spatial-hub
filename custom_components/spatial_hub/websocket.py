@@ -30,8 +30,17 @@ from .const import (
 )
 from .generic import async_facets, physical_siblings
 from .hub import SpatialHub
+from .models import safe_css_color
 
-_COLOUR = vol.All(str, vol.Length(max=64))
+def _validated_colour(value: str) -> str:
+    """Reject CSS declaration injection in values interpolated into styles."""
+    colour = safe_css_color(value)
+    if value.strip() and colour is None:
+        raise vol.Invalid("not a safe CSS colour")
+    return colour or ""
+
+
+_COLOUR = vol.All(str, vol.Length(max=64), _validated_colour)
 
 
 def _reject_non_finite_numbers(value):
@@ -119,7 +128,7 @@ _CUSTOM_SHAPE_SCHEMA = vol.Schema(
         vol.Required("id"): vol.All(str, vol.Length(min=1, max=64)),
         vol.Required("floor_id"): vol.All(str, vol.Length(min=1, max=128)),
         vol.Required("name"): vol.All(str, vol.Length(max=128)),
-        vol.Optional("color"): vol.All(str, vol.Length(max=64)),
+        vol.Optional("color"): _COLOUR,
         vol.Required("points"): vol.All(
             [_CUSTOM_SHAPE_POINT], vol.Length(min=3, max=64)
         ),
@@ -271,7 +280,7 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
                 vol.Optional("size"): vol.Any(None, _SIZE_SCHEMA),
                 vol.Optional("label_offset"): vol.Any(None, dict),
                 vol.Optional("icon"): vol.Any(None, str),
-                vol.Optional("color"): vol.Any(None, str),
+                vol.Optional("color"): vol.Any(None, _COLOUR),
                 vol.Optional("scale"): vol.Any(
                     None, vol.All(vol.Coerce(float), vol.Range(min=0.2, max=5))
                 ),

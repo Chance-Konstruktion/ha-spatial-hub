@@ -29,6 +29,7 @@ from .const import (
     STATE_ONLINE,
     STATE_UNKNOWN,
 )
+from .models import safe_css_color
 
 # An empty colour means "whatever Home Assistant's own theme says". That is
 # the default, and it is why installing the hub does not fight the theme
@@ -170,7 +171,9 @@ def resolve(stored: Any) -> dict[str, Any]:
     for key in ("accent", "surface", "ink"):
         value = theme.get(key)
         if isinstance(value, str):
-            resolved[key] = value
+            colour = safe_css_color(value)
+            if colour is not None:
+                resolved[key] = colour
 
     size = theme.get("node_size")
     if isinstance(size, (int, float)):
@@ -198,9 +201,11 @@ def resolve(stored: Any) -> dict[str, Any]:
         resolved[key] = {
             **resolved[key],
             **{
-                word: value
+                word: colour
                 for word, value in overrides.items()
-                if word in vocabulary and isinstance(value, str)
+                if word in vocabulary
+                and isinstance(value, str)
+                and (colour := safe_css_color(value)) is not None
             },
         }
 

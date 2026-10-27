@@ -38,7 +38,7 @@ from typing import Any, Callable
 from homeassistant.core import HomeAssistant
 
 from .const import API_VERSION, DATA_PROVIDERS
-from .models import Capabilities, Edge, Layer, Node, SpatialError
+from .models import Capabilities, Edge, Layer, Node, SpatialError, safe_css_color
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -203,11 +203,27 @@ class Provider:
         # Same contract as api_version: something that is not a mapping
         # is a broken registration, not an empty icon set.
         try:
-            icon_set = dict(raw.get("icon_set") or {})
+            raw_icon_set = dict(raw.get("icon_set") or {})
         except (TypeError, ValueError) as err:
             raise ProviderError(
                 f"{provider_id} has an unusable 'icon_set' ({err})"
             ) from err
+        icon_set: dict[str, Any] = {}
+        for icon_name, raw_icon in raw_icon_set.items():
+            if not isinstance(raw_icon, dict):
+                icon_set[str(icon_name)] = raw_icon
+                continue
+            icon = dict(raw_icon)
+            if "default_color" in icon:
+                colour = safe_css_color(icon["default_color"])
+                if icon["default_color"] and colour is None:
+                    warnings.append(
+                        f"icon_set entry {icon_name!r} has an unsafe default_color; ignored"
+                    )
+                    icon.pop("default_color")
+                elif colour is not None:
+                    icon["default_color"] = colour
+            icon_set[str(icon_name)] = icon
 
         return cls(
             id=provider_id,

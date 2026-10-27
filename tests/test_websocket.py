@@ -790,6 +790,23 @@ def test_a_theme_beyond_its_limits_is_refused(values):
         _layout_values({"theme": values})
 
 
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"theme": {"accent": "red; position:fixed"}},
+        {"color": "red; position:fixed"},
+        {"custom_shapes": [{
+            "id": "annotation", "floor_id": "eg", "name": "Annotation",
+            "color": "url(https://example.invalid/pixel)",
+            "points": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}],
+        }]},
+    ],
+)
+def test_style_values_cannot_escape_their_css_declaration(values):
+    with pytest.raises(vol.Invalid):
+        _layout_values(values)
+
+
 def test_an_outline_is_a_box_somewhere_on_the_plan(hass, hub, connection):
     """A stated building line is the user's business; the limits only
     keep it in the same coordinate system as everything else."""

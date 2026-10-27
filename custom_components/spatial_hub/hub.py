@@ -30,7 +30,7 @@ from .const import (
     AreaKind,
 )
 from .generic import effective_layers
-from .models import Edge, Node, Position
+from .models import Edge, Node, Position, safe_css_color
 from .registry import Provider, async_load_providers
 from .theme import resolve as resolve_theme
 from .storage import LayoutStore
@@ -363,7 +363,7 @@ class SpatialHub:
                 "id": shape_id,
                 "floor_id": floor_id,
                 "name": str(shape.get("name") or "Fläche"),
-                "color": str(shape.get("color") or ""),
+                "color": safe_css_color(shape.get("color")) or "",
                 "points": points,
             })
         return shapes
@@ -405,9 +405,14 @@ class SpatialHub:
         if position is not None:
             data["position"] = position.as_dict()
             data["metadata"] = {**data["metadata"], "auto_position": False}
-        for key in ("icon", "color"):
-            if override.get(key):
-                data[key] = override[key]
+        if override.get("icon"):
+            data["icon"] = override["icon"]
+        if override.get("color"):
+            # Layouts may predate the colour validator or have been edited
+            # directly in .storage; never let stored CSS break the style attr.
+            colour = safe_css_color(override["color"])
+            if colour is not None:
+                data["color"] = colour
         for key in ("scale", "rotation", "label_offset"):
             if key in override:
                 data[key] = override[key]
