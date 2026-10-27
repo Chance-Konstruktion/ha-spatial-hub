@@ -13,6 +13,7 @@ not blank the user's floor plan.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Any
 
 from .const import (
@@ -33,9 +34,12 @@ def _str(value: Any, default: str = "") -> str:
 
 def _float_or_none(value: Any) -> float | None:
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
         return None
+    # float() accepts NaN and infinity. Those values are not valid spatial
+    # coordinates or measurements and can make the websocket model invalid JSON.
+    return number if isfinite(number) else None
 
 
 def _float_or(value: Any, default: float) -> float:
@@ -123,7 +127,7 @@ def _anchors(raw: Any) -> list[dict[str, Any]]:
             continue
         try:
             gewicht = float(eintrag.get("weight", 1.0))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
         if gewicht <= 0 or gewicht != gewicht or gewicht in (
             float("inf"), float("-inf")

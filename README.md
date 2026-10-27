@@ -167,7 +167,8 @@ card to configure, no YAML:
 - **Themes**: five presets, free colours, shapes, label mode, straight or
   curved connections — the default is `auto`, which follows the theme the
   user already has in Home Assistant
-- **Editing** (admins only): drag nodes and areas, resize rooms at every
+- **Editing** (signed-in users; moving devices between Home Assistant
+  areas requires admin rights): drag nodes and areas, resize rooms at every
   wall and every corner, scale and rotate nodes, hide them and bring them
   back, set each area's kind and whether it appears in the stacked house
   view, a floor plan image per storey, sort and dim layers, undo/redo — all
