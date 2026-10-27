@@ -76,6 +76,42 @@ def test_layout_set_rejects_an_oversized_background(hass, hub, connection):
     assert hub.store.get("floors", "eg") == {}
 
 
+def test_layout_set_rejects_background_urls_and_active_formats(hass, hub, connection):
+    unsafe = [
+        "https://example.invalid/background.png",
+        "');background-image:url(https://example.invalid/pixel);/*",
+        "data:image/svg+xml;base64,PHN2Zy8+",
+        "data:text/html;base64,PGgxPkhlbGxvPC9oMT4=",
+        "data:image/png;base64,",
+    ]
+
+    for index, background in enumerate(unsafe):
+        ws.websocket_layout_set(
+            hass,
+            connection,
+            {"id": index + 1, "section": "floors", "key": f"bad-{index}",
+             "values": {"background": background}},
+        )
+        assert connection.errors[-1][1] == "invalid_format"
+        assert hub.store.get("floors", f"bad-{index}") == {}
+
+
+def test_layout_set_accepts_a_raster_image_data_url(hass, hub, connection):
+    background = (
+        "data:image/png;base64,"
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j8noAAAAASUVORK5CYII="
+    )
+    ws.websocket_layout_set(
+        hass,
+        connection,
+        {"id": 1, "section": "areas", "key": "wohnzimmer",
+         "values": {"background": background}},
+    )
+
+    assert connection.results[1] == {"success": True}
+    assert hub.store.get("areas", "wohnzimmer")["background"] == background
+
+
 def test_layout_set_ignores_keys_the_section_does_not_own(hass, hub, connection):
     ws.websocket_layout_set(
         hass,
