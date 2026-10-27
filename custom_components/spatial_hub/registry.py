@@ -136,6 +136,7 @@ def _sanitize_svg(value: Any) -> str:
     if (
         not isinstance(value, str)
         or not value
+        or len(value) > _MAX_SVG_BYTES
         or len(value.encode("utf-8", errors="ignore")) > _MAX_SVG_BYTES
         or re.search(r"<!\s*(?:DOCTYPE|ENTITY)", value, re.IGNORECASE)
     ):
@@ -166,13 +167,14 @@ def _sanitize_svg(value: Any) -> str:
                 cleaned.append(safe_child)
         return cleaned
 
-    cleaned_root = clean(original)
-    if cleaned_root is None:
-        return ""
-    # ElementTree emits the canonical namespace on the root element.
     try:
+        cleaned_root = clean(original)
+        if cleaned_root is None:
+            return ""
+        # ElementTree emits the canonical namespace on the root element.
         return ET.tostring(cleaned_root, encoding="unicode", short_empty_elements=True)
-    except (TypeError, ValueError):
+    except (RecursionError, TypeError, ValueError):
+        # A deeply nested but small document must not break provider loading.
         return ""
 
 
