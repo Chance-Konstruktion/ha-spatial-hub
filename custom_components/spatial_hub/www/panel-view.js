@@ -1777,7 +1777,7 @@ export const ANSICHT = {
         <h3>Hintergrundbild</h3>
         <label class="field">
           <span>Bild für diesen Raum</span>
-          <input type="file" accept="image/*" data-area-background="1">
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" data-area-background="1">
         </label>
         ${
           area.background
@@ -2170,7 +2170,7 @@ export const ANSICHT = {
         <p class="note">Ein gescannter Grundriss zum Nachzeichnen. Der Hub
         speichert es, jeder Renderer bekommt es mit dem Modell.</p>
         <label class="field">
-          <input type="file" accept="image/*" data-background="1">
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" data-background="1">
         </label>
         ${
           floor.background
