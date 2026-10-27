@@ -82,8 +82,11 @@ import {
   haToggle,
 } from "./panel-ha.js";
 
-const BACKGROUND_DATA_URL =
-  /^data:image\\/(?:png|jpeg|webp|gif|avif);base64,(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$/;
+const BACKGROUND_DATA_URL = new RegExp(
+  "^data:image/(?:png|jpeg|webp|gif|avif);base64," +
+    "(?:[A-Za-z0-9+/]{4})*" +
+    "(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$",
+);
 const safeBackground = (value) =>
   typeof value === "string" &&
   value.length <= 4 * 1024 * 1024 &&
@@ -1248,7 +1251,7 @@ export const ANSICHT = {
               )
               .join(",")})"></div>`
           : "";
-        const background = safeBackground(area.background)
+        const background = safeBackground(area.background);
         const areaBackground = background
           ? `<div class="area-background" style="background-image:url('${escapeHtml(
               background,
