@@ -96,7 +96,7 @@ async def test_broken_items_are_dropped_not_the_payload():
 
 
 @pytest.mark.asyncio
-async def test_nonfinite_numbers_are_sanitized_before_the_model_is_rendered():
+async def test_nonfinite_and_boolean_numbers_are_sanitized_before_rendering():
     provider = Provider.from_registration(
         _registration(
             data=lambda: {
@@ -105,23 +105,29 @@ async def test_nonfinite_numbers_are_sanitized_before_the_model_is_rendered():
                     {"id": "bad_z", "position": {
                         "x": 0.2, "y": 0.3, "z": float("inf")
                     }},
+                    {"id": "bad_bool", "position": {"x": True, "y": 0.5}},
                 ],
-                "edges": [{
-                    "source": "bad_xy", "target": "bad_z",
-                    "value": float("inf"), "width": float("nan"),
-                }],
+                "edges": [
+                    {"source": "bad_xy", "target": "bad_z",
+                     "value": float("inf"), "width": float("nan")},
+                    {"source": "bad_z", "target": "bad_bool",
+                     "value": True, "width": False},
+                ],
             }
         )
     )
 
     result = await provider.async_fetch()
     nodes = {node.id: node for node in result.nodes}
-    edge = result.edges[0]
+    infinite_edge, boolean_edge = result.edges
 
     assert nodes["demo:bad_xy"].position is None
     assert nodes["demo:bad_z"].position.z == 0.0
-    assert edge.value is None
-    assert edge.width == 2.0
+    assert nodes["demo:bad_bool"].position is None
+    assert infinite_edge.value is None
+    assert infinite_edge.width == 2.0
+    assert boolean_edge.value is None
+    assert boolean_edge.width == 2.0
 
 
 @pytest.mark.asyncio
