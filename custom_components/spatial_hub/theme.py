@@ -205,7 +205,7 @@ def resolve(stored: Any) -> dict[str, Any]:
                 for word, value in overrides.items()
                 if word in vocabulary
                 and isinstance(value, str)
-                and (colour := safe_css_color(value))
+                and (colour := safe_css_color(value)) is not None
             },
         }
 
