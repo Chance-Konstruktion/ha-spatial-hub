@@ -13,6 +13,7 @@ not blank the user's floor plan.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Any
 
 from .const import (
@@ -33,9 +34,12 @@ def _str(value: Any, default: str = "") -> str:
 
 def _float_or_none(value: Any) -> float | None:
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    # NaN and infinities pass float() but are not valid JSON numbers and can
+    # poison coordinates, edge metrics, and other renderer-facing fields.
+    return number if math.isfinite(number) else None
 
 
 def _float_or(value: Any, default: float) -> float:
