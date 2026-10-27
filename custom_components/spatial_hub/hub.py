@@ -383,7 +383,7 @@ class SpatialHub:
             # Layouts may predate the colour validator or have been edited
             # directly in .storage; never let stored CSS break the style attr.
             colour = safe_css_color(override["color"])
-            if colour:
+            if colour is not None:
                 data["color"] = colour
         for key in ("scale", "rotation", "label_offset"):
             if key in override:
