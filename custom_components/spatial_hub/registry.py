@@ -39,7 +39,7 @@ from typing import Any, Callable
 from homeassistant.core import HomeAssistant
 
 from .const import API_VERSION, DATA_PROVIDERS
-from .models import Capabilities, Edge, Layer, Node, SpatialError
+from .models import Capabilities, Edge, Layer, Node, SpatialError, safe_css_color
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -335,6 +335,15 @@ class Provider:
                 continue
             icon = dict(raw_icon)
             icon["svg"] = safe_svg
+            if "default_color" in icon:
+                colour = safe_css_color(icon["default_color"])
+                if icon["default_color"] and colour is None:
+                    warnings.append(
+                        f"icon_set entry {icon_name!r} has an unsafe default_color; ignored"
+                    )
+                    icon.pop("default_color")
+                elif colour is not None:
+                    icon["default_color"] = colour
             icon_set[str(icon_name)] = icon
 
         return cls(
