@@ -17,11 +17,8 @@
  */
 import {
   AREA_KIND,
-  BACK_WALL,
-  FRONT_WALL,
   PLAN,
   SIDE_NAME,
-  STACK,
   capsOf,
   centreOf,
   drawsTheWall,
@@ -44,7 +41,6 @@ import {
   roomLabelSpot,
   declutter,
   PIN,
-  roomLabelSize,
   ROOM_LABEL,
   LABEL,
   DIM,
@@ -55,8 +51,6 @@ import {
   shapeOf,
   snapReach,
   spanY,
-  wallPolygonsOf,
-  wallsOf,
 } from "./panel-geometry.js";
 import {
   cornerHandlesHtml,
