@@ -12,8 +12,8 @@ not blank the user's floor plan.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import math
+from dataclasses import dataclass, field
 from typing import Any
 
 from .const import (
