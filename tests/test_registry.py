@@ -278,3 +278,33 @@ def test_an_icon_set_that_is_not_one_costs_only_its_own_registration(
     assert "Ignoring provider kaputt" in caplog.text, (
         "the developer must find out why their provider is missing"
     )
+
+
+@pytest.mark.asyncio
+async def test_provider_css_colors_cannot_inject_style_declarations():
+    hostile_colour = "red; position:fixed"
+    provider = Provider.from_registration(
+        _registration(
+            data=lambda: {
+                "nodes": [{"id": "n", "color": hostile_colour}],
+                "edges": [{
+                    "source": "n", "target": "n", "color": hostile_colour
+                }],
+            },
+            icon_set={
+                "custom": {
+                    "svg": "<svg/>",
+                    "default_color": hostile_colour,
+                }
+            },
+        )
+    )
+
+    result = await provider.async_fetch()
+
+    assert result.nodes[0].color == ""
+    assert result.edges[0].color == ""
+    assert "default_color" not in provider.icon_set["custom"]
+    assert any("unsafe default_color" in warning for warning in provider.warnings)
+
+
