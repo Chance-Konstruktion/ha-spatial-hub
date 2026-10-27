@@ -624,13 +624,6 @@ const frameOf = (floor, areas) => {
   const base = wide ? floor.outdoor_margin || 0.28 : 0;
   // links, rechts, oben, unten -- das Haus liegt immer auf 0..1.
   const side = { left: base, right: base, top: base, bottom: base };
-  const widen = (box, extra) => {
-    side.left = Math.max(side.left, -box.left + extra);
-    side.right = Math.max(side.right, box.right - 1 + extra);
-    side.top = Math.max(side.top, -box.top + extra);
-    side.bottom = Math.max(side.bottom, box.bottom - 1 + extra);
-  };
-
   // A drawn plot decides how much surroundings there are. Everybody's
   // garden is a different size, and a fixed apron would mean the boundary
   // either stops at an invisible wall or is drawn outside the picture --
