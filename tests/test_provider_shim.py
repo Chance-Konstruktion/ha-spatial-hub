@@ -73,6 +73,20 @@ def test_one_call_is_the_whole_integration(hass):
     assert hass.data[shim.DATA_PROVIDERS] == {}, "unload withdraws automatically"
 
 
+async def test_removed_provider_status_is_pruned_from_diagnostics(hass, hub):
+    """A deregistered provider must not remain in the diagnostic snapshot."""
+    entry = FakeEntry()
+    shim.spatial_provider(hass, entry, name="Demo", data=lambda: [])
+
+    await hub.async_model()
+    assert "demo" in hub.status
+
+    entry.unload()
+    await hub.async_model()
+
+    assert "demo" not in hub.status
+
+
 def test_coordinator_updates_notify_the_hub(hass, hub):
     entry, coordinator = FakeEntry(), FakeCoordinator()
     seen = []
