@@ -165,6 +165,27 @@ export const EINGABEN = {
     this._render();
   },
 
+
+  _trackPointerGesture(cleanup, abort) {
+    this._activePointerGesture = { cleanup, abort };
+  },
+
+  _finishPointerGesture(cleanup) {
+    cleanup();
+    if (this._activePointerGesture &&
+        this._activePointerGesture.cleanup === cleanup) {
+      this._activePointerGesture = null;
+    }
+  },
+
+  _abortPointerGesture() {
+    const gesture = this._activePointerGesture;
+    this._activePointerGesture = null;
+    if (!gesture) return;
+    gesture.cleanup();
+    gesture.abort();
+  },
+
   _onPointerDown(event) {
     if (event.button !== 0 && event.button !== 1) return;
     const path = event.composedPath();
@@ -185,13 +206,25 @@ export const EINGABEN = {
         ),
       );
       if (!this._sheet) return;
+
       const move = (moveEvent) => this._onSheetMove(moveEvent);
-      const up = (upEvent) => {
+      const cleanup = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
         window.removeEventListener("pointercancel", up);
+      };
+      const up = (upEvent) => {
+        this._finishPointerGesture(cleanup);
         this._onSheetUp(upEvent);
       };
+      this._trackPointerGesture(cleanup, () => {
+        const sheet = this._sheet && this._sheet.sheet;
+        this._sheet = null;
+        if (sheet && sheet.style) {
+          sheet.style.transition = "";
+          sheet.style.transform = "";
+        }
+      });
       window.addEventListener("pointermove", move, { passive: false });
       window.addEventListener("pointerup", up);
       window.addEventListener("pointercancel", up);
@@ -318,13 +351,27 @@ export const EINGABEN = {
       box: stage.getBoundingClientRect(),
     };
 
+
     const move = (moveEvent) => this._onPointerMove(moveEvent);
-    const up = (upEvent) => {
+    const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
+    };
+    const up = (upEvent) => {
+      this._finishPointerGesture(cleanup);
       this._onPointerUp(upEvent);
     };
+    this._trackPointerGesture(cleanup, () => {
+      const drag = this._drag;
+      this._drag = null;
+      this._dragged = false;
+      this._showFlush({ left: NaN, right: NaN, top: NaN, bottom: NaN });
+      if (drag && drag.element && drag.element.classList &&
+          drag.element.classList.remove) {
+        drag.element.classList.remove("snapped");
+      }
+    });
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);

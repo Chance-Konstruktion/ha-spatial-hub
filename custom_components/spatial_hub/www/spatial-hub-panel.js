@@ -126,6 +126,7 @@ class SpatialHubPanel extends HTMLElement {
     this._meters = false;
     this._drag = null; // live pointer drag, never persisted until release
     this._dragged = false; // suppresses the click that follows a drag
+    this._activePointerGesture = null;
     this._floorDialog = false;
     this._themeDialog = false;
     this._layerDialog = null; // the custom layer being written
@@ -349,6 +350,8 @@ class SpatialHubPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
+    // Drop any live gesture before releasing the panel's other resources.
+    this._abortPointerGesture();
     // Invalidate in-flight connection work before it can install a late
     // subscription on an element that is no longer connected.
     this._connectToken += 1;
@@ -1636,13 +1639,27 @@ class SpatialHubPanel extends HTMLElement {
       }
       this._applyCamera();
     };
-    const up = () => {
+
+    const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
+    };
+    const up = () => {
+      this._finishPointerGesture(cleanup);
       this._pan = null;
       this._flushRender();
     };
+    this._trackPointerGesture(cleanup, () => {
+      const pan = this._pan;
+      if (pan &&
+          (this._view.x !== pan.originX || this._view.y !== pan.originY)) {
+        this._view.x = pan.originX;
+        this._view.y = pan.originY;
+        this._applyCamera();
+      }
+      this._pan = null;
+    });
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
