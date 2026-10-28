@@ -1659,6 +1659,7 @@ class SpatialHubPanel extends HTMLElement {
         this._applyCamera();
       }
       this._pan = null;
+      this._dragged = false;
     });
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);

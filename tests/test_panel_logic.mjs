@@ -818,6 +818,7 @@ test("disconnect aborts a pan and restores its starting camera", () => {
     view.disconnectedCallback();
 
     assert.equal(view._pan, null);
+    assert.equal(view._dragged, false, "a discarded pan must not suppress a later click");
     assert.equal(view._view.x, 0, "the interrupted pan is discarded");
     assert.equal(view._view.y, 0, "the interrupted pan is discarded");
     assert.equal(flushed, 0, "disconnect must not finish the gesture");
