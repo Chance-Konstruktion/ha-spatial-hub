@@ -572,6 +572,37 @@ test("the panel subscribes before its first model fetch", async () => {
 });
 
 
+test("a late subscription is released after disconnect and duplicate connects are ignored", async () => {
+  const view = panel();
+  let resolveSubscription;
+  let subscriptions = 0;
+  let unsubscribed = 0;
+  let refreshed = 0;
+  view._haReady = async () => {};
+  view._refresh = async () => { refreshed += 1; };
+  view._io = {
+    subscribe: () => {
+      subscriptions += 1;
+      return new Promise((resolve) => { resolveSubscription = resolve; });
+    },
+  };
+
+  const connecting = view._connect();
+  await Promise.resolve();
+  await view._connect();
+
+  assert.equal(subscriptions, 1, "a pending connection must not be duplicated");
+  assert.equal(typeof resolveSubscription, "function", "the subscription is in flight");
+
+  view.disconnectedCallback();
+  resolveSubscription(() => { unsubscribed += 1; });
+  await connecting;
+
+  assert.equal(unsubscribed, 1, "a late subscription must be released immediately");
+  assert.equal(view._unsubscribe, null, "the detached panel must not retain the cleanup");
+  assert.equal(refreshed, 0, "a detached panel must not refresh");
+});
+
 test("a selected item that vanished mid-refresh closes quietly", () => {
   const view = panel();
   view._selected = { kind: "node", id: "a:gone" };
