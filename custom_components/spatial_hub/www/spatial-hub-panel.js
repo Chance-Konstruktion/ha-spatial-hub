@@ -363,7 +363,6 @@ class SpatialHubPanel extends HTMLElement {
       Promise.resolve(unsubscribe).then((off) => off && off());
     }
   }
-
   // ── Data ────────────────────────────────────────────────
 
   async _connect() {
@@ -405,7 +404,6 @@ class SpatialHubPanel extends HTMLElement {
       if (this._connecting === token) this._connecting = null;
     }
   }
-
   async _refresh() {
     // A notification during an in-flight request must not be dropped: the
     // first response may have read provider data just before it changed.
