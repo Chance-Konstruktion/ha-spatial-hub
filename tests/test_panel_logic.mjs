@@ -572,6 +572,37 @@ test("the panel subscribes before its first model fetch", async () => {
 });
 
 
+test("a late subscription is released after disconnect and duplicate connects are ignored", async () => {
+  const view = panel();
+  let resolveSubscription;
+  let subscriptions = 0;
+  let unsubscribed = 0;
+  let refreshed = 0;
+  view._haReady = async () => {};
+  view._refresh = async () => { refreshed += 1; };
+  view._io = {
+    subscribe: () => {
+      subscriptions += 1;
+      return new Promise((resolve) => { resolveSubscription = resolve; });
+    },
+  };
+
+  const connecting = view._connect();
+  await Promise.resolve();
+  await view._connect();
+
+  assert.equal(subscriptions, 1, "a pending connection must not be duplicated");
+  assert.equal(typeof resolveSubscription, "function", "the subscription is in flight");
+
+  view.disconnectedCallback();
+  resolveSubscription(() => { unsubscribed += 1; });
+  await connecting;
+
+  assert.equal(unsubscribed, 1, "a late subscription must be released immediately");
+  assert.equal(view._unsubscribe, null, "the detached panel must not retain the cleanup");
+  assert.equal(refreshed, 0, "a detached panel must not refresh");
+});
+
 test("a selected item that vanished mid-refresh closes quietly", () => {
   const view = panel();
   view._selected = { kind: "node", id: "a:gone" };
@@ -708,6 +739,98 @@ test("pointercancel cleans up an interrupted node drag", () => {
     tracked.restore();
   }
 });
+
+
+test("disconnect aborts a node drag without persisting it or retaining pointer listeners", () => {
+  const tracked = trackingWindow();
+  try {
+    const view = panel(model(), { edit: true, what: "icons" });
+    view._showFlush = () => {};
+    let stored = 0;
+    view._storeDrag = () => { stored += 1; };
+    const target = element({ "data-node": "a:one" });
+
+    view._onPointerDown(pointer(0, 0, { target: [target, stage()] }));
+    view._onPointerMove(pointer(300, 700));
+    assert.ok(view._drag && view._drag.value, "the gesture has live, uncommitted movement");
+
+    view.disconnectedCallback();
+
+    assert.equal(view._drag, null, "disconnect discards the active drag");
+    assert.equal(view._activePointerGesture, null);
+    assert.equal(stored, 0, "disconnect must not commit the drag");
+    for (const type of ["pointermove", "pointerup", "pointercancel"]) {
+      assert.equal(tracked.listeners.get(type)?.size || 0, 0,
+                   `${type} listeners are removed`);
+    }
+    tracked.dispatch("pointerup");
+    assert.equal(stored, 0, "a later global pointerup cannot commit anything");
+  } finally {
+    tracked.restore();
+  }
+});
+
+
+test("disconnect aborts a legend sheet drag without closing the legend", () => {
+  const tracked = trackingWindow();
+  try {
+    const view = panel();
+    view._legendOpen = true;
+    let finished = 0;
+    view._onSheetUp = () => { finished += 1; };
+    const sheet = element({ _class: "legend" });
+    sheet.offsetHeight = 100;
+    const grip = element({ "data-legend-grab": "" });
+
+    view._onPointerDown(pointer(0, 0, { target: [grip, sheet] }));
+    assert.ok(view._sheet, "the sheet gesture has started");
+    sheet.style.transform = "translateY(90px)";
+
+    view.disconnectedCallback();
+
+    assert.equal(view._sheet, null, "the sheet gesture is discarded");
+    assert.equal(finished, 0, "disconnect must not run the release action");
+    assert.equal(view._legendOpen, true, "disconnect must not close the legend");
+    assert.equal(sheet.style.transform, "", "the transient displacement is cleared");
+    assert.equal(sheet.style.transition, "");
+    for (const type of ["pointermove", "pointerup", "pointercancel"]) {
+      assert.equal(tracked.listeners.get(type)?.size || 0, 0,
+                   `${type} listeners are removed`);
+    }
+  } finally {
+    tracked.restore();
+  }
+});
+
+
+test("disconnect aborts a pan and restores its starting camera", () => {
+  const tracked = trackingWindow();
+  try {
+    const view = panel();
+    view._applyCamera = () => {};
+    let flushed = 0;
+    view._flushRender = () => { flushed += 1; };
+    view._startPan(pointer(10, 20));
+    const move = [...(tracked.listeners.get("pointermove") || [])][0];
+    move({ clientX: 30, clientY: 40, preventDefault() {} });
+    assert.notEqual(view._view.x, 0, "the pan moved the camera");
+
+    view.disconnectedCallback();
+
+    assert.equal(view._pan, null);
+    assert.equal(view._dragged, false, "a discarded pan must not suppress a later click");
+    assert.equal(view._view.x, 0, "the interrupted pan is discarded");
+    assert.equal(view._view.y, 0, "the interrupted pan is discarded");
+    assert.equal(flushed, 0, "disconnect must not finish the gesture");
+    for (const type of ["pointermove", "pointerup", "pointercancel"]) {
+      assert.equal(tracked.listeners.get(type)?.size || 0, 0,
+                   `${type} listeners are removed`);
+    }
+  } finally {
+    tracked.restore();
+  }
+});
+
 
 test("pointercancel closes an interrupted pan", () => {
   const tracked = trackingWindow();

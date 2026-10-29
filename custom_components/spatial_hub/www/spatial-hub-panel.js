@@ -108,6 +108,10 @@ class SpatialHubPanel extends HTMLElement {
     this._showDiagnostics = false;
     this._diagnostics = null;
     this._unsubscribe = null;
+    // A subscription may resolve after this element has been detached.
+    // The token also prevents a second connection while the first is pending.
+    this._connectToken = 0;
+    this._connecting = null;
     this._pending = false;
     this._refreshWanted = false;
     this._edit = false;
@@ -122,6 +126,7 @@ class SpatialHubPanel extends HTMLElement {
     this._meters = false;
     this._drag = null; // live pointer drag, never persisted until release
     this._dragged = false; // suppresses the click that follows a drag
+    this._activePointerGesture = null;
     this._floorDialog = false;
     this._themeDialog = false;
     this._layerDialog = null; // the custom layer being written
@@ -345,37 +350,63 @@ class SpatialHubPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
+    // Drop any live gesture before releasing the panel's other resources.
+    this._abortPointerGesture();
+    // Invalidate in-flight connection work before it can install a late
+    // subscription on an element that is no longer connected.
+    this._connectToken += 1;
+    this._connecting = null;
     if (this._onResize && typeof window !== "undefined") {
       window.removeEventListener("resize", this._onResize);
       this._onResize = null;
     }
     if (this._unsubscribe) {
-      Promise.resolve(this._unsubscribe).then((off) => off && off());
+      const unsubscribe = this._unsubscribe;
       this._unsubscribe = null;
+      Promise.resolve(unsubscribe).then((off) => off && off());
     }
   }
-
   // ── Data ────────────────────────────────────────────────
 
   async _connect() {
-    // Erst die Bausteine von HA, dann das Live-Abo und zuletzt das erste
-    // Bild. Würden wir zuerst laden, könnte eine Änderung zwischen Antwort
-    // und Abo verloren gehen, bis irgendwann das nächste Signal eintrifft.
-    await this._haReady();
+    if (this._unsubscribe || this._connecting !== null) return;
+    const token = ++this._connectToken;
+    this._connecting = token;
     try {
-      // The hub pushes a reason, never the model: a renderer that does not
-      // care about the changed layer simply ignores the hint.
-      this._unsubscribe = await this._io.subscribe(
-        { type: `${DOMAIN}/subscribe` },
-        () => this._refresh(),
-      );
-    } catch (err) {
-      // Losing live updates is not worth losing the floor plan over.
-      console.warn("Spatial Hub: no live updates", err);
+      // Erst die Bausteine von HA, dann das Live-Abo und zuletzt das erste
+      // Bild. Würden wir zuerst laden, könnte eine Änderung zwischen Antwort
+      // und Abo verloren gehen, bis irgendwann das nächste Signal eintrifft.
+      await this._haReady();
+      if (this._connecting !== token) return;
+      try {
+        // The hub pushes a reason, never the model: a renderer that does not
+        // care about the changed layer simply ignores the hint.
+        const unsubscribe = await this._io.subscribe(
+          { type: `${DOMAIN}/subscribe` },
+          () => this._refresh(),
+        );
+        if (this._connecting !== token) {
+          // The element was detached while subscribe() was in flight.
+          // Release the subscription now rather than keeping the panel alive.
+          try {
+            if (typeof unsubscribe === "function") unsubscribe();
+          } catch (err) {
+            console.warn("Spatial Hub: could not release late subscription", err);
+          }
+          return;
+        }
+        this._unsubscribe = unsubscribe;
+      } catch (err) {
+        if (this._connecting !== token) return;
+        // Losing live updates is not worth losing the floor plan over.
+        console.warn("Spatial Hub: no live updates", err);
+      }
+      if (this._connecting !== token) return;
+      await this._refresh();
+    } finally {
+      if (this._connecting === token) this._connecting = null;
     }
-    await this._refresh();
   }
-
   async _refresh() {
     // A notification during an in-flight request must not be dropped: the
     // first response may have read provider data just before it changed.
@@ -1608,13 +1639,28 @@ class SpatialHubPanel extends HTMLElement {
       }
       this._applyCamera();
     };
-    const up = () => {
+
+    const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
+    };
+    const up = () => {
+      this._finishPointerGesture(cleanup);
       this._pan = null;
       this._flushRender();
     };
+    this._trackPointerGesture(cleanup, () => {
+      const pan = this._pan;
+      if (pan &&
+          (this._view.x !== pan.originX || this._view.y !== pan.originY)) {
+        this._view.x = pan.originX;
+        this._view.y = pan.originY;
+        this._applyCamera();
+      }
+      this._pan = null;
+      this._dragged = false;
+    });
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
