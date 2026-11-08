@@ -649,7 +649,7 @@ def _place_anchored(
     Fuer das Mittel gelten zwei Regeln. Erstens zaehlt nur der Stand *vor*
     dieser Runde als Ort: was der Anbieter selbst platziert hat, ist eine
     Messung -- auch wenn der Knoten daneben eigene Anker traegt. Ein Ziel,
-    das erst in dieser Runde ueber Anker oder Planraster gelegt wurde,
+    das erst in dieser Runde ueber Anker gelegt wurde,
     steht noch nicht, also nicht im Angebot.
 
     Zweitens wird nur innerhalb einer Etage gemittelt: x/y sind
