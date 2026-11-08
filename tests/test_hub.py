@@ -1495,6 +1495,156 @@ async def test_two_nodes_anchoring_each_other_land_in_the_middle(hass, hub):
 
 
 @pytest.mark.asyncio
+async def test_one_anchor_places_the_node_on_its_target(hass, hub):
+    """A single anchor is the honest base case: the point sits exactly on
+    the target, and the count says one measurement stands behind it."""
+    _register(hass, data=lambda: {
+        "nodes": [
+            {"id": "anhaenger",
+             "anchors": [{"id": "proxy", "weight": 2}]},
+            {"id": "proxy", "position": {"x": 0.1, "y": 0.1}},
+        ],
+        "edges": [],
+    })
+    model = await hub.async_model()
+    positionen = {n["id"]: n["position"] for n in model["nodes"]}
+    assert positionen["demo:anhaenger"] == {"x": 0.1, "y": 0.1, "z": 0.0}
+    anhaenger = next(n for n in model["nodes"] if n["id"] == "demo:anhaenger")
+    assert anhaenger["metadata"]["anchored_by"] == 1
+    assert anhaenger["metadata"]["auto_position"] is True
+
+
+@pytest.mark.asyncio
+async def test_anchor_weights_pull_the_point_towards_the_stronger_measurement(
+    hass, hub
+):
+    """Two anchors on the same floor average by weight: 3:1 between
+    (0,0) and (1,1) is a quarter, not a half."""
+    _register(hass, data=lambda: {
+        "nodes": [
+            {"id": "anhaenger",
+             "anchors": [{"id": "links", "weight": 3},
+                          {"id": "rechts", "weight": 1}]},
+            {"id": "links", "position": {"x": 0.0, "y": 0.0}},
+            {"id": "rechts", "position": {"x": 1.0, "y": 1.0}},
+        ],
+        "edges": [],
+    })
+    model = await hub.async_model()
+    anhaenger = next(n for n in model["nodes"] if n["id"] == "demo:anhaenger")
+    assert anhaenger["position"]["x"] == pytest.approx(0.25)
+    assert anhaenger["position"]["y"] == pytest.approx(0.25)
+    assert anhaenger["metadata"]["anchored_by"] == 2
+
+
+@pytest.mark.asyncio
+async def test_an_anchor_target_with_its_own_position_and_own_anchors_still_counts(
+    hass, hub
+):
+    """A target the provider placed itself is a measurement, not a
+    circular chase -- even while it carries anchors of its own. Dropping
+    it used to throw the dependent node into the middle of the plan."""
+    _register(hass, data=lambda: {
+        "nodes": [
+            {"id": "anhaenger",
+             "anchors": [{"id": "proxy", "weight": 1}]},
+            {"id": "proxy", "position": {"x": 0.1, "y": 0.1},
+             "anchors": [{"id": "wanderer", "weight": 1}]},
+            {"id": "wanderer", "position": {"x": 0.9, "y": 0.9}},
+        ],
+        "edges": [],
+    })
+    model = await hub.async_model()
+    positionen = {n["id"]: n["position"] for n in model["nodes"]}
+    # Der Anbieter hat den Proxy selbst platziert -- seine Position gilt,
+    # und der Anhaenger liegt exakt dort statt auf (0.5, 0.5).
+    assert positionen["demo:anhaenger"] == {"x": 0.1, "y": 0.1, "z": 0.0}
+    anhaenger = next(n for n in model["nodes"] if n["id"] == "demo:anhaenger")
+    assert anhaenger["metadata"]["anchored_by"] == 1
+    # Der eigene Stand des Proxy bleibt unangetastet.
+    assert positionen["demo:proxy"] == {"x": 0.1, "y": 0.1, "z": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_cross_floor_anchors_do_not_mix_their_coordinate_systems(
+    hass, hub
+):
+    """x/y are normalised per floor: a weighted mean between the ground
+    floor and the storey above is the middle of two unconnected sheets.
+    Only the anchors on the node's own floor are averaged; the cross-floor
+    measurement says which room, not which point."""
+    _register(hass, data=lambda: {
+        "nodes": [
+            {"id": "anhaenger", "floor_id": "eg",
+             "anchors": [{"id": "kuechenproxy", "weight": 1},
+                          {"id": "ogproxy", "weight": 1}]},
+            {"id": "kuechenproxy", "floor_id": "eg",
+             "position": {"x": 0.1, "y": 0.1}},
+            {"id": "ogproxy", "floor_id": "og",
+             "position": {"x": 0.9, "y": 0.9}},
+        ],
+        "edges": [],
+    })
+    model = await hub.async_model()
+    anhaenger = next(n for n in model["nodes"] if n["id"] == "demo:anhaenger")
+    # Nur die EG-Messung zaehlt -- nicht (0.5, 0.5) ueber zwei Etagen.
+    assert anhaenger["position"]["x"] == pytest.approx(0.1)
+    assert anhaenger["position"]["y"] == pytest.approx(0.1)
+    assert anhaenger["metadata"]["anchored_by"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_floorless_anchor_node_reads_the_strongest_measurement(
+    hass, hub
+):
+    """A node without a floor opens the sheet of its strongest anchor --
+    the same rule the area inheritance uses -- and averages within it."""
+    _register(hass, data=lambda: {
+        "nodes": [
+            {"id": "anhaenger",
+             "anchors": [{"id": "kuechenproxy", "weight": 2},
+                          {"id": "ogproxy", "weight": 1}]},
+            {"id": "kuechenproxy", "floor_id": "eg",
+             "position": {"x": 0.1, "y": 0.1}},
+            {"id": "ogproxy", "floor_id": "og",
+             "position": {"x": 0.9, "y": 0.9}},
+        ],
+        "edges": [],
+    })
+    model = await hub.async_model()
+    anhaenger = next(n for n in model["nodes"] if n["id"] == "demo:anhaenger")
+    # Die staerkste Messung (EG, Gewicht 2) entscheidet das Blatt -- der
+    # OG-Anker faellt heraus, statt die Koordinatensysteme zu mischen.
+    assert anhaenger["position"]["x"] == pytest.approx(0.1)
+    assert anhaenger["position"]["y"] == pytest.approx(0.1)
+    assert anhaenger["metadata"]["anchored_by"] == 1
+
+
+@pytest.mark.asyncio
+async def test_an_anchored_node_with_an_area_falls_back_to_its_room(
+    hass, hub
+):
+    """A dead anchor does not throw the node into the middle of the whole
+    plan: with an area of its own it lands in the centre of that room --
+    the same place the same node without anchors would get."""
+    hub.store.update("areas", "kueche", {"position": {"x": 0.2, "y": 0.2}})
+    _register(hass, data=lambda: {
+        "nodes": [
+            {"id": "anhaenger", "area_id": "kueche",
+             "anchors": [{"id": "verschollen", "weight": 3}]},
+            {"id": "anderer", "area_id": "kueche"},
+        ],
+        "edges": [],
+    })
+    model = await hub.async_model()
+    anhaenger = next(n for n in model["nodes"] if n["id"] == "demo:anhaenger")
+    assert anhaenger["position"]["x"] == pytest.approx(0.2)
+    assert anhaenger["position"]["y"] == pytest.approx(0.2)
+    assert anhaenger["metadata"]["auto_position"] is True
+    assert "anchored_by" not in anhaenger["metadata"]
+
+
+@pytest.mark.asyncio
 async def test_an_entity_says_what_it_is_even_when_the_provider_did_not(
     hass, hub
 ):

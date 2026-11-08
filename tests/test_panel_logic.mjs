@@ -222,8 +222,8 @@ function panel(data = model(), { admin = true, edit = false,
     user: { is_admin: admin },
     callWS: async () => ({}),
   };
-  instance._setLayout = (section, key, values) => {
-    instance._written.push([section, key, values]);
+  instance._setLayout = (section, key, values, previous) => {
+    instance._written.push([section, key, values, previous]);
   };
   return instance;
 }
@@ -695,7 +695,7 @@ test("dragging a node writes its position once, on release", () => {
   assert.equal(target.style.left, "30%", "but it does follow the pointer");
 
   view._onPointerUp();
-  assert.deepEqual(view._written, [
+  assert.deepEqual(view._written.map(([s, k, v]) => [s, k, v]), [
     ["nodes", "a:one", { position: { x: 0.3, y: 0.7 } }],
   ]);
 });
@@ -951,9 +951,11 @@ test("un-hiding clears the override rather than writing a false", () => {
   view._onClick(pointer(0, 0, {
     target: [element({ "data-show-node": "a:gone" })],
   }));
-  assert.deepEqual(view._written, [["nodes", "a:gone", { hidden: null }]], (
-    "null restores the automatic behaviour; false would pin it"
-  ));
+  assert.deepEqual(
+    view._written.map(([s, k, v]) => [s, k, v]),
+    [["nodes", "a:gone", { hidden: null }]], (
+      "null restores the automatic behaviour; false would pin it"
+    ));
 });
 
 // ── Sliders ────────────────────────────────────────────────
@@ -967,7 +969,8 @@ test("a slider persists on release, not on every tick", () => {
   assert.deepEqual(view._written, [], "dragging a slider is not fifty writes");
 
   view._onInput({ target: slider }, true);
-  assert.deepEqual(view._written, [["nodes", "a:one", { scale: 2 }]]);
+  assert.deepEqual(view._written.map(([s, k, v]) => [s, k, v]),
+                   [["nodes", "a:one", { scale: 2 }]]);
 });
 
 test("the node edit panel shows what is stored", () => {
@@ -1108,9 +1111,12 @@ test("picking a preset sends the preset alone", () => {
   const view = panel(model(), { edit: true });
   view._render = () => {};
   view._onClick(pointer(0, 0, { target: [element({ "data-preset": "neon" })] }));
-  assert.deepEqual(view._written, [
-    ["settings", "view", { theme: { preset: "neon" } }],
-  ], "anything else would overrule what the preset decided");
+  const [section, key, values, previous] = view._written[0];
+  assert.equal(section, "settings");
+  assert.equal(key, "view");
+  assert.deepEqual(values, { theme: { preset: "neon" } },
+                           "anything else would overrule what the preset decided");
+  assert.equal(previous, undefined);
 });
 
 test("tweaking one control keeps everything else on screen", () => {
@@ -2274,6 +2280,25 @@ test("adding a door puts it in the middle of the wall you picked", () => {
   view._onClick({ composedPath: () => [element({ "data-door-add": "2" })] });
   assert.deepEqual(written(view),
                    [{ side: 2, at: 0.5, width: 0.2, kind: "door" }]);
+});
+
+test("Zurueck stellt die alte Tuerliste wieder her, nicht die neue", () => {
+  // Fund 3 (Durchsicht 05.11.): _setDoors uebergab next in beiden Rollen,
+  // der Undo-Stapel schrieb dieselben Tueren zweimal -- "Zurueck" tat
+  // nichts. Wie bei _setAreaKind und _writePlot gehoert der Stand vor der
+  // Aenderung in die zweite Rolle.
+  const view = withDialog([{ side: 0, at: 0.3, width: 0.2 }]);
+  view._onClick({ composedPath: () => [element({ "data-door-add": "1" })] });
+  const [section, key, values, previous] =
+    view._written[view._written.length - 1];
+  assert.equal(section, "areas");
+  assert.deepEqual(values.doors, [
+    { side: 0, at: 0.3, width: 0.2, kind: "door" },
+    { side: 1, at: 0.5, width: 0.2, kind: "door" },
+  ]);
+  assert.deepEqual(previous.doors, [
+    { side: 0, at: 0.3, width: 0.2, kind: "door" },
+  ], "previous ist der Stand vor der Aenderung");
 });
 
 test("ein Fenster wird als Fenster angelegt, nicht als Tuer", () => {
