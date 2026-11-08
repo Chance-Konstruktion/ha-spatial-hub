@@ -2384,7 +2384,11 @@ class SpatialHubPanel extends HTMLElement {
       }));
     const next = change(doors);
     if (!next) return;
-    this._setLayout("areas", area.id, { doors: next }, { doors: next });
+    // "Zurueck" muss die alte Liste wieder herstellen: previous ist der
+    // Stand vor der Aenderung, nicht der danach -- wie bei _setAreaKind
+    // und _writePlot. Hier stand einmal next in beiden Rollen, und der
+    // Undo-Stapel hat dieselben Tueren zweimal geschrieben.
+    this._setLayout("areas", area.id, { doors: next }, { doors });
   }
 
   // ── Das Menue unter der rechten Maustaste ───────────────

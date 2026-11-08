@@ -604,7 +604,7 @@ def async_place_nodes(
             if count > 1 or not centre:
                 node.metadata = {**node.metadata, "auto_position": True}
 
-    _place_anchored(anchored, nodes)
+    _place_anchored(anchored, nodes, area_centres)
 
 
 def _inherit_from_anchors(nodes: list[Node]) -> None:
@@ -635,12 +635,29 @@ def _inherit_from_anchors(nodes: list[Node]) -> None:
         node.metadata = {**node.metadata, "area_from_anchor": ziel.id}
 
 
-def _place_anchored(anchored: list[Node], nodes: list[Node]) -> None:
+def _place_anchored(
+    anchored: list[Node],
+    nodes: list[Node],
+    area_centres: dict[str, dict[str, Any]],
+) -> None:
     """Knoten ins gewichtete Mittel ihrer Anker legen.
 
     Das ist der Schritt vom Netzplan zum Grundriss. Eine Kante sagt "die
     beiden reden miteinander"; ein Anker sagt "der eine ist beim anderen",
     und aus mehreren Ankern mit Gewicht wird ein Ort.
+
+    Fuer das Mittel gelten zwei Regeln. Erstens zaehlt nur der Stand *vor*
+    dieser Runde als Ort: was der Anbieter selbst platziert hat, ist eine
+    Messung -- auch wenn der Knoten daneben eigene Anker traegt. Ein Ziel,
+    das erst in dieser Runde ueber Anker oder Planraster gelegt wurde,
+    steht noch nicht, also nicht im Angebot.
+
+    Zweitens wird nur innerhalb einer Etage gemittelt: x/y sind
+    etagen-lokal normalisiert (Dateikopf), und die Mitte zwischen Kueche
+    (EG) und Keller ist keine Stelle auf einem Grundriss, sondern die
+    Mitte zweier unverbundener Koordinatensysteme. Ist der Knoten selbst
+    etagenlos, tut die staerkste Messung das Blatt auf -- dieselbe Regel
+    wie beim Bereichs-Erbe. Anker auf fremden Etagen fallen dann weg.
 
     Bewusst kein Mehrwege-Aufloesen: ein Anker, dessen Ziel selbst nur
     ueber Anker liegt, wird uebersprungen. Zwei Knoten, die sich
@@ -650,28 +667,49 @@ def _place_anchored(anchored: list[Node], nodes: list[Node]) -> None:
     """
     if not anchored:
         return
+    # Snapshot mit Etage: der Zielort ist die Position des Ziels, sein
+    # Blatt die Etage des Ziels -- beides der Stand vor dieser Runde.
     fest = {
-        node.id: node.position
+        node.id: (node.position, node.floor_id)
         for node in nodes
-        if node.position is not None and not node.anchors
+        if node.position is not None
     }
     for node in anchored:
+        gemessen = []
+        for anker in node.anchors:
+            eintrag = fest.get(anker["id"])
+            if eintrag is None:
+                continue
+            ort, etage = eintrag
+            gemessen.append((ort, etage, anker["weight"]))
+        bezug = node.floor_id
+        if bezug is None:
+            mit_etage = [eintrag for eintrag in gemessen if eintrag[1]]
+            if mit_etage:
+                bezug = max(mit_etage, key=lambda e: e[2])[1]
+        nutzbar = (
+            [(ort, w) for ort, _, w in gemessen]
+            if bezug is None
+            else [(ort, w) for ort, etage, w in gemessen if etage == bezug]
+        )
         summe_x = summe_y = gewichte = 0.0
         genutzt = 0
-        for anker in node.anchors:
-            ort = fest.get(anker["id"])
-            if ort is None:
-                continue
-            gewicht = anker["weight"]
+        for ort, gewicht in nutzbar:
             summe_x += ort.x * gewicht
             summe_y += ort.y * gewicht
             gewichte += gewicht
             genutzt += 1
         if not gewichte:
-            # Kein Anker liegt irgendwo -- der Knoten faellt zurueck auf
-            # die Mitte, wie jeder andere ortlose auch. Nichts zu zeichnen
-            # waere schlechter: das Geraet gibt es ja.
-            node.position = Position(x=0.5, y=0.5)
+            # Kein Anker liegt auf dem Blatt des Knotens. Wer einen Bereich
+            # hat, faellt nicht auf die Planmitte, sondern in die Mitte
+            # seines Raums -- er hat ja einen Ort, nur keine Messung. Nur
+            # der wirkliche Ortlose landet in der Mitte des Grundrisses.
+            # Nichts zu zeichnen waere schlechter: das Geraet gibt es ja.
+            mitte = area_centres.get(node.area_id) if node.area_id else None
+            if mitte:
+                node.position = Position(x=mitte["x"], y=mitte["y"])
+            else:
+                node.position = Position(x=0.5, y=0.5)
             node.metadata = {**node.metadata, "auto_position": True}
             continue
         node.position = Position(
