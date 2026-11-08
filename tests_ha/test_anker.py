@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 
 from custom_components.spatial_hub.const import DOMAIN
 
@@ -34,11 +35,54 @@ async def _modell(hass: HomeAssistant, client) -> dict:
 async def test_anker_setzen_den_knoten_zwischen_seine_bezugspunkte(
     hass: HomeAssistant, haus: dict, hass_ws_client
 ) -> None:
-    """Zwei gleich starke Anker: der Punkt liegt in der Mitte.
+    """Zwei gleich starke Anker auf derselben Etage: die Mitte.
 
-    Der einfachste nachrechenbare Fall. Zwei Proxys in zwei Raeumen hoeren
-    denselben Anhaenger gleich laut -- dann ist er zwischen ihnen, und
-    genau das muss herauskommen.
+    Der einfachste nachrechenbare Fall. Zwei Proxys in zwei Raeumen einer
+    Etage hoeren denselben Anhaenger gleich laut -- dann ist er zwischen
+    ihnen, und genau das muss herauskommen.
+
+    Dieselbe Etage, bewusst: x/y sind etagen-lokal normalisiert, ein
+    Mittel ueber Etagen hinweg haette keine Bedeutung (Durchsicht 05.11.,
+    Fund 2). Der Gegenfall steht im Test darunter.
+    """
+    wohnzimmer = ar.async_get(hass).async_create(
+        "Wohnzimmer", floor_id=haus["erdgeschoss"].floor_id
+    )
+    anbieter_anmelden(hass, "funk", lambda: {
+        "nodes": [
+            {"id": "proxy-kueche", "label": "Proxy Küche",
+             "area_id": haus["kueche"].id},
+            {"id": "proxy-wohn", "label": "Proxy Wohnzimmer",
+             "area_id": wohnzimmer.id},
+            {"id": "anhaenger", "label": "Schlüsselbund",
+             "anchors": [{"id": "proxy-kueche", "weight": 1.0},
+                         {"id": "proxy-wohn", "weight": 1.0}]},
+        ]
+    })
+    client = await hass_ws_client(hass)
+    knoten = {k["id"]: k for k in (await _modell(hass, client))["nodes"]}
+
+    kueche = knoten["funk:proxy-kueche"]["position"]
+    wohn = knoten["funk:proxy-wohn"]["position"]
+    anhaenger = knoten["funk:anhaenger"]
+
+    assert anhaenger["position"]["x"] == pytest.approx(
+        (kueche["x"] + wohn["x"]) / 2)
+    assert anhaenger["position"]["y"] == pytest.approx(
+        (kueche["y"] + wohn["y"]) / 2)
+    assert anhaenger["metadata"]["anchored_by"] == 2
+
+
+async def test_anker_auf_fremden_etagen_werden_nicht_gemittelt(
+    hass: HomeAssistant, haus: dict, hass_ws_client
+) -> None:
+    """Ein Anker auf einer anderen Etage sagt den Raum, nicht den Punkt.
+
+    Die Koordinaten eines Proxys im EG und eines im OG liegen in zwei
+    unverbundenen Systemen -- ihr Mittel ist kein Ort, sondern nur die
+    halbe Summe zweier Zahlen. Der Anhaenger ohne eigenen Bereich liest
+    deshalb die staerkste Messung (dieselbe Regel wie beim Bereichs-Erbe),
+    und innerhalb dieser Etage wird gemittelt.
     """
     anbieter_anmelden(hass, "funk", lambda: {
         "nodes": [
@@ -47,22 +91,19 @@ async def test_anker_setzen_den_knoten_zwischen_seine_bezugspunkte(
             {"id": "proxy-schlaf", "label": "Proxy Schlafzimmer",
              "area_id": haus["schlafzimmer"].id},
             {"id": "anhaenger", "label": "Schlüsselbund",
-             "anchors": [{"id": "proxy-kueche", "weight": 1.0},
+             "anchors": [{"id": "proxy-kueche", "weight": 2.0},
                          {"id": "proxy-schlaf", "weight": 1.0}]},
         ]
     })
     client = await hass_ws_client(hass)
     knoten = {k["id"]: k for k in (await _modell(hass, client))["nodes"]}
-
-    kueche = knoten["funk:proxy-kueche"]["position"]
-    schlaf = knoten["funk:proxy-schlaf"]["position"]
     anhaenger = knoten["funk:anhaenger"]
 
-    assert anhaenger["position"]["x"] == pytest.approx(
-        (kueche["x"] + schlaf["x"]) / 2)
-    assert anhaenger["position"]["y"] == pytest.approx(
-        (kueche["y"] + schlaf["y"]) / 2)
-    assert anhaenger["metadata"]["anchored_by"] == 2
+    kueche = knoten["funk:proxy-kueche"]["position"]
+    # Die staerkste Messung oeffnet das Blatt (EG): nur der Kuechen-Proxy
+    # zaehlt, der OG-Proxy wandert nicht in das Mittel hinein.
+    assert anhaenger["position"] == kueche
+    assert anhaenger["metadata"]["anchored_by"] == 1
 
 
 async def test_staerkerer_anker_zieht_den_punkt_zu_sich(
