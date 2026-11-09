@@ -5519,7 +5519,7 @@ test("a door on a wall that does not exist is left out, not guessed", () => {
   assert.match(svgOf([{ side: 2, at: 0.5, width: 0.1, kind: "portal" }]), /class="l leaf"/);
 });
 
-test("the dimension chain splits at the walls and measures in this storey's metres", () => {
+test("the dimension chain splits at the walls and measures in the drawing's metres", () => {
   const floors = [{ id: "eg", name: "EG", level: 0, ground: true, metres: 10 }];
   const rooms = [
     room3d("a", "eg", 0, 0.4, 0, 1), room3d("b", "eg", 0.4, 1, 0, 1),
@@ -5541,6 +5541,24 @@ test("the dimension chain splits at the walls and measures in this storey's metr
   });
   assert.doesNotMatch(unknown.svg, /h3-dim/, "ohne metres keine erfundene Zahl");
   assert.ok(on.height > off.height, "die Zeichnung waechst fuer die Kette");
+});
+
+test("an upper storey with its own metres still measures in the house's metres", () => {
+  // Alle Geschosse teilen eine Geometrie: W ist die Hausbreite des
+  // Bezugsgeschosses, das Bild kann eine schmalere Etage nicht zeigen.
+  // Die Zahlen muessen zur Zeichnung passen -- dieselbe gezeichnete Wand
+  // darf nicht je Geschoss ein anderes Mass tragen. Das eigene metres
+  // der Etage entscheidet nur, ob Zahlen kommen.
+  const floors = [
+    { id: "og", name: "OG", level: 1, metres: 20 },
+    { id: "eg", name: "EG", level: 0, ground: true, metres: 10 },
+  ];
+  const scene = house3d.houseScene({
+    floors, dimensions: true,
+    areasOf: (floor) => [room3d("a", floor.id, 0, 0.4, 0, 1)],
+  });
+  assert.match(scene.svg, />4,00 m</, "gezeichnet 40 % von 10 m, nicht von 20");
+  assert.doesNotMatch(scene.svg, />8,00 m</);
 });
 
 test("a measure that does not fit between its ticks is left out, the ticks stay", () => {

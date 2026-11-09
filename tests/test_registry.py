@@ -414,3 +414,35 @@ async def test_provider_css_colors_cannot_inject_style_declarations():
     assert any("unsafe default_color" in warning for warning in provider.warnings)
 
 
+
+
+@pytest.mark.asyncio
+async def test_trimmed_anchors_are_reported_not_swallowed():
+    """A provider that accidentally attaches its whole node list must
+    learn about it: dropped anchors (over the cap or as garbage) leave a
+    trace in diagnostics, like every other discard."""
+    provider = Provider.from_registration(
+        _registration(
+            data=lambda: {
+                "nodes": [
+                    {"id": "cap", "anchors": [
+                        {"id": f"knoten-{i}"} for i in range(40)
+                    ]},
+                    {"id": "unrat", "anchors": [
+                        "kein dict", {"weight": 2}, {"id": "b", "weight": -1},
+                        {"id": "b", "weight": float("nan")},
+                        {"id": "b", "weight": 2},
+                    ]},
+                    {"id": "sauber", "anchors": [{"id": "b", "weight": 3}]},
+                ],
+                "edges": [],
+            }
+        )
+    )
+    result = await provider.async_fetch()
+
+    warnings = [w for w in result.warnings if "anchors offered" in w]
+    assert len(warnings) == 2, "cap-Verlust und Unrat werden je gemeldet"
+    assert any("node cap: 40 anchors offered, 16 kept" in w for w in warnings)
+    assert any("node unrat: 5 anchors offered, 1 kept" in w for w in warnings)
+    assert not any("sauber" in w for w in warnings), "nichts zu melden, nichts gemeldet"
