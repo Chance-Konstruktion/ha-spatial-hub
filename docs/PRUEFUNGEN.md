@@ -71,7 +71,7 @@ Hash, die Zeile fällt heraus und jemand muss die Zuordnung neu ansehen.
 | afd57e56 | prosa | „Nichts darf Maße voraussetzen" — eine Abwesenheit |
 | 1218d08b | panel | `die Kette faengt am Haus an und hoert am Haus auf` |
 | 80deb5c7 | panel | `a measure that does not fit between its ticks is left out, the ticks stay` |
-| be9c6d55 | panel | `the dimension chain splits at the walls and measures in this storey's metres` |
+| be9c6d55 | panel | `the dimension chain splits at the walls and measures in the drawing's metres` |
 | bb96328d | panel | `die Hausansicht setzt keine zwei Namen aufeinander` |
 | dac575a7 | panel | `a room has standing walls, a garden does not` |
 | fbaaa24a | prosa | Wandstärke ist ausdrücklich Geschmack |

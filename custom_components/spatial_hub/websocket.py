@@ -212,6 +212,19 @@ _POSITION_SCHEMA = {
     vol.Optional("z"): vol.Coerce(float),
 }
 
+# A nudge of the label away from its node, in plan fractions. Same two
+# axes, nothing else: an open dict here would let one card park arbitrary
+# structure -- and .storage with it -- under a key that promises a point.
+_LABEL_OFFSET_SCHEMA = vol.Schema({
+    vol.Required("x"): vol.Coerce(float),
+    vol.Required("y"): vol.Coerce(float),
+})
+
+# Keys become .storage paths. A bounded length keeps one buggy card from
+# parking a megabyte of key there; 128 covers every entity id the hub
+# itself hands out, with room to spare.
+_KEY_SCHEMA = vol.All(str, vol.Length(max=128))
+
 
 @callback
 def async_register(hass: HomeAssistant) -> None:
@@ -266,7 +279,7 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
         vol.Required("section"): vol.In(
             ["nodes", "layers", "floors", "areas", "settings"]
         ),
-        vol.Required("key"): str,
+        vol.Required("key"): _KEY_SCHEMA,
         vol.Required("values"): vol.All(
             {
                 vol.Optional("theme"): vol.Any(None, _THEME_SCHEMA),
@@ -278,7 +291,7 @@ def websocket_providers(hass: HomeAssistant, connection, msg: dict) -> None:
                 ),
                 vol.Optional("position"): vol.Any(None, _POSITION_SCHEMA),
                 vol.Optional("size"): vol.Any(None, _SIZE_SCHEMA),
-                vol.Optional("label_offset"): vol.Any(None, dict),
+                vol.Optional("label_offset"): vol.Any(None, _LABEL_OFFSET_SCHEMA),
                 vol.Optional("icon"): vol.Any(None, str),
                 vol.Optional("color"): vol.Any(None, _COLOUR),
                 vol.Optional("scale"): vol.Any(
@@ -359,7 +372,7 @@ def websocket_layout_set(hass: HomeAssistant, connection, msg: dict) -> None:
         vol.Required("section"): vol.In(
             ["nodes", "layers", "floors", "areas", "settings"]
         ),
-        vol.Required("key"): str,
+        vol.Required("key"): _KEY_SCHEMA,
     }
 )
 @callback

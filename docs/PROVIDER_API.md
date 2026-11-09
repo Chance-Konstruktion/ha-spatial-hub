@@ -133,8 +133,13 @@ zu wissen, was sie bedeuten. `dashed` für Schätzungen, `animated` für Fluss.
 
 Ein `data`-Aufruf, der eine Exception wirft, ins Timeout läuft (10 s) oder
 Unsinn liefert, kostet **deinen** Layer für genau einen Refresh — sonst
-passiert nichts. Ein einzelner kaputter Node fliegt raus, nicht der ganze
-Payload. Liefere also lieber unvollständige Daten als eine Exception.
+passiert nichts. Dasselbe 10-s-Limit gilt für `history` und `action`; es
+unterbricht **async**-Callables. Ein **sync**-Callable läuft direkt im
+Event-Loop des Hubs und ist nicht unterbrechbar — hängt es, hängt der
+Hub, bis es zurückkehrt. Alles, was blockieren kann, gehört daher als
+async angeboten (oder in einen Thread gelegt). Ein einzelner kaputter
+Node fliegt raus, nicht der ganze Payload. Liefere also lieber
+unvollständige Daten als eine Exception.
 
 Damit das kein Ratespiel wird, sagt dir der Hub, was er verworfen hat:
 

@@ -31,7 +31,7 @@ from .const import (
 )
 from .generic import effective_layers
 from .models import Edge, Node, Position, safe_css_color
-from .registry import Provider, async_load_providers
+from .registry import DATA_TIMEOUT, Provider, async_load_providers
 from .theme import resolve as resolve_theme
 from .storage import LayoutStore
 
@@ -644,8 +644,22 @@ class SpatialHub:
         for floor in floors:
             # The wire format is the plain word, as it is for areas: JSON
             # has no enums and the specification names the three by value.
+            # A hand-edited .storage skips the websocket schema, so the
+            # stored kind may be anything at all -- forgiving here on
+            # purpose, like theme.resolve and the areas: an unknown word
+            # means "no opinion", not a dead model build.
             if floor.get("kind") is not None:
-                floor["kind"] = AreaKind(floor["kind"]).value
+                stated = AreaKind.parse(floor["kind"])
+                if stated is None:
+                    _LOGGER.warning(
+                        "Floor %s has an unknown kind %r stored; ignoring it. "
+                        "Valid kinds are %s",
+                        floor["id"], floor["kind"],
+                        ", ".join(kind.value for kind in AreaKind),
+                    )
+                    floor["kind"] = None
+                else:
+                    floor["kind"] = stated.value
             stated = self.store.get("floors", floor["id"]).get("outline")
             if stated:
                 floor["outline"] = stated
@@ -768,15 +782,27 @@ class SpatialHub:
     async def async_history(
         self, kind: str, item_id: str, hours: float
     ) -> list[dict[str, Any]]:
-        """Ask the owning provider for an item's history."""
+        """Ask the owning provider for an item's history.
+
+        Same deal as the data fetch: provider code is untrusted, so the
+        call runs under the same 10-second wall. A provider that hangs
+        costs its answer for this request and nothing more -- the command
+        comes back empty instead of staying open forever. (A *sync*
+        callable cannot be interrupted once it runs; see the provider
+        docs for where that line sits.)
+        """
         provider = self.provider_for_item(item_id)
         if provider is None or provider.history_fn is None:
             return []
         local_id = item_id.split(":", 1)[1] if ":" in item_id else item_id
         try:
-            result = provider.history_fn(kind, local_id, hours)
-            if hasattr(result, "__await__"):
-                result = await result
+            async with asyncio.timeout(DATA_TIMEOUT):
+                result = provider.history_fn(kind, local_id, hours)
+                if hasattr(result, "__await__"):
+                    result = await result
+        except TimeoutError:
+            _LOGGER.warning("Provider %s timed out delivering history", provider.id)
+            return []
         except Exception:  # noqa: BLE001 - third-party code
             _LOGGER.exception("Provider %s raised delivering history", provider.id)
             return []
@@ -789,6 +815,11 @@ class SpatialHub:
 
         The hub has no idea what the action does, and that is the point --
         "toggle" means something different to a lamp and to a heat pump.
+        The call runs under the same 10-second wall as the data fetch: a
+        provider that never answers fails this one action as a websocket
+        error instead of holding the command open forever. (A *sync*
+        callable cannot be interrupted once it runs; see the provider
+        docs for where that line sits.)
         """
         provider = self.provider_for_item(item_id)
         if provider is None:
@@ -796,7 +827,16 @@ class SpatialHub:
         if provider.action_fn is None:
             raise LookupError(f"provider {provider.id} accepts no actions")
         local_id = item_id.split(":", 1)[1] if ":" in item_id else item_id
-        result = provider.action_fn(kind, local_id, action_id, data)
-        if hasattr(result, "__await__"):
-            result = await result
+        try:
+            async with asyncio.timeout(DATA_TIMEOUT):
+                result = provider.action_fn(kind, local_id, action_id, data)
+                if hasattr(result, "__await__"):
+                    result = await result
+        except TimeoutError as err:
+            _LOGGER.warning(
+                "Provider %s timed out running action %s", provider.id, action_id
+            )
+            raise TimeoutError(
+                f"provider {provider.id} timed out after {DATA_TIMEOUT}s"
+            ) from err
         return result if isinstance(result, dict) else {"success": True}

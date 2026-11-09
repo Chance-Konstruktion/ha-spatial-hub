@@ -178,6 +178,10 @@ def _anchors(raw: Any) -> list[dict[str, Any]]:
 # des Grundrisses, also keine Aussage.
 _MAX_ANKER = 16
 
+# Oeffentlich gelesen (registry warnt, wenn Anker verworfen werden);
+# der Unterstrich bleibt das Arbeitsdetail der Bereinigung oben.
+MAX_ANCHORS = _MAX_ANKER
+
 
 @dataclass(slots=True)
 class Node:
