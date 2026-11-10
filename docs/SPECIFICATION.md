@@ -60,6 +60,7 @@ Ein Ding, das irgendwo sitzt: ein Adapter, eine Lampe, ein Bett, ein Sensor.
 | `entity_id` | string \| null | — | die Entität dahinter |
 | `device_id` | string \| null | — | das Gerät dahinter; der Hub füllt es aus der Registry |
 | `actions` | Action[] | — | siehe § Action |
+| `anchors` | Anchor[] | — | Messungen, wo das Ding ungefähr liegt; siehe § Anchors |
 | `metadata` | object | — | frei; landet im Popup |
 
 Vom Hub ergänzt: `entities` (die Entitäten des Geräts, für das Popup) sowie
@@ -102,6 +103,42 @@ Eine Beziehung zwischen zwei Nodes: eine Verbindung, ein Fluss, ein Weg.
 `quality` ist die einzige Aussage über Güte. Eine Kante zwischen zwei Nodes,
 von denen einer weggefallen ist, wird verworfen — eine Linie ins Nichts ist
 schlimmer als eine fehlende Linie.
+
+## § Anchors
+
+Eine Messung, kein Urteil: ein Node, dessen Ort niemand kennt, darf tragen,
+wovon er *umgeben* ist. Ein Anker ist ein Objekt mit zwei Feldern:
+
+| Feld | Typ | Pflicht | Bedeutung |
+|---|---|---|---|
+| `id` | string | ja | ein **eigener** Node desselben Providers, ohne Namespace |
+| `weight` | number | — | relative Stärke; höher heißt näher. Voreinstellung 1 |
+
+`weight` ist einheitslos und nur innerhalb **einer** Liste vergleichbar —
+abgeleitet aus RSSI, LQI, Linkrate oder was auch immer, solange höher
+näher heißt. Der Hub verwirft Gewichte ≤ 0 sowie NaN und ±inf; mehr als
+**16 Anker** je Node zählen nicht (die ersten 16 gelten). Verworfene
+Anker werden in `diagnostics` gemeldet, statt still zu verschwinden.
+
+Die Auflösung ist Sache des Hubs, nicht des Providers:
+
+- Ein Node mit eigener Position wird gar nicht über Anker gelegt — der
+  Nutzer hat das letzte Wort, ein gezogener Node ignoriert seine Anker.
+- Ziele sind die Positionen der genannten Nodes **vor** der Platzierung.
+  Ein selbst platziertes Ziel zählt als Ort, auch wenn es eigene Anker
+  trägt; ein Ziel, das erst in derselben Runde über Anker gelegt wurde,
+  steht noch nicht und wird übersprungen.
+- Der Node landet im **gewichteten Mittel** seiner Anker, und zwar nur
+  **innerhalb einer Etage**: x/y sind etagen-lokal normalisiert, die Mitte
+  zwischen Küche und Keller ist keine Stelle auf einem Grundriss. Anker
+  auf fremden Etagen fallen weg; ein etagenloser Node nimmt die Etage
+  seiner stärksten Messung.
+- Löst kein Anker auf, erbt ein bereichsloser Node den **Bereich** seines
+  stärksten Ankers; ein Node mit eigenem Bereich fällt in die Mitte
+  **seines** Raums, nie in die Planmitte.
+
+Der Renderer liest das Ergebnis aus `metadata`: `auto_position`,
+`anchored_by` (genutzte Messungen) und `area_from_anchor` (das Erbe).
 
 ## § Layer
 
@@ -861,8 +898,12 @@ Ein **lesender** Renderer braucht davon zwei: `model` und `subscribe`.
 
 Provider-Code gilt als nicht vertrauenswürdig. Exception, Timeout (10 s) oder
 Unsinn kosten den eigenen Layer für **genau einen Refresh** — nie den
-Grundriss. Ein verworfener Node wird gezählt und in `diagnostics` mit Grund
-gemeldet, statt still zu verschwinden. Unbekannte Schlüssel in einer
+Grundriss. Das 10-s-Limit gilt für `data`, `history` und `action` gleichermaßen;
+es unterbricht **async**-Callables. Ein **sync**-Callable läuft direkt im
+Event-Loop des Hubs und ist nicht unterbrechbar — hängt es, hängt der Hub,
+bis es zurückkehrt; wer blockieren kann, SOLLS als async anbieten (oder in
+einen Thread legen). Ein verworfener Node wird gezählt und in `diagnostics`
+mit Grund gemeldet, statt still zu verschwinden. Unbekannte Schlüssel in einer
 Registrierung werden als vermuteter Tippfehler gemeldet.
 
 ## Versionierung

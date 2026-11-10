@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from custom_components.spatial_hub.const import UNASSIGNED_FLOOR_ID
@@ -1698,3 +1700,55 @@ async def test_a_provider_stated_position_is_never_moved(hass, hub):
     assert positionen["demo:fest"]["x"] == 0.9
     assert positionen["demo:fest"]["y"] == 0.1
     assert positionen["demo:fest"] != positionen["demo:frei"]
+
+
+# ── Timeout-Wand für history/action (Durchsicht 05.11., Mittel 4) ──
+
+@pytest.mark.asyncio
+async def test_a_hanging_history_times_out_instead_of_staying_open(hass, hub, monkeypatch):
+    async def haengt(kind, item_id, hours):
+        await asyncio.sleep(60)
+        return []
+
+    _register(hass, "demo", history=haengt)
+    monkeypatch.setattr("custom_components.spatial_hub.hub.DATA_TIMEOUT", 0.05)
+
+    assert await hub.async_history("node", "demo:a", 24) == [], (
+        "der Befehl kommt leer zurück statt für immer offen zu bleiben"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_hanging_action_times_out_as_a_clean_error(hass, hub, monkeypatch):
+    async def haengt(kind, item_id, action_id, data):
+        await asyncio.sleep(60)
+        return {"success": True}
+
+    _register(hass, "demo", action=haengt)
+    monkeypatch.setattr("custom_components.spatial_hub.hub.DATA_TIMEOUT", 0.05)
+
+    with pytest.raises(TimeoutError):
+        await hub.async_action("node", "demo:a", "reboot", {})
+
+
+@pytest.mark.asyncio
+async def test_history_and_action_still_work_under_the_wall(hass, hub):
+    _register(hass, "demo",
+              history=lambda kind, item_id, hours: [{"value": 1}],
+              action=lambda kind, item_id, action_id, data: {"success": True})
+    assert await hub.async_history("node", "demo:a", 24) == [{"value": 1}]
+    assert await hub.async_action("node", "demo:a", "reboot", {}) == {"success": True}
+
+
+# ── Handeditierter Speicher killt den Modellbau nicht (Durchsicht 05.11., Klein 13) ──
+
+@pytest.mark.asyncio
+async def test_an_unknown_stored_floor_kind_is_ignored_not_fatal(hass, hub):
+    """A hand-edited .storage skips the websocket schema. The model build
+    must survive it -- forgiving on purpose, like theme.resolve."""
+    _register(hass)
+    hub.store.update("floors", "eg", {"kind": "palast"})
+
+    model = await hub.async_model()
+    floor = next(f for f in model["floors"] if f["id"] == "eg")
+    assert floor["kind"] is None, "ein unbekanntes Wort heißt keine Meinung"

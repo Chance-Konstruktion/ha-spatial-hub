@@ -181,4 +181,10 @@ QUALITY_POOR: Final = "poor"
 QUALITY_UNKNOWN: Final = "unknown"
 
 # Guard for the floor-plan background so a stray upload can't bloat .storage.
-MAX_BACKGROUND_BYTES: Final = 4 * 1024 * 1024
+# The editor refuses files above 3 MiB *before* uploading; base64 of a
+# 3 MiB file is 4 MiB exactly, plus the data-URL prefix in front of it.
+# The limit here is on the encoded string, so it carries the prefix slack
+# (64 covers every prefix the panel can send) -- otherwise the panel's
+# "too large" guard would produce exactly the websocket error it exists
+# to prevent. Same picture size, measured at both ends.
+MAX_BACKGROUND_BYTES: Final = 4 * 1024 * 1024 + 64

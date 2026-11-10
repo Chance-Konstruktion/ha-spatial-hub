@@ -40,7 +40,15 @@ from typing import Any, Callable
 from homeassistant.core import HomeAssistant
 
 from .const import API_VERSION, DATA_PROVIDERS
-from .models import Capabilities, Edge, Layer, Node, SpatialError, safe_css_color
+from .models import (
+    MAX_ANCHORS,
+    Capabilities,
+    Edge,
+    Layer,
+    Node,
+    SpatialError,
+    safe_css_color,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -455,6 +463,18 @@ class Provider:
                 _LOGGER.debug("%s: dropping bad %s (%s)", self.id, kind, err)
                 result.warnings.append(f"dropped {kind}: {err}")
                 continue
+            if kind == "node" and isinstance(raw, dict):
+                # Anker, die die Bereinigung fallen liess -- ueber dem Cap
+                # oder als Unrat -- sind sonst spurlos: der Anbieter haengt
+                # versehentlich seine ganze Knotenliste an und erfaehrt
+                # nichts. Verworfen statt verschwunden, wie ueberall.
+                roh = raw.get("anchors")
+                if isinstance(roh, list) and len(roh) > len(item.anchors):
+                    result.warnings.append(
+                        f"node {item.id}: {len(roh)} anchors offered, "
+                        f"{len(item.anchors)} kept (cap {MAX_ANCHORS}, "
+                        "invalid entries dropped)"
+                    )
             # Namespace ids so two providers can both call a node "router",
             # and remember which layer the item belongs to.
             item.id = f"{self.id}:{item.id}"

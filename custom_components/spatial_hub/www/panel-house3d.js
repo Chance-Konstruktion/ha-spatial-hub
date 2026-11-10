@@ -795,8 +795,13 @@ const storeyOf = (floor, areas, dims, pins = [], options = {}) => {
       .sort((a, b) => a - b)) {
       if (!stops.length || x - stops[stops.length - 1] > tolX) stops.push(x);
     }
-    // Der Massstab ist der dieser Etage, nicht der des Bezugsgeschosses.
-    const perMetre = houseMetres(floor) / W;
+    // Der Massstab ist der der Zeichnung: alle Geschosse teilen eine
+    // Geometrie (W ist die Hausbreite des Bezugsgeschosses in Metern),
+    // das Bild kann eine schmalere oder breitere Etage gar nicht zeigen.
+    // Die eigene metres der Etage entscheidet nur, OB hier Zahlen stehen
+    // -- nicht, in welchem Massstab. Anders wuerde dieselbe gezeichnete
+    // Wand je Geschoss ein anderes Mass tragen.
+    const perMetre = 1;
     const drop = Math.max(0.5, W * 0.045);
     const rows = [{ y: outline.b + drop, stops }];
     if (stops.length > 2) {

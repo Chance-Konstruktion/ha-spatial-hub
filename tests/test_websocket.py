@@ -861,3 +861,72 @@ def test_layout_schema_rejects_non_finite_numbers(values):
     """Float coercion must not let NaN bypass range validation."""
     with pytest.raises(vol.Invalid):
         _layout_values(values)
+
+
+# ── Begrenzte Schlüssel und Beschriftungs-Versatz (Durchsicht 05.11., Klein 11) ──
+
+def test_a_storage_key_has_a_ceiling():
+    """Keys become .storage paths -- one buggy card must not park a
+    megabyte of key there. 128 covers every id the hub hands out."""
+    schema = vol.Schema(ws.websocket_layout_set._ws_schema,  # noqa: SLF001
+                        extra=vol.ALLOW_EXTRA)
+    ok = schema({"type": f"{ws.DOMAIN}/layout/set", "section": "nodes",
+                 "key": "demo:" + "a" * 118, "values": {}})
+    assert ok["key"].startswith("demo:")
+    with pytest.raises(vol.Invalid):
+        schema({"type": f"{ws.DOMAIN}/layout/set", "section": "nodes",
+                "key": "a" * 129, "values": {}})
+
+
+def test_the_reset_command_bounds_its_key_too():
+    schema = vol.Schema(ws.websocket_layout_reset._ws_schema,  # noqa: SLF001
+                        extra=vol.ALLOW_EXTRA)
+    with pytest.raises(vol.Invalid):
+        schema({"type": f"{ws.DOMAIN}/layout/reset", "section": "nodes",
+                "key": "a" * 129})
+
+
+def test_a_label_offset_is_exactly_two_numbers():
+    """A dict that promises a point must not carry arbitrary structure --
+    that is how .storage grows without bound."""
+    assert _layout_values({"label_offset": {"x": 1, "y": -1}}) is not None
+    assert _layout_values({"label_offset": None}) is not None
+
+    for bad in (
+        {"x": 1},                                  # y missing
+        {"x": 1, "y": 2, "z": 3},                  # extra axis
+        {"x": "links", "y": 2},                    # not a number
+        {"x": {"nested": "deep"}, "y": 2},         # structure instead of a point
+    ):
+        with pytest.raises(vol.Invalid):
+            _layout_values({"label_offset": bad})
+
+
+@pytest.mark.parametrize(
+    "values",
+    [{"label_offset": {"x": "nan", "y": 0.5}},
+     {"label_offset": {"x": "inf", "y": 0.5}}],
+)
+def test_a_label_offset_rejects_non_finite_numbers(values):
+    with pytest.raises(vol.Invalid):
+        _layout_values(values)
+
+
+# ── Hintergrund: dieselbe Bildgröße an beiden Enden (Durchsicht 05.11., Klein 12) ──
+
+def test_base64_of_a_three_mib_file_fits_the_hub_limit(hass, hub, connection):
+    """The editor refuses files above 3 MiB before uploading. Base64 of
+    such a file is 4 MiB plus the data-URL prefix -- the hub's limit on
+    the *encoded* string has to carry that prefix, or the panel's guard
+    produces exactly the websocket error it exists to prevent."""
+    background = "data:image/png;base64," + "A" * (4 * 1024 * 1024)
+    # 4194304 base64-Zeichen codieren genau 3 MiB Datei; mit Präfix liegt
+    # der String über dem alten 4-MiB-Limit und muss trotzdem durchgehen.
+    assert len(background) > 4 * 1024 * 1024, "the old limit rejected a legal file"
+
+    ws.websocket_layout_set(
+        hass, connection,
+        {"id": 1, "section": "floors", "key": "eg", "values": {"background": background}},
+    )
+    assert connection.results[1] == {"success": True}
+    assert hub.store.get("floors", "eg").get("background") == background

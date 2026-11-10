@@ -345,9 +345,14 @@ the hub's source.
 
 Provider code counts as untrusted to the hub: throw an exception, run into
 a timeout or deliver nonsense, and you lose your own layer for exactly one
-refresh — and nothing else happens. So that this does not become a guessing
-game, `spatial_hub/diagnostics` says per provider what was discarded and
-why, including suspected typos in the registration.
+refresh — and nothing else happens. The 10-second wall applies to `data`,
+`history` and `action` alike, and it interrupts **async** callables. A
+**sync** callable runs straight on the hub's event loop and cannot be
+interrupted: if it hangs, the hub hangs with it until it returns — so
+anything that can block should be offered as async (or wrapped in a
+thread). So that this does not become a guessing game,
+`spatial_hub/diagnostics` says per provider what was discarded and why,
+including suspected typos in the registration.
 
 ## Websocket API
 
